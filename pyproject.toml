@@ -5,6 +5,7 @@ description = "LangGraph-based SDLC orchestrator with human-controlled interrupt
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0",
+    "litellm>=1.40",
 ]
 
 [project.optional-dependencies]
