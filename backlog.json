@@ -7,7 +7,7 @@
       "id": "BTN-1",
       "phase": "implementation",
       "title": "State models + persistence layer",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Pydantic models implementing the versioned state schema from spec.md (schema_version, run_id, ticket_id, status, phase, write_scope, reviewer_rejection_history, retry_bound, budget, interrupt_log). Local JSON load/save matching regiment-backlog.json conventions.",
       "acceptance_criteria": [
@@ -26,7 +26,7 @@
       "id": "BTN-2",
       "phase": "implementation",
       "title": "Per-node write-scope tool binding",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Tool-binding factory (ADR-002) that constructs each node's LangGraph tool set at graph-build time, scoped only to that node's declared write paths.",
       "acceptance_criteria": [
