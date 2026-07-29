@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "project": "battalion",
+  "status_values": ["not-started", "in-progress", "blocked", "in-review", "done"],
+  "items": [
+    {
+      "id": "BTN-1",
+      "phase": "implementation",
+      "title": "State models + persistence layer",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Pydantic models implementing the versioned state schema from spec.md (schema_version, run_id, ticket_id, status, phase, write_scope, reviewer_rejection_history, retry_bound, budget, interrupt_log). Local JSON load/save matching regiment-backlog.json conventions.",
+      "acceptance_criteria": [
+        "Pydantic models validate all fields listed in spec.md's state schema draft",
+        "State can be saved to and loaded from a local JSON file",
+        "A second CLI invocation can resume from a prior run's saved state file",
+        "Invalid/malformed state on load raises a clear validation error, not a silent pass"
+      ],
+      "dependencies": [],
+      "blocks": ["BTN-2", "BTN-3", "BTN-4", "BTN-5", "BTN-6"],
+      "assignee_role": "driver",
+      "source": "plan.md sequencing step 1",
+      "notes": "Nothing else in the backlog can be built without this landing first."
+    },
+    {
+      "id": "BTN-2",
+      "phase": "implementation",
+      "title": "Per-node write-scope tool binding",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Tool-binding factory (ADR-002) that constructs each node's LangGraph tool set at graph-build time, scoped only to that node's declared write paths.",
+      "acceptance_criteria": [
+        "A node's tool set contains no write tool capable of touching a path outside its declared scope",
+        "Attempting an out-of-scope write fails structurally (missing tool), not via a runtime permission check",
+        "Test exists per node confirming its exact tool set matches its declared scope"
+      ],
+      "dependencies": ["BTN-1"],
+      "blocks": ["BTN-4", "BTN-5", "BTN-6"],
+      "assignee_role": "driver",
+      "source": "plan.md ADR-002, sequencing step 2",
+      "notes": "Interrupt trigger #2 becomes defense-in-depth once this lands, per ADR-002 — still log attempted out-of-scope calls."
+    },
+    {
+      "id": "BTN-3",
+      "phase": "implementation",
+      "title": "LiteLLM client wrapper",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Per-node model configuration wrapper over LiteLLM, allowing each node to specify its own model/provider independently.",
+      "acceptance_criteria": [
+        "Each node can be configured with a different model via LiteLLM without code changes to the node itself",
+        "A failed LiteLLM call after configured retries surfaces as a distinct infra-failure state, not an unhandled exception"
+      ],
+      "dependencies": ["BTN-1"],
+      "blocks": ["BTN-4", "BTN-5", "BTN-6"],
+      "assignee_role": "driver",
+      "source": "plan.md sequencing step 3",
+      "notes": "Retry-then-fail behavior here feeds directly into interrupt trigger #5 (BTN-8)."
+    },
+    {
+      "id": "BTN-4",
+      "phase": "implementation",
+      "title": "Architect node",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Native LangGraph node rewrite of Architect: produces plan.md-equivalent output and backlog ticket(s) from spec-level input, scoped to its declared write paths.",
+      "acceptance_criteria": [
+        "Given a spec-equivalent input, produces plan output matching the state schema's expected shape",
+        "Cannot write outside its declared scope (verified via BTN-2's test pattern)"
+      ],
+      "dependencies": ["BTN-1", "BTN-2", "BTN-3"],
+      "blocks": ["BTN-7"],
+      "assignee_role": "driver",
+      "source": "plan.md sequencing step 4",
+      "notes": ""
+    },
+    {
+      "id": "BTN-5",
+      "phase": "implementation",
+      "title": "Driver node",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Native LangGraph node rewrite of Driver: implements a ticket in a red-green-refactor cycle, scoped to its declared write paths.",
+      "acceptance_criteria": [
+        "Given an Architect-produced ticket, produces implementation output matching expected state shape",
+        "Cannot write outside its declared scope"
+      ],
+      "dependencies": ["BTN-1", "BTN-2", "BTN-3", "BTN-4"],
+      "blocks": ["BTN-7"],
+      "assignee_role": "driver",
+      "source": "plan.md sequencing step 5",
+      "notes": "Built against Architect's output shape once BTN-4 lands."
+    },
+    {
+      "id": "BTN-6",
+      "phase": "implementation",
+      "title": "Reviewer node",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Native LangGraph node rewrite of Reviewer: skeptical review of Driver's output, with consistent root-cause articulation on rejection to support interrupt trigger #1. Verification is re-run from a clean tree independent of Driver's working state, not taken on Driver's self-report.",
+      "acceptance_criteria": [
+        "Given Driver output, produces an accept/reject verdict with a stated root cause on rejection",
+        "Root cause is expressed consistently enough across cycles to support same-cause-twice detection",
+        "Tests/checks are re-run from a clean checkout, not read from Driver's self-reported pass/fail",
+        "Cannot write outside its declared scope"
+      ],
+      "dependencies": ["BTN-1", "BTN-2", "BTN-3", "BTN-5"],
+      "blocks": ["BTN-7"],
+      "assignee_role": "driver",
+      "source": "plan.md sequencing step 6; plan.md Risks section; github.com/Sdraugel/albert clean-tree verification pattern",
+      "notes": "Prompt design for consistent root-cause articulation needs explicit attention, not just plumbing — flagged in plan.md risks. Clean-tree re-verification prevents Reviewer from trusting a producer's self-report, borrowed from Albert's verifier design."
+    },
+    {
+      "id": "BTN-7",
+      "phase": "implementation",
+      "title": "Graph wiring — StateGraph, edges, interrupt points",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Wire Architect, Driver, and Reviewer into a LangGraph StateGraph with the correct edges and interrupt pause points.",
+      "acceptance_criteria": [
+        "A ticket flows Architect -> Driver -> Reviewer end-to-end with no interrupt trigger firing",
+        "Graph pauses at each defined interrupt point rather than proceeding silently"
+      ],
+      "dependencies": ["BTN-4", "BTN-5", "BTN-6"],
+      "blocks": ["BTN-8", "BTN-9"],
+      "assignee_role": "driver",
+      "source": "plan.md sequencing step 7",
+      "notes": ""
+    },
+    {
+      "id": "BTN-8",
+      "phase": "implementation",
+      "title": "Interrupt triggers (1-6) + budget tracking",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement all 6 v1 interrupt triggers from spec.md, plus per-graph-run budget tracking (trigger #3).",
+      "acceptance_criteria": [
+        "Each of the 6 triggers can be independently demonstrated with a reliable reproduction scenario",
+        "Trigger #1 increments only on same-root-cause rejections, not any rejection",
+        "Trigger #3 tracks budget per graph run, not per node",
+        "Trigger #5 (infra failure) has a distinct handling path, not folded into #1 or #3",
+        "Trigger #6 (manual checkpoint) pauses unconditionally at a user-declared phase, independent of any other trigger"
+      ],
+      "dependencies": ["BTN-7"],
+      "blocks": ["BTN-10"],
+      "assignee_role": "driver",
+      "source": "spec.md Interrupt Taxonomy; plan.md sequencing step 8",
+      "notes": "Critical/security-finding trigger intentionally excluded from v1 per spec.md."
+    },
+    {
+      "id": "BTN-9",
+      "phase": "implementation",
+      "title": "CLI (Typer) — run / resume / status",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Typer-based CLI entry point wrapping the graph: run a new ticket, resume a paused run, check status.",
+      "acceptance_criteria": [
+        "`battalion run` starts a new ticket through the graph",
+        "`battalion resume` continues a paused/interrupted run from saved state",
+        "`battalion status` reports current phase and any pending interrupt for a run"
+      ],
+      "dependencies": ["BTN-7"],
+      "blocks": ["BTN-10"],
+      "assignee_role": "driver",
+      "source": "plan.md sequencing step 9, ADR-003",
+      "notes": "Thinnest layer, wraps already-working internals — deliberately sequenced last among build tickets."
+    },
+    {
+      "id": "BTN-10",
+      "phase": "testing",
+      "title": "End-to-end acceptance criteria validation",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Validate the full v1 milestone acceptance criteria from spec.md against the built system.",
+      "acceptance_criteria": [
+        "All spec.md v1 acceptance criteria pass",
+        "A second CLI invocation resumes correctly from a prior run's state file"
+      ],
+      "dependencies": ["BTN-8", "BTN-9"],
+      "blocks": [],
+      "assignee_role": "reviewer",
+      "source": "spec.md Acceptance Criteria; plan.md sequencing step 10",
+      "notes": "This is the milestone gate for v1 completion."
+    }
+  ]
+}
