@@ -85,7 +85,7 @@
       "id": "BTN-4",
       "phase": "implementation",
       "title": "Architect node",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Native LangGraph node rewrite of Architect: produces plan.md-equivalent output and backlog ticket(s) from spec-level input, scoped to its declared write paths.",
       "acceptance_criteria": [
