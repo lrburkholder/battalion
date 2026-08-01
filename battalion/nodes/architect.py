@@ -13,20 +13,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
+from battalion.nodes.errors import WriteScopeMisconfigured
+from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import build_write_tools
 from battalion.state.models import RunState, RunStatus
-
-ARCHITECT_SYSTEM_PROMPT = (
-    "You are the Architect. Given a specification, produce a plan.md-style "
-    "implementation plan: architecture overview, key decisions, and "
-    "sequencing. Follow Squad's Architect role convention: do design work "
-    "in concert with the human, and be explicit about trade-offs."
-)
-
-
-class WriteScopeMisconfigured(Exception):
-    """Raised when RunState.write_scope doesn't grant the Architect node a
-    'plan.md' entry — a config error, not a runtime scope violation."""
 
 
 class EmptyPlanContent(Exception):
@@ -51,10 +41,17 @@ def run_architect(
     base_dir: str | Path = ".",
     call_llm_fn: Callable = call_llm,
     on_violation: Callable[[dict], None] | None = None,
+    system_prompt: str | None = None,
+    prompts_dir: str | Path | None = None,
 ) -> RunState:
     """Run the Architect node: produce a plan from spec_text, write it to
     plan.md, and return updated state. Raises InfraFailure (from call_llm_fn)
-    or WriteScopeMisconfigured on failure — never silently swallows either."""
+    or WriteScopeMisconfigured on failure — never silently swallows either.
+
+    system_prompt, if not given, is loaded from prompts/architect.md (or
+    prompts_dir, if overridden) — see battalion.prompts.loader. Passing
+    system_prompt directly is mainly for tests; production callers should
+    rely on the file so prompt iteration stays a config change."""
     write_tools = build_write_tools(
         "architect", state.write_scope, base_dir=base_dir, on_violation=on_violation
     )
@@ -64,8 +61,11 @@ def run_architect(
             "the Architect node cannot write its output."
         )
 
+    resolved_prompt = system_prompt or load_system_prompt(
+        "architect", prompts_dir=prompts_dir
+    )
     messages = [
-        {"role": "system", "content": ARCHITECT_SYSTEM_PROMPT},
+        {"role": "system", "content": resolved_prompt},
         {"role": "user", "content": spec_text},
     ]
 

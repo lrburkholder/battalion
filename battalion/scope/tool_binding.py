@@ -39,20 +39,25 @@ class _BoundWriteTool:
         self._single_file = single_file
         self._on_violation = on_violation
 
-    def write(self, relative_path: str, content: str) -> None:
+    def resolve(self, relative_path: str) -> Path:
+        """Validate relative_path against this tool's declared root and
+        return the resolved target path, without writing anything. Lets
+        callers pre-validate a batch of paths before writing any of them."""
         if self._single_file:
-            target = self._root
             if relative_path != self._root.name:
                 self._violate(relative_path)
-        else:
-            if Path(relative_path).is_absolute():
-                self._violate(relative_path)
-                return  # pragma: no cover — _violate always raises
-            target = (self._root / relative_path).resolve()
-            root_resolved = self._root.resolve()
-            if root_resolved not in target.parents and target != root_resolved:
-                self._violate(relative_path)
+            return self._root
 
+        if Path(relative_path).is_absolute():
+            self._violate(relative_path)
+        target = (self._root / relative_path).resolve()
+        root_resolved = self._root.resolve()
+        if root_resolved not in target.parents and target != root_resolved:
+            self._violate(relative_path)
+        return target
+
+    def write(self, relative_path: str, content: str) -> None:
+        target = self.resolve(relative_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
 
