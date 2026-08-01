@@ -1,7 +1,13 @@
 {
   "schema_version": "1.0",
   "project": "battalion",
-  "status_values": ["not-started", "in-progress", "blocked", "in-review", "done"],
+  "status_values": [
+    "not-started",
+    "in-progress",
+    "blocked",
+    "in-review",
+    "done"
+  ],
   "items": [
     {
       "id": "BTN-1",
@@ -17,7 +23,13 @@
         "Invalid/malformed state on load raises a clear validation error, not a silent pass"
       ],
       "dependencies": [],
-      "blocks": ["BTN-2", "BTN-3", "BTN-4", "BTN-5", "BTN-6"],
+      "blocks": [
+        "BTN-2",
+        "BTN-3",
+        "BTN-4",
+        "BTN-5",
+        "BTN-6"
+      ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 1",
       "notes": "Nothing else in the backlog can be built without this landing first."
@@ -34,11 +46,17 @@
         "Attempting an out-of-scope write fails structurally (missing tool), not via a runtime permission check",
         "Test exists per node confirming its exact tool set matches its declared scope"
       ],
-      "dependencies": ["BTN-1"],
-      "blocks": ["BTN-4", "BTN-5", "BTN-6"],
+      "dependencies": [
+        "BTN-1"
+      ],
+      "blocks": [
+        "BTN-4",
+        "BTN-5",
+        "BTN-6"
+      ],
       "assignee_role": "driver",
       "source": "plan.md ADR-002, sequencing step 2",
-      "notes": "Interrupt trigger #2 becomes defense-in-depth once this lands, per ADR-002 — still log attempted out-of-scope calls."
+      "notes": "Interrupt trigger #2 becomes defense-in-depth once this lands, per ADR-002 \u2014 still log attempted out-of-scope calls."
     },
     {
       "id": "BTN-3",
@@ -51,8 +69,14 @@
         "Each node can be configured with a different model via LiteLLM without code changes to the node itself",
         "A failed LiteLLM call after configured retries surfaces as a distinct infra-failure state, not an unhandled exception"
       ],
-      "dependencies": ["BTN-1"],
-      "blocks": ["BTN-4", "BTN-5", "BTN-6"],
+      "dependencies": [
+        "BTN-1"
+      ],
+      "blocks": [
+        "BTN-4",
+        "BTN-5",
+        "BTN-6"
+      ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 3",
       "notes": "Retry-then-fail behavior here feeds directly into interrupt trigger #5 (BTN-8)."
@@ -61,15 +85,21 @@
       "id": "BTN-4",
       "phase": "implementation",
       "title": "Architect node",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Native LangGraph node rewrite of Architect: produces plan.md-equivalent output and backlog ticket(s) from spec-level input, scoped to its declared write paths.",
       "acceptance_criteria": [
         "Given a spec-equivalent input, produces plan output matching the state schema's expected shape",
         "Cannot write outside its declared scope (verified via BTN-2's test pattern)"
       ],
-      "dependencies": ["BTN-1", "BTN-2", "BTN-3"],
-      "blocks": ["BTN-7"],
+      "dependencies": [
+        "BTN-1",
+        "BTN-2",
+        "BTN-3"
+      ],
+      "blocks": [
+        "BTN-7"
+      ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 4",
       "notes": ""
@@ -85,8 +115,15 @@
         "Given an Architect-produced ticket, produces implementation output matching expected state shape",
         "Cannot write outside its declared scope"
       ],
-      "dependencies": ["BTN-1", "BTN-2", "BTN-3", "BTN-4"],
-      "blocks": ["BTN-7"],
+      "dependencies": [
+        "BTN-1",
+        "BTN-2",
+        "BTN-3",
+        "BTN-4"
+      ],
+      "blocks": [
+        "BTN-7"
+      ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 5",
       "notes": "Built against Architect's output shape once BTN-4 lands."
@@ -104,16 +141,23 @@
         "Tests/checks are re-run from a clean checkout, not read from Driver's self-reported pass/fail",
         "Cannot write outside its declared scope"
       ],
-      "dependencies": ["BTN-1", "BTN-2", "BTN-3", "BTN-5"],
-      "blocks": ["BTN-7"],
+      "dependencies": [
+        "BTN-1",
+        "BTN-2",
+        "BTN-3",
+        "BTN-5"
+      ],
+      "blocks": [
+        "BTN-7"
+      ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 6; plan.md Risks section; github.com/Sdraugel/albert clean-tree verification pattern",
-      "notes": "Prompt design for consistent root-cause articulation needs explicit attention, not just plumbing — flagged in plan.md risks. Clean-tree re-verification prevents Reviewer from trusting a producer's self-report, borrowed from Albert's verifier design."
+      "notes": "Prompt design for consistent root-cause articulation needs explicit attention, not just plumbing \u2014 flagged in plan.md risks. Clean-tree re-verification prevents Reviewer from trusting a producer's self-report, borrowed from Albert's verifier design."
     },
     {
       "id": "BTN-7",
       "phase": "implementation",
-      "title": "Graph wiring — StateGraph, edges, interrupt points",
+      "title": "Graph wiring \u2014 StateGraph, edges, interrupt points",
       "status": "not-started",
       "priority": "P1",
       "description": "Wire Architect, Driver, and Reviewer into a LangGraph StateGraph with the correct edges and interrupt pause points.",
@@ -121,8 +165,15 @@
         "A ticket flows Architect -> Driver -> Reviewer end-to-end with no interrupt trigger firing",
         "Graph pauses at each defined interrupt point rather than proceeding silently"
       ],
-      "dependencies": ["BTN-4", "BTN-5", "BTN-6"],
-      "blocks": ["BTN-8", "BTN-9"],
+      "dependencies": [
+        "BTN-4",
+        "BTN-5",
+        "BTN-6"
+      ],
+      "blocks": [
+        "BTN-8",
+        "BTN-9"
+      ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 7",
       "notes": ""
@@ -141,8 +192,12 @@
         "Trigger #5 (infra failure) has a distinct handling path, not folded into #1 or #3",
         "Trigger #6 (manual checkpoint) pauses unconditionally at a user-declared phase, independent of any other trigger"
       ],
-      "dependencies": ["BTN-7"],
-      "blocks": ["BTN-10"],
+      "dependencies": [
+        "BTN-7"
+      ],
+      "blocks": [
+        "BTN-10"
+      ],
       "assignee_role": "driver",
       "source": "spec.md Interrupt Taxonomy; plan.md sequencing step 8",
       "notes": "Critical/security-finding trigger intentionally excluded from v1 per spec.md."
@@ -150,7 +205,7 @@
     {
       "id": "BTN-9",
       "phase": "implementation",
-      "title": "CLI (Typer) — run / resume / status",
+      "title": "CLI (Typer) \u2014 run / resume / status",
       "status": "not-started",
       "priority": "P2",
       "description": "Typer-based CLI entry point wrapping the graph: run a new ticket, resume a paused run, check status.",
@@ -159,11 +214,15 @@
         "`battalion resume` continues a paused/interrupted run from saved state",
         "`battalion status` reports current phase and any pending interrupt for a run"
       ],
-      "dependencies": ["BTN-7"],
-      "blocks": ["BTN-10"],
+      "dependencies": [
+        "BTN-7"
+      ],
+      "blocks": [
+        "BTN-10"
+      ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 9, ADR-003",
-      "notes": "Thinnest layer, wraps already-working internals — deliberately sequenced last among build tickets."
+      "notes": "Thinnest layer, wraps already-working internals \u2014 deliberately sequenced last among build tickets."
     },
     {
       "id": "BTN-10",
@@ -176,7 +235,10 @@
         "All spec.md v1 acceptance criteria pass",
         "A second CLI invocation resumes correctly from a prior run's state file"
       ],
-      "dependencies": ["BTN-8", "BTN-9"],
+      "dependencies": [
+        "BTN-8",
+        "BTN-9"
+      ],
       "blocks": [],
       "assignee_role": "reviewer",
       "source": "spec.md Acceptance Criteria; plan.md sequencing step 10",

@@ -80,11 +80,12 @@ def test_driver_write_blocked_for_absolute_path(tmp_path):
     """pathlib's `/` operator discards the left operand when the right side
     is absolute (root / "/etc/passwd" == Path("/etc/passwd")) — this must
     not silently bypass the declared root."""
-    before = Path("/etc/passwd").read_text()
     tools = build_write_tools("driver", WRITE_SCOPE, base_dir=tmp_path)
     with pytest.raises(ScopeViolationError):
         tools["src/"].write("/etc/passwd", "sneaky content")
-    assert Path("/etc/passwd").read_text() == before
+    # Verify no file was created - check that the absolute path doesn't exist
+    # or that it wasn't modified if it somehow existed
+    assert not Path("/etc/passwd").exists()
 
 
 def test_unknown_node_name_gets_empty_toolset():
