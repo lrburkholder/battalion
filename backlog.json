@@ -108,7 +108,7 @@
       "id": "BTN-5",
       "phase": "implementation",
       "title": "Driver node",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Native LangGraph node rewrite of Driver: implements a ticket in a red-green-refactor cycle, scoped to its declared write paths.",
       "acceptance_criteria": [
@@ -126,7 +126,7 @@
       ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 5",
-      "notes": "Built against Architect's output shape once BTN-4 lands."
+      "notes": "Built against Architect's output shape once BTN-4 lands. SCOPE NOTE: implements scoped multi-file output from a single LLM call, per this ticket's literal AC. Does not execute the tests it writes to verify real red-then-green \u2014 that would require sandboxed pytest execution across multiple LLM calls, a materially bigger capability. Flagged before implementation; deferred, not silently assumed covered."
     },
     {
       "id": "BTN-6",
