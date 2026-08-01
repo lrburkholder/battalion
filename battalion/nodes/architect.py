@@ -13,14 +13,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
+from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import build_write_tools
 from battalion.state.models import RunState, RunStatus
-
-
-class WriteScopeMisconfigured(Exception):
-    """Raised when RunState.write_scope doesn't grant the Architect node a
-    'plan.md' entry — a config error, not a runtime scope violation."""
 
 
 class EmptyPlanContent(Exception):
