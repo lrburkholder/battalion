@@ -160,7 +160,7 @@
       "title": "Graph wiring \u2014 StateGraph, edges, interrupt points",
       "status": "not-started",
       "priority": "P1",
-      "description": "Wire Architect, Driver, and Reviewer into a LangGraph StateGraph with the correct edges and interrupt pause points.",
+      "description": "Wire Architect, Driver (RED/GREEN modes), Reviewer, and Refactorer into a LangGraph StateGraph with the correct edges and interrupt pause points, per the RED -> Reviewer -> GREEN -> Reviewer -> Refactorer -> Reviewer loop (revised during architecture pass -- see plan.md ADR-006 through ADR-009).",
       "acceptance_criteria": [
         "A ticket flows Architect -> Driver -> Reviewer end-to-end with no interrupt trigger firing",
         "Graph pauses at each defined interrupt point rather than proceeding silently"
@@ -168,7 +168,10 @@
       "dependencies": [
         "BTN-4",
         "BTN-5",
-        "BTN-6"
+        "BTN-6",
+        "BTN-11",
+        "BTN-12",
+        "BTN-13"
       ],
       "blocks": [
         "BTN-8",
@@ -176,7 +179,7 @@
       ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 7",
-      "notes": ""
+      "notes": "Dependencies expanded during architecture pass before this ticket was started -- was originally BTN-4/5/6 only."
     },
     {
       "id": "BTN-8",
@@ -200,7 +203,7 @@
       ],
       "assignee_role": "driver",
       "source": "spec.md Interrupt Taxonomy; plan.md sequencing step 8",
-      "notes": "Critical/security-finding trigger intentionally excluded from v1 per spec.md."
+      "notes": "Critical/security-finding trigger intentionally excluded from v1 per spec.md. Trigger #1 now uses per-checkpoint-type counters (ADR-009, built in BTN-12), not a single ticket-wide counter."
     },
     {
       "id": "BTN-9",
@@ -243,6 +246,78 @@
       "assignee_role": "reviewer",
       "source": "spec.md Acceptance Criteria; plan.md sequencing step 10",
       "notes": "This is the milestone gate for v1 completion."
+    },
+    {
+      "id": "BTN-11",
+      "phase": "implementation",
+      "title": "Driver RED/GREEN mode support",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Add a mode: Literal['red','green'] parameter to run_driver (ADR-006). RED mode's prompt asks only for failing test files; GREEN mode's asks only for implementation files against tests that already exist. Both still produce the same {files: {...}} shape.",
+      "acceptance_criteria": [
+        "run_driver accepts a mode parameter; omitting it preserves BTN-5's original combined behavior (non-breaking)",
+        "RED mode's system prompt instructs test-only output; GREEN mode's instructs implementation-only output against existing tests",
+        "Existing BTN-5 tests continue to pass unmodified"
+      ],
+      "dependencies": [
+        "BTN-5"
+      ],
+      "blocks": [
+        "BTN-7",
+        "BTN-13"
+      ],
+      "assignee_role": "driver",
+      "source": "plan.md ADR-006",
+      "notes": "Discovered during architecture pass before BTN-7, not part of original BTN-5 scope."
+    },
+    {
+      "id": "BTN-12",
+      "phase": "implementation",
+      "title": "Reviewer expect_pass parameter + per-checkpoint rejection counters",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Add expect_pass: bool to run_reviewer (ADR-007): accept means the test outcome matches expect_pass, not just 'tests passed'. Add a checkpoint field to RejectionRecord and compute cycle_number per-checkpoint-type rather than globally (ADR-009) -- state schema change, bump schema_version.",
+      "acceptance_criteria": [
+        "expect_pass=False (RED-checkpoint) accepts when tests fail, rejects when they unexpectedly pass",
+        "expect_pass=True (GREEN/REFACTOR-checkpoint) behaves as BTN-6's original pass=accept logic",
+        "RejectionRecord.checkpoint field added; cycle_number increments independently per checkpoint type, confirmed by a test with rejections across two different checkpoints not sharing a counter",
+        "schema_version bumped; existing BTN-1 state persistence tests still pass"
+      ],
+      "dependencies": [
+        "BTN-6",
+        "BTN-1"
+      ],
+      "blocks": [
+        "BTN-7",
+        "BTN-8"
+      ],
+      "assignee_role": "driver",
+      "source": "plan.md ADR-007, ADR-009",
+      "notes": "The expect_pass gap was caught during the architecture pass, not discovered later during BTN-7 wiring -- flagged before any graph code depended on the old always-pass-is-accept behavior."
+    },
+    {
+      "id": "BTN-13",
+      "phase": "implementation",
+      "title": "Refactorer node",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "New node, same shape as Driver: builds its own scoped write tools internally (ADR-008), but calls build_write_tools with node_name='driver' (not 'refactorer') since it shares Driver's declared src/ write_scope entry rather than getting its own. Refactors passing code without changing behavior; re-checked by Reviewer with expect_pass=True.",
+      "acceptance_criteria": [
+        "run_refactorer produces file writes under src/, using Driver's write_scope entry (verified: no 'refactorer' key needed in write_scope for this to work)",
+        "Cannot write outside the shared scope (same structural guarantee as Driver, verified via BTN-2's test pattern)",
+        "Loads its own prompt from prompts/refactorer.md by default, with override support matching the other nodes"
+      ],
+      "dependencies": [
+        "BTN-2",
+        "BTN-3",
+        "BTN-11"
+      ],
+      "blocks": [
+        "BTN-7"
+      ],
+      "assignee_role": "driver",
+      "source": "plan.md ADR-008",
+      "notes": "New node discovered during architecture pass -- not in original v1 scope (Architect/Driver/Reviewer only)."
     }
   ]
 }
