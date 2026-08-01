@@ -10,9 +10,10 @@ which is the strongest form of ADR-002's guarantee.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
+from battalion.llm.response import extract_content
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import build_write_tools
@@ -23,15 +24,6 @@ class EmptyPlanContent(Exception):
     """Raised when the LLM returns empty/whitespace-only content. Without
     this check, an empty plan.md would be written and the ticket would
     silently advance to 'driver' as if the plan succeeded."""
-
-
-def extract_content(response: Any) -> str:
-    """Extract the text content from a litellm/OpenAI-shaped completion
-    response, whether it's a dict (as in tests) or a real ModelResponse
-    object (attribute access)."""
-    if isinstance(response, dict):
-        return response["choices"][0]["message"]["content"]
-    return response.choices[0].message.content
 
 
 def run_architect(
