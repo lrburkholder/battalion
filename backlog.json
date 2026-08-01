@@ -44,7 +44,7 @@
       "id": "BTN-3",
       "phase": "implementation",
       "title": "LiteLLM client wrapper",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Per-node model configuration wrapper over LiteLLM, allowing each node to specify its own model/provider independently.",
       "acceptance_criteria": [
