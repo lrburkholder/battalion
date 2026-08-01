@@ -170,3 +170,43 @@ def test_run_architect_rejects_empty_llm_content(tmp_path):
         )
 
     assert not (tmp_path / "plan.md").exists()
+
+
+def test_run_architect_system_prompt_override_takes_effect_over_file_default():
+    captured = {}
+
+    def fake_call_llm(node_name, config, messages, **kwargs):
+        captured["system_content"] = messages[0]["content"]
+        return litellm_style_response("plan content")
+
+    state = make_state()
+    run_architect(
+        state,
+        spec_text="spec",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir="/tmp/unused-in-this-test",
+        call_llm_fn=fake_call_llm,
+        system_prompt="CUSTOM OVERRIDE PROMPT",
+    )
+
+    assert captured["system_content"] == "CUSTOM OVERRIDE PROMPT"
+
+
+def test_run_architect_defaults_to_file_loaded_prompt_when_no_override():
+    captured = {}
+
+    def fake_call_llm(node_name, config, messages, **kwargs):
+        captured["system_content"] = messages[0]["content"]
+        return litellm_style_response("plan content")
+
+    state = make_state()
+    run_architect(
+        state,
+        spec_text="spec",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir="/tmp/unused-in-this-test",
+        call_llm_fn=fake_call_llm,
+    )
+
+    # Comes from prompts/architect.md, not a hardcoded Python string
+    assert "Architect" in captured["system_content"]
