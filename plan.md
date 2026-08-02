@@ -1,12 +1,13 @@
 # Battalion v1 — Plan
 
 ## Architecture Overview
-A LangGraph `StateGraph` with three nodes (Architect, Driver, Reviewer), Pydantic
-models as the single state contract, LiteLLM as the model access layer, and
-Typer as the CLI entry point. State persists to local JSON files matching the
-`regiment-backlog.json` schema conventions. Each node is bound only to the file
-write tools its declared scope permits — scope violation is structurally
-impossible, not policy-checked.
+A LangGraph `StateGraph` with four nodes (Architect, Driver, Reviewer,
+Refactorer — Refactorer added during the architecture pass, see ADR-008),
+Pydantic models as the single state contract, LiteLLM as the model access
+layer, and Typer as the CLI entry point. State persists to local JSON files
+matching the `regiment-backlog.json` schema conventions. Each node is bound
+only to the file write tools its declared scope permits — scope violation is
+structurally impossible, not policy-checked.
 
 ```
 battalion/
@@ -17,16 +18,21 @@ battalion/
     persistence.py         # load/save to local JSON, schema_version handling
   nodes/
     architect.py
-    driver.py
-    reviewer.py
+    driver.py               # gains mode: Literal["red", "green"] (BTN-11)
+    reviewer.py              # gains expect_pass: bool (BTN-12)
+    refactorer.py            # new (BTN-13) — shares driver's write_scope entry
+    errors.py
   scope/
     tool_binding.py        # per-node scoped write-tool factory
   interrupts/
-    triggers.py            # the 5 v1 interrupt trigger checks
+    triggers.py            # the 6 v1 interrupt trigger checks
     budget.py               # per-graph-run budget tracking
   llm/
     litellm_client.py       # per-node model config wrapper
 ```
+*(See "Module Layout (updated)" below for the post-architecture-pass diff —
+this block reflects the current shipped shape directly rather than as a
+diff against the original 3-node draft.)*
 
 ## ADR Log
 
@@ -172,11 +178,13 @@ battalion/
 12. CLI (run / resume / status)
 13. End-to-end acceptance criteria validation
 
-Steps 1-6 are unchanged from the original plan and already shipped. Steps
-7-9 are new, discovered during the architecture pass that preceded graph
-wiring — deliberately sequenced before graph wiring (originally step 7,
-now step 10) rather than after, since wiring the graph against the old
-3-node assumption would need redoing once these land.
+Steps 1-11 are complete and shipped (BTN-1 through BTN-8, BTN-11, BTN-12,
+BTN-13). Steps 7-9 were new, discovered during the architecture pass that
+preceded graph wiring — deliberately sequenced before graph wiring
+(originally step 7, now step 10) rather than after, since wiring the graph
+against the old 3-node assumption would need redoing once these land. Steps
+12 (CLI) and 13 (end-to-end acceptance validation) remain open — see
+backlog.json BTN-9 and BTN-10.
 
 ## Risks / Watch Items
 - **[RESOLVED during architecture pass, ADR-007]** Reviewer originally
