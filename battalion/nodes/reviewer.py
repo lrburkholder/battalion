@@ -1,13 +1,20 @@
-"""Reviewer node (BTN-6).
+"""Reviewer node (BTN-6, extended in BTN-12).
 
-Deliberately phase-agnostic: Reviewer's whole job is "copy the current
-src/ tree into an isolated location, run the tests that exist there, and
-report what happened." It never trusts a self-reported pass/fail from
-Driver (there isn't one to trust — Driver just writes files), and it
-doesn't know or care whether Driver is mid-RED or mid-GREEN. That's what
-lets it slot into either checkpoint of a RED -> Reviewer -> GREEN ->
-Refactorer loop without any Reviewer-side rework — see the conversation
-that led to this design before BTN-6 was implemented.
+Reviewer's core mechanism is unchanged from BTN-6: copy the current src/
+tree into an isolated location, re-run the tests that exist there via
+subprocess, never trust a self-reported pass/fail. What BTN-12 adds is
+checkpoint-awareness (ADR-007, ADR-009): which outcome counts as "accept"
+depends on the checkpoint being reviewed --
+
+  RED_CHECK:      accept means tests FAIL (the feature genuinely doesn't
+                   exist yet) -- accepting means advancing to Driver(GREEN)
+  GREEN_CHECK:     accept means tests PASS -- advancing to Refactorer
+  REFACTOR_CHECK:  accept means tests still PASS after refactoring --
+                   advancing to 'done'
+
+This corrects a real bug caught during the architecture pass before BTN-7:
+BTN-6's original always-pass-is-accept logic would have silently rejected
+every correctly-written RED-check test.
 
 Reviewer's declared write scope is always empty — it never writes files,
 only reads (to build the clean copy) and calls the LLM to articulate a
@@ -27,7 +34,30 @@ from battalion.llm.response import extract_content
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import build_write_tools
-from battalion.state.models import RejectionRecord, RunState, RunStatus
+from battalion.state.models import CheckpointType, RejectionRecord, RunState, RunStatus
+
+# expect_pass derived from checkpoint (ADR-007) -- one source of truth,
+# rather than a separate expect_pass param a caller could set
+# inconsistently with the checkpoint (e.g. RED_CHECK + expect_pass=True).
+_EXPECT_PASS_BY_CHECKPOINT: dict[CheckpointType, bool] = {
+    CheckpointType.RED_CHECK: False,
+    CheckpointType.GREEN_CHECK: True,
+    CheckpointType.REFACTOR_CHECK: True,
+}
+
+# Phase to move to when the checkpoint's expectation is met (accept).
+_NEXT_PHASE_ON_ACCEPT: dict[CheckpointType, str] = {
+    CheckpointType.RED_CHECK: "driver",       # correctly-failing test confirmed -> do GREEN
+    CheckpointType.GREEN_CHECK: "refactorer",  # tests pass -> refactor step
+    CheckpointType.REFACTOR_CHECK: "done",     # still passes after refactor -> complete
+}
+
+# Phase to retry when the checkpoint's expectation is NOT met (reject).
+_RETRY_PHASE_ON_REJECT: dict[CheckpointType, str] = {
+    CheckpointType.RED_CHECK: "driver",        # retry RED
+    CheckpointType.GREEN_CHECK: "driver",      # retry GREEN
+    CheckpointType.REFACTOR_CHECK: "refactorer",  # retry REFACTOR
+}
 
 
 @dataclass
@@ -76,6 +106,7 @@ def run_reviewer(
     state: RunState,
     base_dir: str | Path,
     llm_config: NodeLLMConfig,
+    checkpoint: CheckpointType,
     call_llm_fn: Callable = call_llm,
     system_prompt: str | None = None,
     prompts_dir: str | Path | None = None,
@@ -83,8 +114,15 @@ def run_reviewer(
     run_tests_fn: Callable[[Path], TestRunResult] = run_tests_via_subprocess,
 ) -> RunState:
     """Run the Reviewer node: independently re-run tests from a clean copy
-    of the current src/ tree, and return updated state — accepted (phase
-    'done') or rejected (phase back to 'driver', rejection cause recorded).
+    of the current src/ tree, and return updated state.
+
+    checkpoint (required, BTN-12/ADR-007) determines both which outcome
+    counts as accept (RED_CHECK expects failure; GREEN_CHECK and
+    REFACTOR_CHECK expect success) and where the ticket goes next on
+    accept/reject (_NEXT_PHASE_ON_ACCEPT / _RETRY_PHASE_ON_REJECT above).
+    There's no default — silently defaulting would re-hide the RED-check
+    polarity bug this parameter exists to fix.
+
     Raises WriteScopeMisconfigured or EmptyReviewContent on failure; never
     silently swallows either."""
     write_tools = build_write_tools("reviewer", state.write_scope, base_dir=base_dir)
@@ -108,8 +146,13 @@ def run_reviewer(
         # repeated review runs don't leak directories under /tmp.
         shutil.rmtree(clean_dir, ignore_errors=True)
 
-    if result.passed:
-        return state.model_copy(update={"phase": "done", "status": RunStatus.DONE})
+    expect_pass = _EXPECT_PASS_BY_CHECKPOINT[checkpoint]
+    accepted = result.passed == expect_pass
+
+    if accepted:
+        next_phase = _NEXT_PHASE_ON_ACCEPT[checkpoint]
+        next_status = RunStatus.DONE if next_phase == "done" else RunStatus.IN_PROGRESS
+        return state.model_copy(update={"phase": next_phase, "status": next_status})
 
     resolved_prompt = system_prompt or load_system_prompt(
         "reviewer", prompts_dir=prompts_dir
@@ -127,12 +170,17 @@ def run_reviewer(
             "refusing to record an unusable cause string."
         )
 
-    cycle_number = len(state.reviewer_rejection_history) + 1
+    # Per-checkpoint-type counter (ADR-009): a RED-check rejection and a
+    # GREEN-check rejection don't share a cycle count.
+    same_checkpoint_count = sum(
+        1 for r in state.reviewer_rejection_history if r.checkpoint == checkpoint
+    )
+    cycle_number = same_checkpoint_count + 1
     new_history = state.reviewer_rejection_history + [
-        RejectionRecord(cause=cause.strip(), cycle_number=cycle_number)
+        RejectionRecord(cause=cause.strip(), cycle_number=cycle_number, checkpoint=checkpoint)
     ]
     return state.model_copy(update={
-        "phase": "driver",
+        "phase": _RETRY_PHASE_ON_REJECT[checkpoint],
         "status": RunStatus.IN_PROGRESS,
         "reviewer_rejection_history": new_history,
     })
