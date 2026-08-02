@@ -82,26 +82,108 @@ and each node needs a corresponding prompt file to exist before it can run
 without an explicit override — missing/empty files raise `PromptNotFound`
 rather than silently falling back to nothing.
 
+### ADR-006: Driver gets a mode parameter (RED / GREEN)
+**Decision:** `run_driver` takes a `mode: Literal["red", "green"]` parameter.
+RED mode's prompt/output contract asks only for failing test files; GREEN
+mode's asks only for implementation files against tests that already
+exist. Both still return the same `{"files": {...}}` shape — mode changes
+what the LLM is asked to produce, not the extraction/write mechanics.
+**Reasoning:** Splits Driver's original single "write tests + implementation
+together" call (BTN-5) into two checkpointed steps, so Reviewer can verify
+red-then-green independently instead of trusting one combined LLM call to
+get both right at once.
+**Consequence:** BTN-5's original combined-call behavior needs a follow-on
+ticket (BTN-11) to add mode support — this isn't a breaking rewrite of
+BTN-5, mode is a new parameter, existing callers/tests are unaffected
+until something actually passes a mode.
+
+### ADR-007: Reviewer gets an expected-outcome parameter
+**Decision:** `run_reviewer` takes an `expect_pass: bool` parameter.
+Accept = tests match the expected outcome (fail, for RED-checkpoint; pass,
+for GREEN/REFACTOR-checkpoints), not just "tests passed."
+**Reasoning:** Caught during this architecture pass: BTN-6 as originally
+built always treats passing as accept, which is backwards for the RED
+checkpoint (a correctly-written failing test should be accepted, not
+rejected). Without this, wiring BTN-7 straight onto BTN-6 would have
+silently broken the RED checkpoint.
+**Consequence:** Follow-on ticket (BTN-12) needed; also touches the state
+schema (see ADR-009).
+
+### ADR-008: Refactorer node, sharing Driver's write-scope entry
+**Decision:** New Refactorer node, same shape as Driver (builds its own
+scoped write tools internally, per the pattern established in BTN-4).
+Refactorer builds its tools using the `"driver"` key in `write_scope`, not
+a separate `"refactorer"` key — it shares the identical `src/` scope Driver
+has, rather than write_scope carrying two entries with duplicate content
+that could drift out of sync if the path ever changed.
+**Reasoning:** Refactorer and Driver touch the same files for related
+reasons (implementation code); a single shared scope declaration is the
+source of truth for "who can write src/," rather than needing to keep two
+entries consistent by hand.
+**Consequence:** `build_write_tools` is called with `node_name="driver"`
+from within `run_refactorer`, not `"refactorer"` — worth a comment at the
+call site so it doesn't read as a bug.
+
+### ADR-009: Per-checkpoint-type rejection counters
+**Decision:** Interrupt trigger #1 (same root cause rejected twice) counts
+separately per checkpoint type (RED-check, GREEN-check, refactor-check)
+rather than one counter for the whole ticket. `RejectionRecord` gets a new
+`checkpoint` field; `cycle_number` is computed per-checkpoint-type, not
+globally.
+**Reasoning:** A rejection during the RED checkpoint and a rejection
+during the GREEN checkpoint aren't "the same kind of failure happening
+twice" even if they happen to share a root-cause string — conflating them
+would trigger the interrupt on unrelated coincidences instead of genuine
+repeated failure at the same stage.
+**Consequence:** This is a state schema change (additive field on
+`RejectionRecord`), which is why it's captured as its own ADR rather than
+folded silently into ADR-007 — worth a schema_version bump when BTN-12
+lands, per ADR-001's versioned-contract discipline.
+
+## Module Layout (updated)
+```
+battalion/
+  ...
+  nodes/
+    architect.py
+    driver.py       # gains mode: Literal["red", "green"] (BTN-11)
+    reviewer.py      # gains expect_pass: bool (BTN-12)
+    refactorer.py    # new (BTN-13) — shares driver's write_scope entry
+    errors.py
+  ...
+```
+
 ## Sequencing (implementation order)
 1. State models + persistence (nothing else can be built without this)
 2. Per-node tool binding / write-scope mechanism
 3. LiteLLM client wrapper
 4. Architect node
-5. Driver node
-6. Reviewer node
-7. Graph wiring (edges, node sequencing)
-8. Interrupt triggers (1–5) + budget tracking
-9. CLI (run / resume / status)
-10. End-to-end acceptance criteria validation (per spec.md)
+5. Driver node (combined mode, per original BTN-5 scope)
+6. Reviewer node (clean-tree verification, originally pass/fail-only)
+7. **[REVISED]** Driver RED/GREEN mode support (BTN-11)
+8. **[REVISED]** Reviewer expect_pass parameter + per-checkpoint rejection
+   counters (BTN-12) — depends on the RejectionRecord schema change (ADR-009)
+9. **[REVISED]** Refactorer node (BTN-13) — depends on BTN-11's mode pattern
+10. Graph wiring (edges, node sequencing, interrupt points) — now must wire
+    the full RED -> Reviewer -> GREEN -> Reviewer -> Refactorer -> Reviewer
+    loop, not the original linear 3-node chain
+11. Interrupt triggers (1-6) + budget tracking — trigger #1 now needs
+    per-checkpoint counter logic per ADR-009
+12. CLI (run / resume / status)
+13. End-to-end acceptance criteria validation
 
-Rationale: 1–3 are shared infrastructure every node depends on, so they're
-built once and built first. Nodes are built in their execution order (4–6)
-since Driver's tests are easiest to write once Architect's output shape is
-known, and same for Reviewer against Driver's output. Graph wiring and
-interrupts come after the nodes exist to wire together. CLI last since it's
-the thinnest layer, wrapping already-working internals.
+Steps 1-6 are unchanged from the original plan and already shipped. Steps
+7-9 are new, discovered during the architecture pass that preceded graph
+wiring — deliberately sequenced before graph wiring (originally step 7,
+now step 10) rather than after, since wiring the graph against the old
+3-node assumption would need redoing once these land.
 
 ## Risks / Watch Items
+- **[RESOLVED during architecture pass, ADR-007]** Reviewer originally
+  always treated "tests pass" as accept. This is wrong for the RED
+  checkpoint, where a correctly-written failing test should be accepted.
+  Caught before BTN-7 wired the graph against it — would have silently
+  broken the RED checkpoint otherwise.
 - Interrupt trigger #1 (same root cause twice) requires the Reviewer node to
   articulate rejection causes consistently enough to compare across cycles —
   this needs its own prompt-design attention, not just plumbing
