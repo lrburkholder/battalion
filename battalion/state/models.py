@@ -20,12 +20,26 @@ class RunStatus(str, Enum):
     FAILED_INFRA = "failed-infra"
 
 
+class CheckpointType(str, Enum):
+    """Which stage of the RED -> Reviewer -> GREEN -> Reviewer ->
+    Refactorer -> Reviewer loop a review is checking (plan.md ADR-006
+    through ADR-009)."""
+
+    RED_CHECK = "red-check"
+    GREEN_CHECK = "green-check"
+    REFACTOR_CHECK = "refactor-check"
+
+
 class RejectionRecord(BaseModel):
     """One Reviewer rejection, used to detect interrupt trigger #1
-    (same root cause rejected twice)."""
+    (same root cause rejected twice). checkpoint (BTN-12, ADR-009) scopes
+    cycle_number to be per-checkpoint-type, not ticket-wide — a rejection
+    during the RED check and one during the GREEN check aren't "the same
+    failure happening twice" even if they share a cause string."""
 
     cause: str
     cycle_number: int
+    checkpoint: CheckpointType
 
 
 class InterruptLogEntry(BaseModel):

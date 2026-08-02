@@ -274,7 +274,7 @@
       "id": "BTN-12",
       "phase": "implementation",
       "title": "Reviewer expect_pass parameter + per-checkpoint rejection counters",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Add expect_pass: bool to run_reviewer (ADR-007): accept means the test outcome matches expect_pass, not just 'tests passed'. Add a checkpoint field to RejectionRecord and compute cycle_number per-checkpoint-type rather than globally (ADR-009) -- state schema change, bump schema_version.",
       "acceptance_criteria": [

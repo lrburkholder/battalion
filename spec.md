@@ -43,8 +43,10 @@ Fields per ticket/run (draft — to be refined during Architect phase):
   done, failed-infra)
 - `phase` (which node currently owns the ticket)
 - `write_scope` (per-node declared file scope, checked before writes)
-- `reviewer_rejection_history` (list of {cause, cycle_number} — root-cause
-  tracked for interrupt trigger #1)
+- `reviewer_rejection_history` (list of {cause, cycle_number, checkpoint} —
+  root-cause tracked for interrupt trigger #1. checkpoint (added in v1.1,
+  BTN-12) scopes cycle_number to be per-checkpoint-type (red-check,
+  green-check, refactor-check), not ticket-wide — see plan.md ADR-009.)
 - `retry_bound` (configurable per ticket, per open decision)
 - `budget` (tracked per graph run, not per node)
 - `interrupt_log` (list of {trigger, timestamp, resolution})
