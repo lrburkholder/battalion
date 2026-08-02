@@ -2,7 +2,7 @@
 import pytest
 from pydantic import ValidationError
 
-from battalion.state.models import RunState, RunStatus, RejectionRecord, InterruptLogEntry
+from battalion.state.models import RunState, RunStatus, RejectionRecord, InterruptLogEntry, CheckpointType
 
 
 def make_valid_state(**overrides):
@@ -39,7 +39,9 @@ def test_missing_required_field_raises():
 
 
 def test_rejection_history_tracks_cause_and_cycle():
-    record = RejectionRecord(cause="missing null check", cycle_number=1)
+    record = RejectionRecord(
+        cause="missing null check", cycle_number=1, checkpoint=CheckpointType.GREEN_CHECK
+    )
     state = make_valid_state(reviewer_rejection_history=[record])
     assert state.reviewer_rejection_history[0].cause == "missing null check"
     assert state.reviewer_rejection_history[0].cycle_number == 1
@@ -74,3 +76,26 @@ def test_budget_exceeded_false_when_under_limit():
     from battalion.state.models import Budget
 
     assert Budget(limit=10, used=5).exceeded() is False
+
+
+def test_rejection_record_requires_checkpoint():
+    from battalion.state.models import CheckpointType
+
+    record = RejectionRecord(cause="x", cycle_number=1, checkpoint=CheckpointType.RED_CHECK)
+    assert record.checkpoint == CheckpointType.RED_CHECK
+
+    with pytest.raises(ValidationError):
+        RejectionRecord(cause="x", cycle_number=1)  # missing checkpoint
+
+
+def test_rejection_record_checkpoint_must_be_valid_enum_value():
+    with pytest.raises(ValidationError):
+        RejectionRecord(cause="x", cycle_number=1, checkpoint="not-a-real-checkpoint")
+
+
+def test_checkpoint_type_has_three_values():
+    from battalion.state.models import CheckpointType
+
+    assert CheckpointType.RED_CHECK == "red-check"
+    assert CheckpointType.GREEN_CHECK == "green-check"
+    assert CheckpointType.REFACTOR_CHECK == "refactor-check"
