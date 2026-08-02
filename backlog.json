@@ -132,7 +132,7 @@
       "id": "BTN-6",
       "phase": "implementation",
       "title": "Reviewer node",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Native LangGraph node rewrite of Reviewer: skeptical review of Driver's output, with consistent root-cause articulation on rejection to support interrupt trigger #1. Verification is re-run from a clean tree independent of Driver's working state, not taken on Driver's self-report.",
       "acceptance_criteria": [
