@@ -8,6 +8,7 @@ import pytest
 
 from battalion.nodes.driver import (
     EmptyDriverOutput,
+    InvalidModeOutput,
     MalformedDriverOutput,
     extract_files,
     run_driver,
@@ -237,3 +238,145 @@ def test_run_driver_system_prompt_override_takes_effect(tmp_path):
     )
 
     assert captured["system_content"] == "CUSTOM DRIVER PROMPT"
+
+
+# --- BTN-11: RED/GREEN mode support ---
+
+def test_run_driver_no_mode_preserves_original_combined_behavior(tmp_path):
+    """Omitting mode entirely must load prompts/driver.md, unchanged from
+    BTN-5 -- this is the non-breaking guarantee from BTN-11's AC."""
+    captured = {}
+
+    def fake_call_llm(node_name, config, messages, **kwargs):
+        captured["system_content"] = messages[0]["content"]
+        return files_response({"module.py": "x = 1", "test_module.py": "def test_x(): pass"})
+
+    run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=fake_call_llm,
+    )
+
+    # Comes from the original driver.md, not a red/green variant
+    assert "Driver" in captured["system_content"]
+    assert "RED" not in captured["system_content"].upper() or "red-green-refactor" in captured["system_content"].lower()
+
+
+def test_run_driver_red_mode_loads_red_prompt(tmp_path):
+    captured = {}
+
+    def fake_call_llm(node_name, config, messages, **kwargs):
+        captured["system_content"] = messages[0]["content"]
+        return files_response({"test_module.py": "def test_x(): assert False"})
+
+    run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=fake_call_llm,
+        mode="red",
+    )
+
+    assert "test" in captured["system_content"].lower()
+
+
+def test_run_driver_green_mode_loads_green_prompt(tmp_path):
+    captured = {}
+
+    def fake_call_llm(node_name, config, messages, **kwargs):
+        captured["system_content"] = messages[0]["content"]
+        return files_response({"module.py": "def x(): return True"})
+
+    run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=fake_call_llm,
+        mode="green",
+    )
+
+    assert "implementation" in captured["system_content"].lower()
+
+
+def test_run_driver_invalid_mode_raises_clear_error(tmp_path):
+    with pytest.raises(ValueError):
+        run_driver(
+            make_state(),
+            ticket_text="ticket",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({"module.py": "x = 1"}),
+            mode="purple",
+        )
+
+
+def test_run_driver_red_mode_accepts_test_files(tmp_path):
+    updated = run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: files_response({"test_module.py": "def test_x(): assert False"}),
+        mode="red",
+    )
+    assert (tmp_path / "src" / "test_module.py").exists()
+    assert updated.phase == "reviewer"
+
+
+def test_run_driver_red_mode_rejects_non_test_files(tmp_path):
+    with pytest.raises(InvalidModeOutput):
+        run_driver(
+            make_state(),
+            ticket_text="ticket",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({"module.py": "x = 1"}),
+            mode="red",
+        )
+    assert not (tmp_path / "src" / "module.py").exists()
+
+
+def test_run_driver_green_mode_accepts_implementation_files(tmp_path):
+    updated = run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: files_response({"module.py": "def x(): return True"}),
+        mode="green",
+    )
+    assert (tmp_path / "src" / "module.py").exists()
+    assert updated.phase == "reviewer"
+
+
+def test_run_driver_green_mode_rejects_test_files(tmp_path):
+    with pytest.raises(InvalidModeOutput):
+        run_driver(
+            make_state(),
+            ticket_text="ticket",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({"test_module.py": "def test_x(): pass"}),
+            mode="green",
+        )
+    assert not (tmp_path / "src" / "test_module.py").exists()
+
+
+def test_run_driver_mode_none_skips_test_file_enforcement(tmp_path):
+    """No mode -> original combined behavior, no filename restrictions."""
+    updated = run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: files_response(
+            {"module.py": "x = 1", "test_module.py": "def test_x(): assert True"}
+        ),
+    )
+    assert (tmp_path / "src" / "module.py").exists()
+    assert (tmp_path / "src" / "test_module.py").exists()
+    assert updated.phase == "reviewer"

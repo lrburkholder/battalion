@@ -251,7 +251,7 @@
       "id": "BTN-11",
       "phase": "implementation",
       "title": "Driver RED/GREEN mode support",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Add a mode: Literal['red','green'] parameter to run_driver (ADR-006). RED mode's prompt asks only for failing test files; GREEN mode's asks only for implementation files against tests that already exist. Both still produce the same {files: {...}} shape.",
       "acceptance_criteria": [
