@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.nodes.errors import WriteScopeMisconfigured
@@ -26,6 +26,7 @@ from battalion.scope.tool_binding import build_write_tools
 from battalion.state.models import RunState, RunStatus
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
+_TEST_FILE_RE = re.compile(r"^test_.*\.py$|.*_test\.py$")
 
 
 class MalformedDriverOutput(Exception):
@@ -36,6 +37,18 @@ class EmptyDriverOutput(Exception):
     """Raised when the LLM returns a files dict with no entries. Without
     this check, the ticket would silently advance to 'reviewer' having
     written nothing."""
+
+
+class InvalidModeOutput(Exception):
+    """Raised when a mode-scoped Driver call (BTN-11) produces files that
+    violate what that mode is allowed to write: RED mode must only write
+    test files, GREEN mode must not write any. Without this, mode is just
+    a prompt suggestion an uncooperative LLM response can silently ignore —
+    same reasoning as ADR-002's structural-over-trust write scope."""
+
+
+def _looks_like_test_file(relative_path: str) -> bool:
+    return bool(_TEST_FILE_RE.match(Path(relative_path).name))
 
 
 def extract_files(response: Any) -> dict[str, str]:
@@ -89,12 +102,26 @@ def run_driver(
     on_violation: Callable[[dict], None] | None = None,
     system_prompt: str | None = None,
     prompts_dir: str | Path | None = None,
+    mode: Literal["red", "green"] | None = None,
 ) -> RunState:
-    """Run the Driver node: produce test + implementation files from
-    ticket_text, write them under the declared 'src/' scope, and return
-    updated state. Raises InfraFailure, WriteScopeMisconfigured,
-    MalformedDriverOutput, EmptyDriverOutput, or ScopeViolationError on
+    """Run the Driver node: produce file writes from ticket_text, write
+    them under the declared 'src/' scope, and return updated state.
+
+    mode (BTN-11, ADR-006), if given, must be "red" or "green":
+      - None (default): original BTN-5 combined behavior — loads
+        prompts/driver.md, no restriction on what files come back. Kept
+        as the default so existing callers are unaffected.
+      - "red": loads prompts/driver-red.md; every returned file must look
+        like a test file (structurally enforced, not just prompted for).
+      - "green": loads prompts/driver-green.md; no returned file may look
+        like a test file.
+
+    Raises InfraFailure, WriteScopeMisconfigured, MalformedDriverOutput,
+    EmptyDriverOutput, InvalidModeOutput, or ScopeViolationError on
     failure — never silently swallows any of them."""
+    if mode is not None and mode not in ("red", "green"):
+        raise ValueError(f"mode must be 'red', 'green', or None, got {mode!r}")
+
     write_tools = build_write_tools(
         "driver", state.write_scope, base_dir=base_dir, on_violation=on_violation
     )
@@ -104,8 +131,9 @@ def run_driver(
             "the Driver node cannot write its output."
         )
 
+    prompt_node_name = "driver" if mode is None else f"driver-{mode}"
     resolved_prompt = system_prompt or load_system_prompt(
-        "driver", prompts_dir=prompts_dir
+        prompt_node_name, prompts_dir=prompts_dir
     )
     messages = [
         {"role": "system", "content": resolved_prompt},
@@ -120,6 +148,20 @@ def run_driver(
             "Driver LLM call returned no files — refusing to advance the "
             "ticket to 'reviewer' having written nothing."
         )
+
+    if mode == "red":
+        non_test_files = [p for p in files if not _looks_like_test_file(p)]
+        if non_test_files:
+            raise InvalidModeOutput(
+                f"RED mode must only produce test files, got non-test "
+                f"file(s): {non_test_files}"
+            )
+    elif mode == "green":
+        test_files = [p for p in files if _looks_like_test_file(p)]
+        if test_files:
+            raise InvalidModeOutput(
+                f"GREEN mode must not produce test files, got: {test_files}"
+            )
 
     tool = write_tools["src/"]
     # Pre-validate every path before writing any of them, so a scope
