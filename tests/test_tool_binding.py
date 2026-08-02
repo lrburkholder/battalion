@@ -79,13 +79,30 @@ def test_violation_triggers_on_violation_callback(tmp_path):
 def test_driver_write_blocked_for_absolute_path(tmp_path):
     """pathlib's `/` operator discards the left operand when the right side
     is absolute (root / "/etc/passwd" == Path("/etc/passwd")) — this must
-    not silently bypass the declared root."""
+    not silently bypass the declared root.
+
+    We probe with an OS-appropriate absolute path and confirm it comes back
+    unchanged (not created if absent, not modified if it happens to already
+    exist), rather than assuming a fixed pre-existing state — /etc/passwd
+    exists on Linux/macOS CI runners but not on Windows dev machines, so
+    asserting non-existence outright is platform-dependent and wrong on
+    either OS depending on where the suite runs.
+    """
+    import os
+
+    probe = "C:\\Windows\\win.ini" if os.name == "nt" else "/etc/passwd"
+    probe_path = Path(probe)
+    existed_before = probe_path.exists()
+    content_before = probe_path.read_bytes() if existed_before else None
+
     tools = build_write_tools("driver", WRITE_SCOPE, base_dir=tmp_path)
     with pytest.raises(ScopeViolationError):
-        tools["src/"].write("/etc/passwd", "sneaky content")
-    # Verify no file was created - check that the absolute path doesn't exist
-    # or that it wasn't modified if it somehow existed
-    assert not Path("/etc/passwd").exists()
+        tools["src/"].write(probe, "sneaky content")
+
+    if existed_before:
+        assert probe_path.read_bytes() == content_before
+    else:
+        assert not probe_path.exists()
 
 
 def test_unknown_node_name_gets_empty_toolset():
