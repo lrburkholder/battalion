@@ -12,15 +12,19 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 **Current Milestone**: v1 (Core Architecture)
 - ✅ **BTN-1**: State models + persistence layer
-- ✅ **BTN-2**: Per-node write-scope tool binding  
+- ✅ **BTN-2**: Per-node write-scope tool binding
 - ✅ **BTN-3**: LiteLLM client wrapper
 - ✅ **BTN-4**: Architect node
-- 🔄 **BTN-5**: Driver node (planned)
-- 🔄 **BTN-6**: Reviewer node (planned)
-- 🔄 **BTN-7**: Graph wiring with interrupt points (planned)
-- 🔄 **BTN-8**: Interrupt triggers (1-6) + budget tracking (planned)
+- ✅ **BTN-5**: Driver node
+- ✅ **BTN-6**: Reviewer node
+- ✅ **BTN-7**: Graph wiring with interrupt points
+- ✅ **BTN-8**: Interrupt triggers (1-6) + budget tracking
 - 🔄 **BTN-9**: CLI (Typer) - run/resume/status (planned)
 - 🔄 **BTN-10**: End-to-end acceptance criteria validation (planned)
+- ✅ **BTN-11**: Driver RED/GREEN mode support
+- ✅ **BTN-12**: Reviewer expect_pass parameter + per-checkpoint rejection counters
+- ✅ **BTN-13**: Refactorer node
+- 🔄 **BTN-14**: Model-diversity constraint (Reviewer must differ from Driver) (planned)
 
 ## Architecture
 
@@ -33,6 +37,13 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
 | `battalion.nodes.architect` | Architecture planning node | ✅ Complete |
+| `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | ✅ Complete |
+| `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | ✅ Complete |
+| `battalion.nodes.refactorer` | Refactor node sharing Driver's write scope (ADR-008) | ✅ Complete |
+| `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | ✅ Complete |
+| `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | ✅ Complete |
+| `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | ✅ Complete |
+| `battalion.cli` | Typer CLI - run/resume/status | 🔄 Planned (BTN-9) |
 
 ### State Schema
 
@@ -95,12 +106,21 @@ python -m pytest tests/ --cov=battalion --cov-report=term-missing
 ```
 battalion/
 ├── __init__.py
+├── graph.py                    # StateGraph wiring, edges, interrupt points (BTN-7)
 ├── llm/
 │   ├── __init__.py
 │   └── litellm_client.py      # Per-node LiteLLM wrapper (BTN-3)
+├── interrupts/
+│   ├── __init__.py
+│   ├── triggers.py            # All 6 v1 interrupt trigger checks (BTN-8)
+│   └── budget.py              # Per-graph-run budget tracking (BTN-8)
 ├── nodes/
 │   ├── __init__.py
-│   └── architect.py            # Architect node (BTN-4)
+│   ├── architect.py           # Architect node (BTN-4)
+│   ├── driver.py               # Driver node, RED/GREEN modes (BTN-5, BTN-11)
+│   ├── reviewer.py             # Reviewer node, expect_pass + per-checkpoint counters (BTN-6, BTN-12)
+│   ├── refactorer.py           # Refactorer node (BTN-13)
+│   └── errors.py               # Shared node error types
 ├── scope/
 │   ├── __init__.py
 │   └── tool_binding.py        # Write-scope tool binding (BTN-2)
@@ -109,11 +129,25 @@ battalion/
     ├── models.py              # State models (BTN-1)
     └── persistence.py          # JSON persistence (BTN-1)
 
+prompts/                        # Node system prompts, overridable per node
+├── architect.md
+├── driver.md
+├── driver-red.md
+├── driver-green.md
+├── reviewer.md
+└── refactorer.md
+
 tests/
 ├── test_architect_node.py     # Architect node tests
+├── test_driver_node.py        # Driver node tests
+├── test_reviewer_node.py      # Reviewer node tests
+├── test_refactorer_node.py    # Refactorer node tests
+├── test_graph.py              # StateGraph wiring tests
+├── test_interrupts.py         # Interrupt trigger tests
 ├── test_litellm_client.py     # LiteLLM client tests
 ├── test_models.py            # State model tests
 ├── test_persistence.py        # Persistence tests
+├── test_prompt_loader.py      # Prompt loading/override tests
 └── test_tool_binding.py       # Tool binding tests
 
 # Configuration
@@ -164,11 +198,12 @@ See [LICENSE](LICENSE) for full license text.
 ## Roadmap
 
 ### v1 Milestone (Current Focus)
-- Complete Driver and Reviewer nodes
-- Implement full graph wiring with LangGraph
-- Add all interrupt trigger implementations
-- Build CLI entry points
-- End-to-end acceptance testing
+- ✅ Driver, Reviewer, and Refactorer nodes complete
+- ✅ Full graph wiring with LangGraph (RED → Reviewer → GREEN → Reviewer → Refactorer → Reviewer loop)
+- ✅ All 6 interrupt trigger implementations + budget tracking
+- 🔄 Build CLI entry points (BTN-9)
+- 🔄 End-to-end acceptance testing (BTN-10)
+- 🔄 Model-diversity constraint between Driver and Reviewer (BTN-14)
 
 ### Future Enhancements
 - Researcher, Specifier, Teacher nodes (post-v1)

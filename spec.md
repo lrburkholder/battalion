@@ -2,15 +2,19 @@
 
 ## Goal
 Build Battalion: a LangGraph-based orchestrator that runs Architect → Driver →
-Reviewer as a connected graph with explicit, human-controlled interrupt points,
-replacing manual slash-command handoff with handoff-to-orchestrator while
-preserving human oversight at defined decision points. Battalion's first
-project is itself (dogfooding) — this spec is produced using the
-Researcher/Specifier methodology it's meant to eventually run automatically.
+Reviewer → Refactorer as a connected graph with explicit, human-controlled
+interrupt points, replacing manual slash-command handoff with
+handoff-to-orchestrator while preserving human oversight at defined decision
+points. Battalion's first project is itself (dogfooding) — this spec is
+produced using the Researcher/Specifier methodology it's meant to eventually
+run automatically.
 
 ## In Scope (v1)
-- LangGraph graph with three nodes: Architect, Driver, Reviewer — full rewrites,
-  not wrappers over the existing Copilot prompts or Regi- agents
+- LangGraph graph with four nodes: Architect, Driver, Reviewer, Refactorer —
+  full rewrites, not wrappers over the existing Copilot prompts or Regi-
+  agents. Refactorer was added during the architecture pass (see plan.md
+  ADR-008) to complete the RED → Reviewer → GREEN → Reviewer → Refactorer →
+  Reviewer loop; not part of the original spec draft.
 - LiteLLM as the model access layer (per-node model configurability, not
   hardcoded to one provider)
 - Local JSON as the default state/ticket persistence layer, following
@@ -93,7 +97,7 @@ the ticket's state at creation, adjustable by the human at any interrupt.
 ## Acceptance Criteria (v1 milestone)
 - A ticket can flow Architect → Driver → Reviewer end-to-end without human
   intervention when no interrupt trigger fires
-- Each of the 5 interrupt triggers can be independently demonstrated (a
+- Each of the 6 interrupt triggers can be independently demonstrated (a
   scenario exists that reliably fires each one)
 - A paused run can be resumed by a human after review, from the CLI
 - No node can write outside its declared scope, verified by attempting an
