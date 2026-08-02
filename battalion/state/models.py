@@ -74,3 +74,4 @@ class RunState(BaseModel):
     retry_bound: int
     budget: Budget
     interrupt_log: list[InterruptLogEntry] = Field(default_factory=list)
+    manual_checkpoints: list[str] = Field(default_factory=list)
