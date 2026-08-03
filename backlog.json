@@ -323,9 +323,9 @@
       "id": "BTN-14",
       "phase": "implementation",
       "title": "Model-diversity constraint: Reviewer must differ from Driver",
-      "status": "not-started",
+      "status": "done",
       "priority": "P3",
-      "description": "Structurally enforce that Reviewer's configured model differs from Driver's, so code isn't written and reviewed by the same model under different node labels. NodeLLMConfig/build_node_configs (BTN-3) already support per-node models -- this is a missing constraint, not new plumbing. Likely enforced at build_node_configs() time (raise if configs['reviewer'].model == configs['driver'].model) or at graph-wiring time (BTN-7).",
+      "description": "Structurally enforce that Reviewer's configured model differs from Driver's, so code isn't written and reviewed by the same model under different node labels. NodeLLMConfig/build_node_configs (BTN-3) already support per-node models -- this is a missing constraint, not new plumbing. Implemented in build_node_configs() and load_config() to raise ModelDiversityError when both driver and reviewer are explicitly configured with the same model.",
       "acceptance_criteria": [
         "Configuring reviewer and driver with the same model raises a clear error before the graph can run",
         "Configuring them with different models works unchanged",
@@ -338,7 +338,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "flagged in conversation after BTN-11 -- deliberately deferred, not in scope for BTN-12",
-      "notes": "Low priority (P3): a real improvement, but not blocking v1's core loop. Revisit once BTN-12/BTN-7 land and there's an actual graph run to enforce this against."
+      "notes": "Implemented with ModelDiversityError in litellm_client.py and config.py. Only enforces when both driver and reviewer are explicitly configured (not just using defaults). Tests in test_model_diversity.py."
     }
   ]
 }

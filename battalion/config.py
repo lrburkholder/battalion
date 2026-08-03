@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from battalion.llm.litellm_client import NodeLLMConfig
+from battalion.llm.litellm_client import NodeLLMConfig, ModelDiversityError
 
 
 DEFAULT_CONFIG_PATH = Path("battalion.config.yaml")
@@ -71,12 +71,41 @@ def load_config(
     # If no models configured at all, provide a default
     if not models:
         models["default"] = NodeLLMConfig(model="gpt-4o-mini")
-
+    
+    # BTN-14: Enforce model diversity between Driver and Reviewer
+    # Track which models were explicitly configured (not just default fallback)
+    driver_explicit = "driver" in yaml_data.get("models", {})
+    reviewer_explicit = "reviewer" in yaml_data.get("models", {})
+    
+    # Also check CLI overrides
+    if cli_overrides:
+        if "model_driver" in cli_overrides and cli_overrides["model_driver"]:
+            driver_explicit = True
+        if "model_reviewer" in cli_overrides and cli_overrides["model_reviewer"]:
+            reviewer_explicit = True
+    
+    # Also check env overrides
+    if "driver" in env_models:
+        driver_explicit = True
+    if "reviewer" in env_models:
+        reviewer_explicit = True
+    
+    # Only enforce when both are explicitly configured
+    if driver_explicit and reviewer_explicit:
+        driver_config = models.get("driver") or models.get("default")
+        reviewer_config = models.get("reviewer") or models.get("default")
+        if driver_config and reviewer_config and driver_config.model == reviewer_config.model:
+            raise ModelDiversityError(
+                f"Driver and Reviewer cannot use the same model. "
+                f"Both are configured with model '{driver_config.model}'. "
+                f"Please configure different models for driver and reviewer nodes."
+            )
+    
     # Merge other config fields
-    base_dir = cli_overrides.get("base_dir", yaml_data.get("base_dir", "."))
-    prompts_dir = cli_overrides.get("prompts_dir", yaml_data.get("prompts_dir"))
-    budget_limit = cli_overrides.get("budget_limit", yaml_data.get("budget_limit", 100))
-    manual_checkpoints = cli_overrides.get("manual_checkpoints", yaml_data.get("manual_checkpoints", []))
+    base_dir = (cli_overrides or {}).get("base_dir", yaml_data.get("base_dir", "."))
+    prompts_dir = (cli_overrides or {}).get("prompts_dir", yaml_data.get("prompts_dir"))
+    budget_limit = (cli_overrides or {}).get("budget_limit", yaml_data.get("budget_limit", 100))
+    manual_checkpoints = (cli_overrides or {}).get("manual_checkpoints", yaml_data.get("manual_checkpoints", []))
     write_scope = yaml_data.get("write_scope", {
         "architect": ["plan.md"],
         "driver": ["src/"],

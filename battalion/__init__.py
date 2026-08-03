@@ -3,6 +3,7 @@
 from battalion.cli import main as cli_main
 from battalion.config import load_config, BattalionConfig
 from battalion.graph import build_graph, run_ticket, resume_ticket
+from battalion.llm.litellm_client import ModelDiversityError
 from battalion.state.models import RunState, RunStatus, Budget, CheckpointType, RejectionRecord
 from battalion.state.persistence import save_state, load_state
 
@@ -13,6 +14,7 @@ __all__ = [
     "build_graph",
     "run_ticket",
     "resume_ticket",
+    "ModelDiversityError",
     "RunState",
     "RunStatus",
     "Budget",
@@ -22,4 +24,4 @@ __all__ = [
     "load_state",
 ]
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"

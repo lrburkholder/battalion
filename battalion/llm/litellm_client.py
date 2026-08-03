@@ -44,10 +44,41 @@ class NodeLLMConfig:
             )
 
 
+class ModelDiversityError(Exception):
+    """Raised when Reviewer and Driver are configured with the same model.
+    
+    This enforces BTN-14: Model-diversity constraint between Driver and Reviewer
+    to prevent code from being written and reviewed by the same model.
+    """
+    pass
+
+
 def build_node_configs(raw: dict[str, dict]) -> dict[str, NodeLLMConfig]:
     """Build per-node LLM configs from plain config data (e.g. loaded from
-    a config file). Nodes never hardcode their own model."""
-    return {node: NodeLLMConfig(**cfg) for node, cfg in raw.items()}
+    a config file). Nodes never hardcode their own model.
+    
+    Raises:
+        ModelDiversityError: If driver and reviewer models are the same.
+    """
+    configs = {node: NodeLLMConfig(**cfg) for node, cfg in raw.items()}
+    
+    # BTN-14: Enforce model diversity between Driver and Reviewer
+    # Only enforce when both are explicitly configured (not just falling back to default)
+    # This prevents blocking valid configs where both use a sensible default
+    driver_explicit = "driver" in raw
+    reviewer_explicit = "reviewer" in raw
+    
+    if driver_explicit and reviewer_explicit:
+        driver_config = configs["driver"]
+        reviewer_config = configs["reviewer"]
+        if driver_config.model == reviewer_config.model:
+            raise ModelDiversityError(
+                f"Driver and Reviewer cannot use the same model. "
+                f"Both are configured with model '{driver_config.model}'. "
+                f"Please configure different models for driver and reviewer nodes."
+            )
+    
+    return configs
 
 
 def _default_completion_fn(**kwargs):  # pragma: no cover - thin passthrough
