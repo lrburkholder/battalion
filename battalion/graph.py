@@ -78,6 +78,13 @@ NODE_TO_CHECKPOINT = {
     NODE_REVIEWER_REFACTOR: CheckpointType.REFACTOR_CHECK,
 }
 
+# Resume target mapping from checkpoint type to node name
+CHECKPOINT_TO_RESUME_NODE = {
+    CheckpointType.RED_CHECK: NODE_DRIVER_RED,
+    CheckpointType.GREEN_CHECK: NODE_DRIVER_GREEN,
+    CheckpointType.REFACTOR_CHECK: NODE_REFACTORER,
+}
+
 
 def _make_architect_node(
     llm_configs: dict[str, Any],
@@ -387,7 +394,107 @@ def build_graph(
     # Set entry point
     graph.set_entry_point(NODE_ARCHITECT)
     
+    # Add conditional edges from PAUSE node for resume support
+    # The resume_target field in state determines where to continue
+    def _resume_router(state: RunState) -> str:
+        """Route from PAUSE node based on resume_target."""
+        target = state.resume_target
+        if target in (NODE_DRIVER_RED, NODE_DRIVER_GREEN, NODE_REFACTORER, NODE_ARCHITECT):
+            return target
+        # If no valid target or target is already handled, stay at PAUSE
+        return NODE_PAUSE
+    
+    graph.add_conditional_edges(
+        NODE_PAUSE,
+        _resume_router,
+        {
+            NODE_ARCHITECT: NODE_ARCHITECT,
+            NODE_DRIVER_RED: NODE_DRIVER_RED,
+            NODE_DRIVER_GREEN: NODE_DRIVER_GREEN,
+            NODE_REFACTORER: NODE_REFACTORER,
+            NODE_PAUSE: NODE_PAUSE,
+        },
+    )
+    
     return graph
+
+
+def _infer_resume_target(state: RunState) -> str:
+    """Infer the resume target node from the last interrupt or rejection.
+    
+    Priority:
+    1. Last interrupt's context.next_phase (for manual checkpoints, budget, etc.)
+    2. Last rejection's checkpoint (for same-root-cause trigger)
+    3. Current phase
+    """
+    # Check last interrupt for explicit next_phase
+    if state.interrupt_log:
+        last_interrupt = state.interrupt_log[-1]
+        context = getattr(last_interrupt, 'context', {}) or {}
+        if isinstance(context, dict) and context.get("next_phase"):
+            return context["next_phase"]
+    
+    # Check last rejection for checkpoint type
+    if state.reviewer_rejection_history:
+        last_rejection = state.reviewer_rejection_history[-1]
+        return CHECKPOINT_TO_RESUME_NODE.get(last_rejection.checkpoint, NODE_DRIVER_RED)
+    
+    # Fall back to current phase
+    return state.phase
+
+
+def resume_ticket(
+    state: RunState,
+    llm_configs: dict[str, Any],
+    base_dir: str = ".",
+    prompts_dir: str | None = None,
+    max_turns: int = 50,
+) -> RunState:
+    """Resume a paused ticket from its saved state.
+    
+    This function:
+    1. Determines the resume target from interrupt context or rejection history
+    2. Sets resume_target and clears AWAITING_HUMAN status
+    3. Invokes the graph with the updated state
+    
+    Args:
+        state: The loaded RunState from a paused run
+        llm_configs: Per-node LLM configurations
+        base_dir: Base directory for file operations
+        prompts_dir: Directory containing node system prompts
+        max_turns: Maximum number of graph iterations (safety limit)
+    
+    Returns:
+        Final RunState after graph completes or interrupts again
+    """
+    from langgraph.errors import GraphRecursionError
+    
+    # Determine where to resume
+    resume_target = _infer_resume_target(state)
+    
+    # Prepare state for resumption
+    resume_state = state.model_copy(update={
+        "resume_target": resume_target,
+        "status": RunStatus.IN_PROGRESS,
+        "phase": resume_target,  # Set phase to match target
+    })
+    
+    # Build and compile graph
+    graph = build_graph(llm_configs, base_dir, prompts_dir)
+    app = graph.compile()
+    
+    # Run with recursion limit
+    try:
+        final_state = app.invoke(
+            resume_state,
+            {"recursion_limit": max_turns},
+        )
+        return final_state
+    except GraphRecursionError:
+        return resume_state.model_copy(update={
+            "status": RunStatus.BLOCKED,
+            "phase": "recursion_limit_exceeded",
+        })
 
 
 def run_ticket(
@@ -416,7 +523,7 @@ def run_ticket(
         Final RunState after graph completes or interrupts
     """
     from battalion.state.models import Budget, RunStatus
-    from langgraph.runtime import RecursionLimitExceeded
+    from langgraph.errors import GraphRecursionError
     
     # Create initial state
     initial_state = RunState(
@@ -450,7 +557,7 @@ def run_ticket(
             {"recursion_limit": max_turns},
         )
         return final_state
-    except RecursionLimitExceeded:
+    except GraphRecursionError:
         # Graph hit max turns - this is a safety limit, not an error
         # Return the last state with a note
         # In practice, this shouldn't happen with reasonable max_turns

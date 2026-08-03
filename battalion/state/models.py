@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,7 @@ class InterruptLogEntry(BaseModel):
     trigger: str
     timestamp: datetime
     resolution: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class Budget(BaseModel):
@@ -75,3 +77,4 @@ class RunState(BaseModel):
     budget: Budget
     interrupt_log: list[InterruptLogEntry] = Field(default_factory=list)
     manual_checkpoints: list[str] = Field(default_factory=list)
+    resume_target: str | None = None

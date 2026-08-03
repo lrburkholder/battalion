@@ -286,6 +286,7 @@ def log_interrupt(
         trigger=trigger_id,
         timestamp=datetime.now(timezone.utc),
         resolution=None,
+        context=context or {},
     )
     
     new_log = state.interrupt_log + [entry]

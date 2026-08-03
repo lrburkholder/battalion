@@ -1,0 +1,198 @@
+"""Battalion CLI: run / resume / status."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import typer
+
+from battalion.graph import run_ticket, resume_ticket
+from battalion.state.persistence import save_state, load_state
+from battalion.state.models import RunState, RunStatus, Budget
+from battalion.config import load_config, BattalionConfig
+
+app = typer.Typer(
+    name="battalion",
+    help="Battalion SDLC Orchestrator — run, resume, and check status of tickets.",
+    add_completion=False,
+)
+
+STATE_DIR = Path(".battalion/state")
+
+
+def _state_path(run_id: str) -> Path:
+    """Get the state file path for a run ID."""
+    return STATE_DIR / f"{run_id}.json"
+
+
+def _print_status(state: RunState, human: bool = False) -> None:
+    """Print run status as JSON or human-readable."""
+    if human:
+        # Human-readable summary
+        typer.echo(f"Run ID:      {state.run_id}")
+        typer.echo(f"Ticket:      {state.ticket_id}")
+        typer.echo(f"Status:      {state.status.value}")
+        typer.echo(f"Phase:       {state.phase}")
+        typer.echo(f"Budget:      {state.budget.used} / {state.budget.limit}")
+        if state.manual_checkpoints:
+            typer.echo(f"Checkpoints: {', '.join(state.manual_checkpoints)}")
+        if state.interrupt_log:
+            typer.echo("\nInterrupts:")
+            for i, entry in enumerate(state.interrupt_log, 1):
+                typer.echo(f"  {i}. {entry.trigger} @ {entry.timestamp.isoformat()}")
+                if entry.resolution:
+                    typer.echo(f"     Resolution: {entry.resolution}")
+    else:
+        # JSON output
+        typer.echo(state.model_dump_json(indent=2))
+
+
+def _load_spec_text(spec_path: str) -> str:
+    """Load spec text from file or return the string directly."""
+    path = Path(spec_path)
+    if path.exists():
+        return path.read_text()
+    # If not a file, treat as literal spec text
+    return spec_path
+
+
+@app.command()
+def run(
+    ticket_id: str = typer.Argument(..., help="Ticket ID (e.g., BTN-123)"),
+    spec: str = typer.Option(..., "--spec", "-s", help="Path to spec file or spec text"),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to battalion.config.yaml"),
+    model_architect: str | None = typer.Option(None, "--model-architect"),
+    model_driver: str | None = typer.Option(None, "--model-driver"),
+    model_reviewer: str | None = typer.Option(None, "--model-reviewer"),
+    model_refactorer: str | None = typer.Option(None, "--model-refactorer"),
+    budget_limit: int | None = typer.Option(None, "--budget", help="Budget limit (overrides config)"),
+    manual_checkpoint: list[str] | None = typer.Option(None, "--checkpoint", help="Manual checkpoint phase(s)"),
+    base_dir: str = typer.Option(".", "--base-dir", help="Base directory for file operations"),
+    prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing state file"),
+):
+    """Start a new ticket run through the Battalion graph."""
+    # Load configuration with CLI overrides
+    cli_overrides = {
+        "model_architect": model_architect,
+        "model_driver": model_driver,
+        "model_reviewer": model_reviewer,
+        "model_refactorer": model_refactorer,
+        "budget_limit": budget_limit,
+        "manual_checkpoints": manual_checkpoint,
+        "base_dir": base_dir,
+        "prompts_dir": prompts_dir,
+    }
+    # Remove None values
+    cli_overrides = {k: v for k, v in cli_overrides.items() if v is not None}
+    
+    cfg = load_config(config, cli_overrides)
+    
+    # Load spec text
+    spec_text = _load_spec_text(spec)
+    
+    # Prepare run ID and state path
+    run_id = f"run-{ticket_id}"
+    state_file = _state_path(run_id)
+    
+    # Check for existing state
+    if state_file.exists() and not force:
+        typer.echo(f"Error: State file already exists at {state_file}. Use --force to overwrite.", err=True)
+        raise typer.Exit(1)
+    
+    # Create initial state
+    initial_state = RunState(
+        schema_version="1.0",
+        run_id=run_id,
+        ticket_id=ticket_id,
+        status=RunStatus.NOT_STARTED,
+        phase="architect",
+        write_scope=cfg.write_scope,
+        retry_bound=2,
+        budget=Budget(limit=cfg.budget_limit, used=0),
+        reviewer_rejection_history=[],
+        interrupt_log=[],
+        manual_checkpoints=cfg.manual_checkpoints,
+    )
+    
+    # Run the graph
+    typer.echo(f"Starting run: {run_id}")
+    final_state = run_ticket(
+        ticket_id=spec_text,
+        llm_configs=cfg.models,
+        base_dir=cfg.base_dir,
+        prompts_dir=cfg.prompts_dir,
+    )
+    
+    # Save final state
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    save_state(final_state, state_file)
+    
+    typer.echo(f"Run complete: {run_id} → {final_state.status.value}")
+    typer.echo(f"State saved to: {state_file}")
+
+
+@app.command()
+def resume(
+    run_id: str = typer.Argument(..., help="Run ID (e.g., run-BTN-123)"),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to battalion.config.yaml"),
+    base_dir: str = typer.Option(".", "--base-dir", help="Base directory for file operations"),
+    prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
+):
+    """Resume a paused/interrupted run from saved state."""
+    state_file = _state_path(run_id)
+    
+    if not state_file.exists():
+        typer.echo(f"Error: No state file found at {state_file}", err=True)
+        raise typer.Exit(1)
+    
+    # Load state
+    state = load_state(state_file)
+    
+    if state.status != RunStatus.AWAITING_HUMAN:
+        typer.echo(f"Warning: Run status is '{state.status.value}', not 'awaiting-human'. Resuming anyway.")
+    
+    # Load config
+    cfg = load_config(config, {"base_dir": base_dir, "prompts_dir": prompts_dir})
+    
+    # Resume the run
+    typer.echo(f"Resuming run: {run_id}")
+    final_state = resume_ticket(
+        state=state,
+        llm_configs=cfg.models,
+        base_dir=cfg.base_dir,
+        prompts_dir=cfg.prompts_dir,
+    )
+    
+    # Save updated state
+    save_state(final_state, state_file)
+    
+    typer.echo(f"Resumed: {run_id} → {final_state.status.value}")
+    typer.echo(f"State saved to: {state_file}")
+
+
+@app.command()
+def status(
+    run_id: str = typer.Argument(..., help="Run ID (e.g., run-BTN-123)"),
+    human: bool = typer.Option(False, "--human", "-h", help="Human-readable output (default: JSON)"),
+):
+    """Show run status and interrupt history."""
+    state_file = _state_path(run_id)
+    
+    if not state_file.exists():
+        typer.echo(f"Error: No state file found at {state_file}", err=True)
+        raise typer.Exit(1)
+    
+    state = load_state(state_file)
+    _print_status(state, human=human)
+
+
+def main() -> None:
+    """Entry point for the CLI."""
+    app()
+
+
+if __name__ == "__main__":
+    main()
