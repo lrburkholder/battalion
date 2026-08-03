@@ -209,7 +209,7 @@
       "id": "BTN-9",
       "phase": "implementation",
       "title": "CLI (Typer) \u2014 run / resume / status",
-      "status": "not-started",
+      "status": "done",
       "priority": "P2",
       "description": "Typer-based CLI entry point wrapping the graph: run a new ticket, resume a paused run, check status.",
       "acceptance_criteria": [
@@ -225,7 +225,7 @@
       ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 9, ADR-003",
-      "notes": "Thinnest layer, wraps already-working internals \u2014 deliberately sequenced last among build tickets."
+      "notes": "Thinnest layer, wraps already-working internals \u2014 deliberately sequenced last among build tickets. Status updated 2026-08-02: cli.py implements all three commands with Typer, config via battalion.config.yaml, JSON/human output for status."
     },
     {
       "id": "BTN-10",
