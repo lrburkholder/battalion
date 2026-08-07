@@ -362,6 +362,69 @@
       "assignee_role": "driver",
       "source": "user request after trying initial CLI usage",
       "notes": "Motivated by the friction of manual config setup, provider prefix requirements, and API key management. Should integrate with LiteLLM's existing provider detection."
+    },
+    {
+      "id": "BTN-16",
+      "title": "Cost/budget reporting granularity",
+      "status": "not-started",
+      "priority": "P3",
+      "description": "Extend BTN-8's budget tracking with a per-node, per-call cost reporting layer: model, token counts in/out, and $ cost logged per call, plus a queryable summary broken down by node/phase for a given run. Additive on top of BTN-8's threshold-tracking behavior for trigger #3 -- does not change trigger #3's logic.",
+      "acceptance_criteria": [
+        "Per-node, per-call cost is logged (model, input/output token counts, dollar cost), not just an aggregate running total",
+        "A summary view (e.g. `battalion status --costs` or equivalent) breaks down spend by node/phase for a given run",
+        "BTN-8's trigger #3 threshold behavior is unchanged by this ticket",
+        "Existing BTN-8 interrupt tests continue to pass unmodified"
+      ],
+      "dependencies": [
+        "BTN-8",
+        "BTN-10"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "spun out of 2026-08-04 discussion re: portfolio-project overlap with Battalion's existing budget tracking",
+      "notes": "Do not start before BTN-10 confirms BTN-8's tracking actually holds up during a real end-to-end run -- BTN-8 is marked done but its behavior under a genuine full-graph run hasn't been validated yet (BTN-10 is not-started). Building a reporting layer on top of an unvalidated foundation risks having to redo it. Not intended as a standalone cost-estimator product; that would be a separate future extraction, not this ticket's scope."
+    },
+    {
+      "id": "BTN-17",
+      "phase": "implementation",
+      "title": "Interrupt/checkpoint web UI",
+      "status": "not-started",
+      "priority": "P3",
+      "description": "Web UI surfacing interrupt_log and current status/phase for a run, so a human can see why the graph paused and approve/resume without the CLI. Wired to the existing CLI resume path, not a parallel code path. Explicitly scoped to interrupt visibility and resume/approve actions -- not a token-streaming chat interface.",
+      "acceptance_criteria": [
+        "Displays interrupt_log and current status/phase for a given run",
+        "All 6 trigger types are surfaced distinctly, including trigger #1's per-checkpoint-type counters from BTN-12 (not flattened into a generic 'rejected' state)",
+        "Resume/approve action in the UI calls the same code path as `battalion resume`, not a duplicate implementation",
+        "No token-by-token streaming or chat-style interaction in scope for this ticket"
+      ],
+      "dependencies": [
+        "BTN-9",
+        "BTN-10"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "spun out of 2026-08-04 discussion re: portfolio-project overlap; Luke's existing future-UI intent",
+      "notes": "Deliberately scoped down from a generic 'Copilot-style UI' to what Battalion's human-in-the-loop model actually needs: visibility into why the graph paused, and a way to act on it. Blocked on BTN-10 for the same reason as BTN-15 -- no UI work on top of an unvalidated v1 core."
+    },
+    {
+      "id": "BTN-18",
+      "phase": "rollout",
+      "title": "Public GitHub Pages site",
+      "status": "not-started",
+      "priority": "P3",
+      "description": "Publish README/architecture docs (spec.md, plan.md, ADRs) as a GitHub Pages site once v1 acceptance criteria pass. Scoped to Battalion only.",
+      "acceptance_criteria": [
+        "GitHub Pages site publishes README, spec.md, plan.md, and ADR content from the Battalion repo",
+        "Site build requires BTN-10 to be done -- v1 is not advertised as working until its own acceptance criteria have passed",
+        "No Dojo or Writer's Bloc content included -- neither repo exists yet"
+      ],
+      "dependencies": [
+        "BTN-10"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "spun out of 2026-08-04 discussion re: portfolio-site framing",
+      "notes": "Follow-up ticket (not yet created) should expand this to include Dojo and Writer's Bloc once those repos exist -- deliberately not designed for today, since designing for unbuilt spinoffs risks pulling their scope forward prematurely."
     }
   ]
 }
