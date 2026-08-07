@@ -81,10 +81,86 @@ def build_node_configs(raw: dict[str, dict]) -> dict[str, NodeLLMConfig]:
     return configs
 
 
+_litellm_silenced = False
+
+
+def _silence_litellm_output() -> None:
+    """Silence litellm's per-attempt error-handling prints.
+
+    Battalion drives retries itself and surfaces the final provider error as
+    an InfraFailure (routed to interrupt trigger #5) with a clear CLI pause
+    message. litellm's own "Give Feedback / Get Help" and "Provider List"
+    blocks (gated on litellm.suppress_debug_info) print once per failed
+    attempt, which turns a retry storm into terminal spam. Idempotent; the
+    flag is set just before each real completion so the print blocks are
+    already suppressed by the time a call fails."""
+    global _litellm_silenced
+    if _litellm_silenced:
+        return
+    import litellm
+
+    litellm.suppress_debug_info = True
+    _litellm_silenced = True
+
+
 def _default_completion_fn(**kwargs):  # pragma: no cover - thin passthrough
     import litellm
 
+    _silence_litellm_output()
     return litellm.completion(**kwargs)
+
+
+def _streamed_response(full_content: str) -> dict[str, Any]:
+    """Assemble a litellm-shaped response dict from accumulated streamed
+    text, so existing extract_content / extract_files helpers (which handle
+    dict responses) work unchanged after a streaming call."""
+    return {"choices": [{"message": {"content": full_content}}]}
+
+
+def _completion_streaming(
+    config: NodeLLMConfig,
+    messages: list[dict[str, str]],
+    completion_fn: Callable[..., Any],
+    on_stream: Callable[[dict], None],
+) -> dict[str, Any]:
+    """Run completion_fn with stream=True, forwarding each chunk's content
+    and reasoning deltas to on_stream, then return the assembled response.
+
+    Event dicts forwarded to on_stream:
+      {"type": "reasoning", "content": ...}  — model reasoning tokens
+        (litellm's reasoning_content / reasoning delta fields, e.g. from
+        DeepSeek-Reasoner or OpenAI o-series models)
+      {"type": "token", "content": ...}      — regular generated content
+
+    If a streamed chunk carries no content/reasoning delta (usage frames,
+    finish-reason frames), it is skipped silently.
+    """
+    params = dict(config.extra_params)
+    params["stream"] = True
+    stream = completion_fn(
+        model=config.model,
+        messages=messages,
+        temperature=config.temperature,
+        **params,
+    )
+    pieces: list[str] = []
+    for chunk in stream:
+        choices = getattr(chunk, "choices", None)
+        if not choices:
+            continue
+        delta = choices[0].delta
+        if delta is None:
+            continue
+        reasoning = getattr(delta, "reasoning_content", None)
+        if not reasoning:
+            reasoning = getattr(delta, "reasoning", None)
+        if reasoning:
+            on_stream({"type": "reasoning", "content": reasoning})
+        content = getattr(delta, "content", None)
+        if content:
+            on_stream({"type": "token", "content": content})
+            pieces.append(content)
+    return _streamed_response("".join(pieces))
 
 
 def call_llm(
@@ -94,14 +170,24 @@ def call_llm(
     completion_fn: Callable[..., Any] = _default_completion_fn,
     sleep_fn: Callable[[float], None] = time.sleep,
     backoff_seconds: float = 0.0,
+    on_stream: Callable[[dict], None] | None = None,
 ) -> Any:
     """Call the configured model for a node, retrying config.max_retries
-    times on failure. Raises InfraFailure once retries are exhausted."""
+    times on failure. Raises InfraFailure once retries are exhausted.
+
+    If on_stream is given, the completion runs in streaming mode and each
+    streamed chunk (content + reasoning tokens) is forwarded to on_stream
+    as an event dict; the fully-assembled response is still returned so the
+    caller's content-extraction path is unchanged."""
     max_attempts = config.max_retries + 1
     last_error: Exception | None = None
 
     for attempt in range(1, max_attempts + 1):
         try:
+            if on_stream is not None:
+                return _completion_streaming(
+                    config, messages, completion_fn, on_stream
+                )
             return completion_fn(
                 model=config.model,
                 messages=messages,

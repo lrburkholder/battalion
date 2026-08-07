@@ -435,11 +435,11 @@ class TestAcceptanceCriteria3_ResumeFromCLI:
 
         calls = []
 
-        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None, **kwargs):
             calls.append("architect")
             return state.model_copy(update={"phase": "driver"})
 
-        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None, **kwargs):
             calls.append(f"reviewer_{checkpoint.value}")
             # REFACTOR_CHECK accept -> phase="done" -> routes straight to DONE.
             return state.model_copy(update={"phase": "done", "status": RunStatus.DONE})
@@ -469,11 +469,11 @@ class TestAcceptanceCriteria3_ResumeFromCLI:
 
         calls = []
 
-        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None, **kwargs):
             calls.append("architect")
             return state.model_copy(update={"phase": "driver"})
 
-        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None, **kwargs):
             calls.append(f"reviewer_{checkpoint.value}")
             return state.model_copy(update={"phase": "done", "status": RunStatus.DONE})
 
@@ -488,7 +488,6 @@ class TestAcceptanceCriteria3_ResumeFromCLI:
 # =============================================================================
 # spec.md AC4 / AC5: scope enforcement + versioned JSON persistence
 # =============================================================================
-
 class TestAcceptanceCriteria5_Persistence:
     def test_state_round_trips_through_versioned_local_json(self, tmp_path):
         """Full RunState persists to local JSON matching the versioned schema
@@ -525,3 +524,129 @@ class TestAcceptanceCriteria5_Persistence:
         bad.write_text('{"schema_version": "1.0", "status": "not-a-status"}', encoding="utf-8")
         with pytest.raises(Exception):
             load_state(bad)
+
+
+# =============================================================================
+# CLI live progress: node lifecycle events + streamed token callbacks
+# =============================================================================
+
+class TestProgressEvents:
+    def test_run_ticket_emits_node_events_in_flow_order(self, tmp_path):
+        """With on_node_event wired, a full happy-path run reports node_start
+        for every node in flow order, node_end for each transition, and no
+        interrupt events."""
+        from battalion.graph import run_ticket
+
+        events = []
+
+        def arch_llm(node, cfg, messages, **kw):
+            return litellm_response(ARCHITECT_PLAN)
+
+        calls = {"driver": 0}
+
+        def driver_llm(node, cfg, messages, **kw):
+            calls["driver"] += 1
+            if calls["driver"] == 1:  # RED mode -> failing test
+                return files_response({"test_widget.py": FAILING_TEST})
+            return files_response({"widget.py": IMPLEMENTATION})  # GREEN mode
+
+        def reviewer_llm(node, cfg, messages, **kw):
+            return litellm_response("unused on accept")
+
+        def refactorer_llm(node, cfg, messages, **kw):
+            return files_response({"widget.py": IMPLEMENTATION})
+
+        with run_with_mocked_llms(arch_llm, driver_llm, reviewer_llm, refactorer_llm):
+            final = run_ticket(
+                "BTN-EVT", make_configs(), spec_text="widget",
+                base_dir=str(tmp_path), on_node_event=events.append,
+            )
+
+        assert final["status"] == RunStatus.DONE
+
+        starts = [e["node"] for e in events if e["type"] == "node_start"]
+        assert starts == [
+            "architect",
+            "driver_red", "reviewer_red",
+            "driver_green", "reviewer_green",
+            "refactorer", "reviewer_refactor",
+        ]
+
+        ends = [e["node"] for e in events if e["type"] == "node_end"]
+        assert ends == starts, "Every node that started must also end"
+
+        assert "interrupt" not in [e["type"] for e in events], (
+            "No interrupt may be reported on the happy path"
+        )
+        assert "node_error" not in [e["type"] for e in events]
+
+    def test_run_ticket_forwards_streamed_tokens_to_on_token(self, tmp_path):
+        """on_token reaches the nodes' LLM calls, so a provider that streams
+        reasoning/content can surface it live."""
+        from battalion.graph import run_ticket
+
+        token_events = []
+
+        def arch_llm(node, cfg, messages, **kw):
+            on_stream = kw.get("on_stream")
+            if on_stream is not None:
+                on_stream({"type": "reasoning", "content": "thinking…"})
+                on_stream({"type": "token", "content": "plan "})
+                on_stream({"type": "token", "content": "text"})
+            return litellm_response(ARCHITECT_PLAN)
+
+        calls = {"driver": 0}
+
+        def driver_llm(node, cfg, messages, **kw):
+            calls["driver"] += 1
+            if calls["driver"] == 1:
+                return files_response({"test_widget.py": FAILING_TEST})
+            return files_response({"widget.py": IMPLEMENTATION})
+
+        def reviewer_llm(node, cfg, messages, **kw):
+            return litellm_response("unused on accept")
+
+        def refactorer_llm(node, cfg, messages, **kw):
+            return files_response({"widget.py": IMPLEMENTATION})
+
+        with run_with_mocked_llms(arch_llm, driver_llm, reviewer_llm, refactorer_llm):
+            final = run_ticket(
+                "BTN-EVT2", make_configs(), spec_text="widget",
+                base_dir=str(tmp_path), on_token=token_events.append,
+            )
+
+        assert final["status"] == RunStatus.DONE
+        assert {"type": "reasoning", "content": "thinking…"} in token_events
+        assert {"type": "token", "content": "plan "} in token_events
+        assert {"type": "token", "content": "text"} in token_events
+
+    def test_run_ticket_emits_interrupt_event_when_a_trigger_fires(self, tmp_path):
+        """An infra failure mid-run surfaces as an interrupt event, not a
+        crash — so the CLI can tell the human the run paused."""
+        from battalion.graph import run_ticket
+
+        events = []
+
+        def arch_llm(node, cfg, messages, **kw):
+            raise InfraFailure("architect", "test-model", 1, RuntimeError("provider down"))
+
+        def driver_llm(node, cfg, messages, **kw):
+            raise AssertionError("Driver must not run after infra failure")
+
+        def reviewer_llm(node, cfg, messages, **kw):
+            raise AssertionError("must never reach Reviewer")
+
+        def refactorer_llm(node, cfg, messages, **kw):
+            raise AssertionError("must never reach Refactorer")
+
+        with run_with_mocked_llms(arch_llm, driver_llm, reviewer_llm, refactorer_llm):
+            final = run_ticket(
+                "BTN-EVT3", make_configs(), spec_text="widget",
+                base_dir=str(tmp_path), on_node_event=events.append,
+            )
+
+        assert final["status"] == RunStatus.AWAITING_HUMAN
+        interrupts = [e for e in events if e["type"] == "interrupt"]
+        assert len(interrupts) == 1
+        assert interrupts[0]["trigger"] == TRIGGER_INFRA_FAILURE
+        assert interrupts[0]["node"] == "architect"

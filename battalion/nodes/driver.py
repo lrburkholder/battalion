@@ -103,6 +103,7 @@ def run_driver(
     system_prompt: str | None = None,
     prompts_dir: str | Path | None = None,
     mode: Literal["red", "green"] | None = None,
+    on_stream: Callable[[dict], None] | None = None,
 ) -> RunState:
     """Run the Driver node: produce file writes from ticket_text, write
     them under the declared 'src/' scope, and return updated state.
@@ -155,7 +156,10 @@ def run_driver(
                 "content": f"Existing test files:{test_context}\n\nWrite implementation to make these pass."
             })
 
-    response = call_llm_fn("driver", llm_config, messages)
+    if on_stream is not None:
+        response = call_llm_fn("driver", llm_config, messages, on_stream=on_stream)
+    else:
+        response = call_llm_fn("driver", llm_config, messages)
     files = extract_files(response)
 
     if not files:

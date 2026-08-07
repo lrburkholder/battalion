@@ -80,6 +80,13 @@ NODE_TO_CHECKPOINT = {
     NODE_REVIEWER_REFACTOR: CheckpointType.REFACTOR_CHECK,
 }
 
+_CHECKPOINT_TO_NODE = {checkpoint: node for node, checkpoint in NODE_TO_CHECKPOINT.items()}
+
+
+def _reviewer_node_name(checkpoint: CheckpointType) -> str:
+    """Map a checkpoint type to its graph node name."""
+    return _CHECKPOINT_TO_NODE[checkpoint]
+
 # Resume target mapping from checkpoint type to node name
 CHECKPOINT_TO_RESUME_NODE = {
     CheckpointType.RED_CHECK: NODE_DRIVER_RED,
@@ -106,6 +113,8 @@ def _handle_node_error(
     error: Exception,
     next_phase: str,
     resume_node: str,
+    node_name: str | None = None,
+    on_node_event: Callable[[dict], None] | None = None,
 ) -> RunState:
     """Route a node-level exception to its interrupt trigger and pause.
 
@@ -117,6 +126,9 @@ def _handle_node_error(
     records resume_node so a later `battalion resume` continues where the
     interrupted node would have handed off. Any other exception type is
     re-raised unchanged — it's a bug, not a trigger.
+
+    If on_node_event is given, an "interrupt" event is emitted for the
+    paused run so the CLI can tell the human what happened.
     """
     should_pause, trigger_id, context = check_any_trigger(
         state, error=error, next_phase=next_phase
@@ -124,7 +136,15 @@ def _handle_node_error(
     if should_pause:
         context = {**context, "next_phase": resume_node}
         new_state = log_interrupt(state, trigger_id, context)
-        return new_state.model_copy(update={"phase": NODE_PAUSE})
+        paused = new_state.model_copy(update={"phase": NODE_PAUSE})
+        if on_node_event is not None:
+            on_node_event({
+                "type": "interrupt",
+                "node": node_name,
+                "trigger": trigger_id,
+                "context": context,
+            })
+        return paused
     raise error
 
 
@@ -132,6 +152,8 @@ def _make_architect_node(
     llm_configs: dict[str, Any],
     base_dir: str,
     prompts_dir: str | None = None,
+    on_node_event: Callable[[dict], None] | None = None,
+    on_token: Callable[[dict], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create the Architect node function for the graph."""
     from battalion.nodes.architect import run_architect
@@ -145,19 +167,35 @@ def _make_architect_node(
         # Note: spec_text comes from the initial state or ticket
         spec_text = state.ticket_id  # Simplified for now; real impl would load spec
         
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_start",
+                "node": NODE_ARCHITECT,
+                "budget": {"used": state.budget.used, "limit": state.budget.limit},
+            })
         try:
+            node_kwargs = {"on_stream": on_token} if on_token is not None else {}
             new_state = run_architect(
                 state=state,
                 spec_text=spec_text,
                 llm_config=llm_configs.get("architect", llm_configs.get("default")),
                 base_dir=base_dir,
                 prompts_dir=prompts_dir,
+                **node_kwargs,
             )
         except (InfraFailure, ScopeViolationError) as exc:
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "node_error",
+                    "node": NODE_ARCHITECT,
+                    "error": str(exc),
+                })
             return _handle_node_error(
                 state, exc,
                 next_phase=NODE_TO_PHASE[NODE_ARCHITECT],
                 resume_node=NEXT_NODE_ON_PAUSE[NODE_ARCHITECT],
+                node_name=NODE_ARCHITECT,
+                on_node_event=on_node_event,
             )
         
         # Check interrupts after node execution
@@ -169,7 +207,21 @@ def _make_architect_node(
             context = {**context, "next_phase": NEXT_NODE_ON_PAUSE[NODE_ARCHITECT]}
             new_state = log_interrupt(new_state, trigger_id, context)
             new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "interrupt",
+                    "node": NODE_ARCHITECT,
+                    "trigger": trigger_id,
+                    "context": context,
+                })
         
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_end",
+                "node": NODE_ARCHITECT,
+                "phase": new_state.phase,
+                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
+            })
         return new_state
     
     return node
@@ -180,6 +232,8 @@ def _make_driver_node(
     llm_configs: dict[str, Any],
     base_dir: str,
     prompts_dir: str | None = None,
+    on_node_event: Callable[[dict], None] | None = None,
+    on_token: Callable[[dict], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Driver node function for the graph.
     
@@ -189,6 +243,8 @@ def _make_driver_node(
     from battalion.nodes.driver import run_driver
     from battalion.prompts.loader import load_system_prompt
     
+    node_name = NODE_DRIVER_RED if mode == "red" else NODE_DRIVER_GREEN
+    
     def node(state: RunState) -> RunState:
         # Increment budget for this LLM call
         state = increment_budget(state)
@@ -197,7 +253,14 @@ def _make_driver_node(
         # For now, use ticket_id as the input; real impl would use full ticket
         ticket_text = state.ticket_id
         
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_start",
+                "node": node_name,
+                "budget": {"used": state.budget.used, "limit": state.budget.limit},
+            })
         try:
+            node_kwargs = {"on_stream": on_token} if on_token is not None else {}
             new_state = run_driver(
                 state=state,
                 ticket_text=ticket_text,
@@ -205,18 +268,26 @@ def _make_driver_node(
                 base_dir=base_dir,
                 mode=mode,
                 prompts_dir=prompts_dir,
+                **node_kwargs,
             )
         except (InfraFailure, ScopeViolationError) as exc:
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "node_error",
+                    "node": node_name,
+                    "error": str(exc),
+                })
             return _handle_node_error(
                 state, exc,
                 next_phase=NODE_TO_PHASE.get(f"driver_{mode}", "reviewer"),
-                resume_node=NODE_DRIVER_RED if mode == "red" else NODE_DRIVER_GREEN,
+                resume_node=node_name,
+                node_name=node_name,
+                on_node_event=on_node_event,
             )
         
         # Driver always transitions to reviewer
         # The specific reviewer checkpoint is determined by the graph edges
         next_phase = NODE_TO_PHASE.get(f"driver_{mode}", "reviewer")
-        driver_node_name = NODE_DRIVER_RED if mode == "red" else NODE_DRIVER_GREEN
         
         # Check interrupts
         should_pause, trigger_id, context = check_any_trigger(
@@ -224,10 +295,24 @@ def _make_driver_node(
         )
         
         if should_pause:
-            context = {**context, "next_phase": NEXT_NODE_ON_PAUSE[driver_node_name]}
+            context = {**context, "next_phase": NEXT_NODE_ON_PAUSE[node_name]}
             new_state = log_interrupt(new_state, trigger_id, context)
             new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "interrupt",
+                    "node": node_name,
+                    "trigger": trigger_id,
+                    "context": context,
+                })
         
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_end",
+                "node": node_name,
+                "phase": new_state.phase,
+                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
+            })
         return new_state
     
     return node
@@ -238,6 +323,8 @@ def _make_reviewer_node(
     llm_configs: dict[str, Any],
     base_dir: str,
     prompts_dir: str | None = None,
+    on_node_event: Callable[[dict], None] | None = None,
+    on_token: Callable[[dict], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Reviewer node function for the graph.
     
@@ -247,24 +334,42 @@ def _make_reviewer_node(
     from battalion.nodes.reviewer import run_reviewer
     from battalion.prompts.loader import load_system_prompt
     
+    node_name = _reviewer_node_name(checkpoint)
+    
     def node(state: RunState) -> RunState:
         # Reviewer doesn't call LLM for the actual test run, but does for
         # rejection cause articulation. Budget increment for the LLM call.
         state = increment_budget(state)
         
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_start",
+                "node": node_name,
+                "budget": {"used": state.budget.used, "limit": state.budget.limit},
+            })
         try:
+            node_kwargs = {"on_stream": on_token} if on_token is not None else {}
             new_state = run_reviewer(
                 state=state,
                 base_dir=base_dir,
                 llm_config=llm_configs.get("reviewer", llm_configs.get("default")),
                 checkpoint=checkpoint,
                 prompts_dir=prompts_dir,
+                **node_kwargs,
             )
         except (InfraFailure, ScopeViolationError) as exc:
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "node_error",
+                    "node": node_name,
+                    "error": str(exc),
+                })
             return _handle_node_error(
                 state, exc,
                 next_phase=state.phase,
                 resume_node=CHECKPOINT_TO_RESUME_NODE[checkpoint],
+                node_name=node_name,
+                on_node_event=on_node_event,
             )
         
         # Reviewer sets the next phase based on accept/reject
@@ -280,7 +385,21 @@ def _make_reviewer_node(
             context = {**context, "next_phase": CHECKPOINT_TO_RESUME_NODE[checkpoint]}
             new_state = log_interrupt(new_state, trigger_id, context)
             new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "interrupt",
+                    "node": node_name,
+                    "trigger": trigger_id,
+                    "context": context,
+                })
         
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_end",
+                "node": node_name,
+                "phase": new_state.phase,
+                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
+            })
         return new_state
     
     return node
@@ -290,6 +409,8 @@ def _make_refactorer_node(
     llm_configs: dict[str, Any],
     base_dir: str,
     prompts_dir: str | None = None,
+    on_node_event: Callable[[dict], None] | None = None,
+    on_token: Callable[[dict], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create the Refactorer node function for the graph."""
     from battalion.nodes.refactorer import run_refactorer
@@ -302,19 +423,35 @@ def _make_refactorer_node(
         # Refactor text from state
         refactor_text = state.ticket_id  # Simplified
         
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_start",
+                "node": NODE_REFACTORER,
+                "budget": {"used": state.budget.used, "limit": state.budget.limit},
+            })
         try:
+            node_kwargs = {"on_stream": on_token} if on_token is not None else {}
             new_state = run_refactorer(
                 state=state,
                 refactor_text=refactor_text,
                 llm_config=llm_configs.get("refactorer", llm_configs.get("driver", llm_configs.get("default"))),
                 base_dir=base_dir,
                 prompts_dir=prompts_dir,
+                **node_kwargs,
             )
         except (InfraFailure, ScopeViolationError) as exc:
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "node_error",
+                    "node": NODE_REFACTORER,
+                    "error": str(exc),
+                })
             return _handle_node_error(
                 state, exc,
                 next_phase=NODE_TO_PHASE[NODE_REFACTORER],
                 resume_node=NEXT_NODE_ON_PAUSE[NODE_REFACTORER],
+                node_name=NODE_REFACTORER,
+                on_node_event=on_node_event,
             )
         
         # Check interrupts
@@ -327,7 +464,21 @@ def _make_refactorer_node(
             context = {**context, "next_phase": NEXT_NODE_ON_PAUSE[NODE_REFACTORER]}
             new_state = log_interrupt(new_state, trigger_id, context)
             new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "interrupt",
+                    "node": NODE_REFACTORER,
+                    "trigger": trigger_id,
+                    "context": context,
+                })
         
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_end",
+                "node": NODE_REFACTORER,
+                "phase": new_state.phase,
+                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
+            })
         return new_state
     
     return node
@@ -372,6 +523,8 @@ def build_graph(
     llm_configs: dict[str, Any],
     base_dir: str = ".",
     prompts_dir: str | None = None,
+    on_node_event: Callable[[dict], None] | None = None,
+    on_token: Callable[[dict], None] | None = None,
 ) -> StateGraph:
     """Build the Battalion StateGraph with all nodes and edges.
     
@@ -383,6 +536,13 @@ def build_graph(
                      "reviewer", "refactorer", or "default")
         base_dir: Base directory for file operations
         prompts_dir: Directory containing node system prompts
+        on_node_event: Optional callback receiving lifecycle event dicts
+                      ("node_start", "node_end", "interrupt", "node_error")
+                      as they occur during the run.
+        on_token: Optional callback receiving streamed LLM token event dicts
+                  ({"type": "token"|"reasoning", "content": ...}). Forwarded
+                  to each node's LLM call, which uses it only when the
+                  provider streams.
     
     Returns:
         Configured StateGraph ready to run
@@ -390,13 +550,13 @@ def build_graph(
     graph = StateGraph(RunState)
     
     # --- Create node functions ---
-    architect_node = _make_architect_node(llm_configs, base_dir, prompts_dir)
-    driver_red_node = _make_driver_node("red", llm_configs, base_dir, prompts_dir)
-    driver_green_node = _make_driver_node("green", llm_configs, base_dir, prompts_dir)
-    reviewer_red_node = _make_reviewer_node(CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir)
-    reviewer_green_node = _make_reviewer_node(CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir)
-    refactorer_node = _make_refactorer_node(llm_configs, base_dir, prompts_dir)
-    reviewer_refactor_node = _make_reviewer_node(CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir)
+    architect_node = _make_architect_node(llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
+    driver_red_node = _make_driver_node("red", llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
+    driver_green_node = _make_driver_node("green", llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
+    reviewer_red_node = _make_reviewer_node(CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
+    reviewer_green_node = _make_reviewer_node(CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
+    refactorer_node = _make_refactorer_node(llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
+    reviewer_refactor_node = _make_reviewer_node(CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
     done_node = _make_done_node()
     pause_node = _make_pause_node()
     
@@ -580,6 +740,8 @@ def resume_ticket(
     base_dir: str = ".",
     prompts_dir: str | None = None,
     max_turns: int = 50,
+    on_node_event: Callable[[dict], None] | None = None,
+    on_token: Callable[[dict], None] | None = None,
 ) -> RunState:
     """Resume a paused ticket from its saved state.
     
@@ -594,6 +756,8 @@ def resume_ticket(
         base_dir: Base directory for file operations
         prompts_dir: Directory containing node system prompts
         max_turns: Maximum number of graph iterations (safety limit)
+        on_node_event: Optional callback for node lifecycle events
+        on_token: Optional callback for streamed LLM token events
     
     Returns:
         Final RunState after graph completes or interrupts again
@@ -611,7 +775,10 @@ def resume_ticket(
     })
     
     # Build and compile graph
-    graph = build_graph(llm_configs, base_dir, prompts_dir)
+    graph = build_graph(
+        llm_configs, base_dir, prompts_dir,
+        on_node_event=on_node_event, on_token=on_token,
+    )
     app = graph.compile()
     
     # Run with recursion limit
@@ -635,6 +802,8 @@ def run_ticket(
     base_dir: str = ".",
     prompts_dir: str | None = None,
     max_turns: int = 50,
+    on_node_event: Callable[[dict], None] | None = None,
+    on_token: Callable[[dict], None] | None = None,
 ) -> RunState:
     """Run a ticket through the graph from start to finish (or interrupt).
     
@@ -651,6 +820,8 @@ def run_ticket(
         base_dir: Base directory for file operations
         prompts_dir: Directory containing node system prompts
         max_turns: Maximum number of graph iterations (safety limit)
+        on_node_event: Optional callback for node lifecycle events
+        on_token: Optional callback for streamed LLM token events
     
     Returns:
         Final RunState after graph completes or interrupts
@@ -679,7 +850,10 @@ def run_ticket(
     )
     
     # Build graph
-    graph = build_graph(llm_configs, base_dir, prompts_dir)
+    graph = build_graph(
+        llm_configs, base_dir, prompts_dir,
+        on_node_event=on_node_event, on_token=on_token,
+    )
     
     # Compile graph
     app = graph.compile()

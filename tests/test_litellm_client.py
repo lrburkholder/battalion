@@ -6,6 +6,7 @@ import pytest
 from battalion.llm.litellm_client import (
     InfraFailure,
     NodeLLMConfig,
+    _silence_litellm_output,
     build_node_configs,
     call_llm,
 )
@@ -117,8 +118,129 @@ def test_negative_max_retries_rejected():
         NodeLLMConfig(model="m", max_retries=-1)
 
 
+# --- streaming (on_stream) ---
+
+def _stream_chunk(content=None, reasoning=None):
+    """A minimal litellm-style streamed chunk with .choices[0].delta."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(choices=[
+        SimpleNamespace(delta=SimpleNamespace(
+            content=content, reasoning_content=reasoning,
+        ))
+    ])
+
+
+class TestCallLlmStreaming:
+    def test_on_stream_emits_tokens_and_returns_assembled_response(self):
+        events = []
+
+        def fake_completion(**kwargs):
+            assert kwargs["stream"] is True
+            return iter([
+                _stream_chunk(content="Hel"),
+                _stream_chunk(content="lo"),
+                _stream_chunk(content=" world"),
+                _stream_chunk(),  # finish/usage frame: no delta
+            ])
+
+        config = NodeLLMConfig(model="m", max_retries=0)
+        result = call_llm(
+            "architect", config, [{"role": "user", "content": "hi"}],
+            completion_fn=fake_completion, sleep_fn=lambda s: None,
+            on_stream=events.append,
+        )
+
+        assert events == [
+            {"type": "token", "content": "Hel"},
+            {"type": "token", "content": "lo"},
+            {"type": "token", "content": " world"},
+        ]
+        # Assembled response must be extractable by the shared helpers.
+        assert result["choices"][0]["message"]["content"] == "Hello world"
+
+    def test_on_stream_forwards_reasoning_content_separately(self):
+        events = []
+
+        def fake_completion(**kwargs):
+            return iter([
+                _stream_chunk(reasoning="Let me think"),
+                _stream_chunk(content="answer"),
+            ])
+
+        config = NodeLLMConfig(model="m", max_retries=0)
+        result = call_llm(
+            "driver", config, [{"role": "user", "content": "hi"}],
+            completion_fn=fake_completion, sleep_fn=lambda s: None,
+            on_stream=events.append,
+        )
+
+        assert events == [
+            {"type": "reasoning", "content": "Let me think"},
+            {"type": "token", "content": "answer"},
+        ]
+        assert result["choices"][0]["message"]["content"] == "answer"
+
+    def test_on_stream_no_delta_frames_are_skipped_silently(self):
+        events = []
+
+        def fake_completion(**kwargs):
+            return iter([
+                _stream_chunk(),            # no content, no reasoning
+                _stream_chunk(content="x"),
+            ])
+
+        config = NodeLLMConfig(model="m", max_retries=0)
+        result = call_llm(
+            "reviewer", config, [{"role": "user", "content": "hi"}],
+            completion_fn=fake_completion, sleep_fn=lambda s: None,
+            on_stream=events.append,
+        )
+
+        assert events == [{"type": "token", "content": "x"}]
+        assert result["choices"][0]["message"]["content"] == "x"
+
+    def test_on_stream_retries_then_raises_infra_failure(self):
+        def always_fails(**kwargs):
+            raise RuntimeError("stream broke mid-way")
+
+        config = NodeLLMConfig(model="m", max_retries=1)
+        with pytest.raises(InfraFailure):
+            call_llm(
+                "reviewer", config, [{"role": "user", "content": "hi"}],
+                completion_fn=always_fails, sleep_fn=lambda s: None,
+                on_stream=lambda e: None,
+            )
+
+    def test_without_on_stream_does_not_force_streaming(self):
+        calls = []
+
+        def fake_completion(**kwargs):
+            calls.append(kwargs)
+            return {"content": "ok"}
+
+        config = NodeLLMConfig(model="m", max_retries=0)
+        call_llm(
+            "architect", config, [{"role": "user", "content": "hi"}],
+            completion_fn=fake_completion, sleep_fn=lambda s: None,
+        )
+
+        assert "stream" not in calls[0]
+
+
 def test_litellm_is_actually_importable():
     """Smoke test only — doesn't call out to a real provider. Confirms
     litellm is a real dependency, not just referenced in a lazy import
     that would fail the first time it's actually used."""
     import litellm  # noqa: F401
+
+
+def test_litellm_spam_is_silenced():
+    """Battalion suppresses litellm's per-attempt error-handling prints
+    ("Give Feedback / Get Help", "Provider List") so a retry storm doesn't
+    spam the terminal; the real provider error surfaces via InfraFailure +
+    the CLI's pause message instead."""
+    import litellm
+
+    _silence_litellm_output()
+    assert litellm.suppress_debug_info is True

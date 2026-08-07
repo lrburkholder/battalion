@@ -9,6 +9,16 @@ from pathlib import Path
 import typer
 
 from battalion.graph import run_ticket, resume_ticket
+from battalion.interrupts.triggers import (
+    TRIGGER_BUDGET_EXCEEDED,
+    TRIGGER_INFRA_FAILURE,
+    TRIGGER_MANUAL_CHECKPOINT,
+    TRIGGER_ROLE_EDIT,
+    TRIGGER_SAME_ROOT_CAUSE,
+    TRIGGER_SCOPE_VIOLATION,
+    get_trigger_name,
+)
+from battalion.progress import ProgressDisplay
 from battalion.state.persistence import save_state, load_state
 from battalion.state.models import RunState, RunStatus, Budget
 from battalion.config import load_config, BattalionConfig
@@ -47,6 +57,51 @@ def _print_status(state: RunState, human: bool = False) -> None:
     else:
         # JSON output
         typer.echo(state.model_dump_json(indent=2))
+
+
+def _describe_interrupt(entry) -> str:
+    """Build a one-paragraph human explanation of a logged interrupt.
+
+    A paused run must tell the human WHY it paused — the raw JSON state file
+    is the source of truth, but the terminal is where the answer needs to
+    appear (e.g. "architect's Mistral call failed after 3 attempts: invalid
+    API key", not just "awaiting-human")."""
+    context = entry.context or {}
+    trigger = entry.trigger
+    label = get_trigger_name(trigger)
+
+    if trigger == TRIGGER_INFRA_FAILURE:
+        error = context.get("error")
+        if error:
+            return f"{label}: the LLM call failed after all retries.\n   Provider error: {error}"
+        return f"{label}: the LLM call failed after all retries."
+    if trigger == TRIGGER_SCOPE_VIOLATION:
+        error = context.get("error")
+        if error:
+            return f"{label}: a node attempted an out-of-scope write.\n   {error}"
+        return f"{label}: a node attempted an out-of-scope write."
+    if trigger == TRIGGER_BUDGET_EXCEEDED:
+        return f"{label}: budget spent ({context.get('used', '?')}/{context.get('limit', '?')})."
+    if trigger == TRIGGER_SAME_ROOT_CAUSE:
+        cause = context.get("cause")
+        if cause:
+            return f"{label} (cycle {context.get('cycle_number')}): \"{cause}\""
+        return f"{label}: the same root cause was rejected twice."
+    if trigger == TRIGGER_ROLE_EDIT:
+        return f"{label}: a node's write scope changed mid-run."
+    if trigger == TRIGGER_MANUAL_CHECKPOINT:
+        return f"{label}: paused at declared phase {context.get('phase', '?')}."
+    return label
+
+
+def _print_pause_reason(state: RunState, run_id: str) -> None:
+    """After a run/resume pauses, print why it paused and how to continue."""
+    if state.status != RunStatus.AWAITING_HUMAN or not state.interrupt_log:
+        return
+    entry = state.interrupt_log[-1]
+    typer.echo("\nRun paused — awaiting human review.")
+    typer.echo(f"  {_describe_interrupt(entry)}")
+    typer.echo(f"  Resume when ready: battalion resume {run_id}")
 
 
 def _load_spec_text(spec_path: str) -> str:
@@ -119,13 +174,17 @@ def run(
     
     # Run the graph
     typer.echo(f"Starting run: {run_id}")
-    final_state = RunState.model_validate(run_ticket(
-        ticket_id=ticket_id,
-        spec_text=spec_text,
-        llm_configs=cfg.models,
-        base_dir=cfg.base_dir,
-        prompts_dir=cfg.prompts_dir,
-    ))
+    display = ProgressDisplay()
+    with display:
+        final_state = RunState.model_validate(run_ticket(
+            ticket_id=ticket_id,
+            spec_text=spec_text,
+            llm_configs=cfg.models,
+            base_dir=cfg.base_dir,
+            prompts_dir=cfg.prompts_dir,
+            on_node_event=display.handle_event,
+            on_token=display.handle_token,
+        ))
     
     # Save final state
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -133,6 +192,7 @@ def run(
     
     typer.echo(f"Run complete: {run_id} → {final_state.status.value}")
     typer.echo(f"State saved to: {state_file}")
+    _print_pause_reason(final_state, run_id)
 
 
 @app.command()
@@ -160,18 +220,23 @@ def resume(
     
     # Resume the run
     typer.echo(f"Resuming run: {run_id}")
-    final_state = RunState.model_validate(resume_ticket(
-        state=state,
-        llm_configs=cfg.models,
-        base_dir=cfg.base_dir,
-        prompts_dir=cfg.prompts_dir,
-    ))
+    display = ProgressDisplay()
+    with display:
+        final_state = RunState.model_validate(resume_ticket(
+            state=state,
+            llm_configs=cfg.models,
+            base_dir=cfg.base_dir,
+            prompts_dir=cfg.prompts_dir,
+            on_node_event=display.handle_event,
+            on_token=display.handle_token,
+        ))
     
     # Save updated state
     save_state(final_state, state_file)
     
     typer.echo(f"Resumed: {run_id} → {final_state.status.value}")
     typer.echo(f"State saved to: {state_file}")
+    _print_pause_reason(final_state, run_id)
 
 
 @app.command()

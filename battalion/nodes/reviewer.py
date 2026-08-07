@@ -121,6 +121,7 @@ def run_reviewer(
     prompts_dir: str | Path | None = None,
     make_clean_copy_fn: Callable[[Path], Path] = make_clean_copy,
     run_tests_fn: Callable[[Path], TestRunResult] = run_tests_via_subprocess,
+    on_stream: Callable[[dict], None] | None = None,
 ) -> RunState:
     """Run the Reviewer node: independently re-run tests from a clean copy
     of the current src/ tree, and return updated state.
@@ -170,7 +171,10 @@ def run_reviewer(
         {"role": "system", "content": resolved_prompt},
         {"role": "user", "content": f"Test output:\n{result.output}"},
     ]
-    response = call_llm_fn("reviewer", llm_config, messages)
+    if on_stream is not None:
+        response = call_llm_fn("reviewer", llm_config, messages, on_stream=on_stream)
+    else:
+        response = call_llm_fn("reviewer", llm_config, messages)
     cause = extract_content(response)
 
     if not cause or not cause.strip():

@@ -86,6 +86,56 @@ def test_run_architect_passes_spec_text_and_node_name_to_llm():
     assert "Build a widget with a spinner." in joined
 
 
+def test_run_architect_forwards_on_stream_to_the_llm_call():
+    """on_stream must reach call_llm_fn so streamed tokens/reasoning can be
+    surfaced live (BTN-13 CLI progress work)."""
+    streamed = []
+
+    def fake_call_llm(node_name, config, messages, **kwargs):
+        on_stream = kwargs["on_stream"]
+        on_stream({"type": "reasoning", "content": "thinking…"})
+        on_stream({"type": "token", "content": "plan text"})
+        return litellm_style_response("plan text")
+
+    state = make_state()
+    config = NodeLLMConfig(model="test-model")
+
+    updated = run_architect(
+        state,
+        spec_text="spec",
+        llm_config=config,
+        base_dir="/tmp/unused-in-this-test",
+        call_llm_fn=fake_call_llm,
+        on_stream=streamed.append,
+    )
+
+    assert streamed == [
+        {"type": "reasoning", "content": "thinking…"},
+        {"type": "token", "content": "plan text"},
+    ]
+    assert updated.phase == "driver"
+
+
+def test_run_architect_omits_on_stream_when_not_given():
+    """The on_stream kwarg must not be forwarded when absent, so fixed-arity
+    call_llm_fn fakes (no **kwargs) keep working."""
+    captured = {}
+
+    def fixed_arity_fake(node_name, config, messages):
+        captured["node_name"] = node_name
+        return litellm_style_response("plan")
+
+    run_architect(
+        make_state(),
+        spec_text="spec",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir="/tmp/unused-in-this-test",
+        call_llm_fn=fixed_arity_fake,
+    )
+
+    assert captured["node_name"] == "architect"
+
+
 def test_run_architect_only_ever_receives_its_own_scope(tmp_path, monkeypatch):
     """Integration check on top of BTN-2's own tests: the node builds its
     tools from state.write_scope internally, so confirm it ends up with
