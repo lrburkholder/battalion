@@ -87,6 +87,7 @@ def run_refactorer(
     on_violation: Callable[[dict], None] | None = None,
     system_prompt: str | None = None,
     prompts_dir: str | Path | None = None,
+    on_stream: Callable[[dict], None] | None = None,
 ) -> RunState:
     """Run the Refactorer node: refactor passing code without changing
     behavior, write refactored files under src/, and return updated state.
@@ -116,7 +117,10 @@ def run_refactorer(
         {"role": "user", "content": refactor_text},
     ]
 
-    response = call_llm_fn("refactorer", llm_config, messages)
+    if on_stream is not None:
+        response = call_llm_fn("refactorer", llm_config, messages, on_stream=on_stream)
+    else:
+        response = call_llm_fn("refactorer", llm_config, messages)
     files = extract_files(response)
 
     if not files:

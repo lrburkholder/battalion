@@ -41,7 +41,7 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     # Mock the graph execution to avoid actual LLM calls
     import battalion.cli as cli_module
     
-    def mock_run_ticket(ticket_id, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         return RunState(
             schema_version="1.0",
             run_id="run-BTN-9-test",
@@ -84,7 +84,7 @@ def test_run_force_overwrites_existing(tmp_path, monkeypatch):
     """Test that --force overwrites existing state file."""
     import battalion.cli as cli_module
     
-    def mock_run_ticket(ticket_id, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         return RunState(
             schema_version="1.0",
             run_id="run-BTN-9-test",
@@ -122,7 +122,7 @@ def test_resume_loads_and_continues(tmp_path, monkeypatch):
     import battalion.cli as cli_module
     from battalion.state.persistence import load_state
     
-    def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         return state.model_copy(update={
             "status": RunStatus.DONE,
             "phase": "done",
@@ -238,13 +238,59 @@ def test_status_missing_state_file(tmp_path, monkeypatch):
     assert "No state file found" in result.output
 
 
+def test_run_reports_why_run_paused(tmp_path, monkeypatch):
+    """When a run pauses on an interrupt, the CLI must tell the human WHY —
+    e.g. the provider error from an infra failure — not just say
+    'awaiting-human'."""
+    import battalion.cli as cli_module
+    from battalion.state.models import InterruptLogEntry
+    from datetime import datetime, timezone
+    from battalion.interrupts.triggers import TRIGGER_INFRA_FAILURE
+
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+        return RunState(
+            schema_version="1.0",
+            run_id="run-BTN-9-test",
+            ticket_id="BTN-9-test",
+            status=RunStatus.AWAITING_HUMAN,
+            phase="awaiting_human",
+            write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
+            retry_bound=2,
+            budget=Budget(limit=100, used=1),
+            reviewer_rejection_history=[],
+            manual_checkpoints=[],
+            interrupt_log=[
+                InterruptLogEntry(
+                    trigger=TRIGGER_INFRA_FAILURE,
+                    timestamp=datetime.now(timezone.utc),
+                    resolution=None,
+                    context={"error": "LLM call for node 'architect' failed after 3 attempts: AuthenticationError: Invalid API Key"},
+                )
+            ],
+        )
+
+    monkeypatch.setattr(cli_module, "run_ticket", mock_run_ticket)
+
+    spec_file = tmp_path / "spec.md"
+    spec_file.write_text("# Test Spec")
+
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        result = runner.invoke(app, ["run", "BTN-9-test", "--spec", str(spec_file)])
+
+    assert result.exit_code == 0
+    assert "Run paused" in result.output
+    assert "Invalid API Key" in result.output
+    assert "resume run-BTN-9-test" in result.output
+
+
 def test_run_with_config_file(tmp_path, monkeypatch):
     """Test that run command loads config from YAML file."""
     import battalion.cli as cli_module
     
     captured_config = {}
     
-    def mock_run_ticket(ticket_id, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         captured_config["llm_configs"] = llm_configs
         captured_config["base_dir"] = base_dir
         captured_config["prompts_dir"] = prompts_dir
@@ -297,7 +343,7 @@ def test_run_with_model_overrides(tmp_path, monkeypatch):
     
     captured_config = {}
     
-    def mock_run_ticket(ticket_id, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         captured_config["llm_configs"] = llm_configs
         return RunState(
             schema_version="1.0",
@@ -347,7 +393,7 @@ def test_resume_infers_target_from_interrupt(tmp_path, monkeypatch):
     
     captured_state = {}
     
-    def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         # Capture the resume target that would be inferred
         captured_state["resume_target"] = _infer_resume_target(state)
         captured_state["phase"] = state.phase
@@ -388,7 +434,7 @@ def test_resume_infers_target_from_rejection(tmp_path, monkeypatch):
     
     captured_state = {}
     
-    def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         # Capture the resume target that would be inferred
         captured_state["resume_target"] = _infer_resume_target(state)
         captured_state["phase"] = state.phase

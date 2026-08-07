@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "run_id": "run-BTN-10-test",
+  "ticket_id": "BTN-10-test",
+  "status": "awaiting-human",
+  "phase": "awaiting_human",
+  "write_scope": {
+    "architect": [
+      "plan.md"
+    ],
+    "driver": [
+      "src/"
+    ],
+    "reviewer": []
+  },
+  "reviewer_rejection_history": [],
+  "retry_bound": 2,
+  "budget": {
+    "limit": 100,
+    "used": 1
+  },
+  "interrupt_log": [
+    {
+      "trigger": "infra-failure",
+      "timestamp": "2026-08-07T18:58:32.366735Z",
+      "resolution": null,
+      "context": {
+        "error": "LLM call for node 'architect' (model=mistral/mistral-medium-latest) failed after 3 attempt(s): litellm.AuthenticationError: AuthenticationError: MistralException - {\"detail\":\"Invalid API Key\"}\n",
+        "next_phase": "driver_red"
+      }
+    }
+  ],
+  "manual_checkpoints": [],
+  "resume_target": null
+}

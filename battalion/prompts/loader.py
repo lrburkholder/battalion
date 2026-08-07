@@ -28,7 +28,7 @@ def load_system_prompt(node_name: str, prompts_dir: str | Path | None = None) ->
             f"No system prompt file found for node '{node_name}' at {path}"
         )
 
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     if not content.strip():
         raise PromptNotFound(
             f"System prompt file for node '{node_name}' at {path} is empty"

@@ -42,7 +42,7 @@ def load_config(
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
     if path.exists():
         import yaml
-        yaml_data = yaml.safe_load(path.read_text()) or {}
+        yaml_data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
     # 2. Apply environment variable overrides
     env_models = {}

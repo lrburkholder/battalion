@@ -35,6 +35,7 @@ def run_architect(
     on_violation: Callable[[dict], None] | None = None,
     system_prompt: str | None = None,
     prompts_dir: str | Path | None = None,
+    on_stream: Callable[[dict], None] | None = None,
 ) -> RunState:
     """Run the Architect node: produce a plan from spec_text, write it to
     plan.md, and return updated state. Raises InfraFailure (from call_llm_fn)
@@ -64,7 +65,10 @@ def run_architect(
     # Any failure here (including InfraFailure after exhausted retries)
     # propagates to the caller uncaught — BTN-8 routes InfraFailure to
     # interrupt trigger #5 at the graph level, not here.
-    response = call_llm_fn("architect", llm_config, messages)
+    if on_stream is not None:
+        response = call_llm_fn("architect", llm_config, messages, on_stream=on_stream)
+    else:
+        response = call_llm_fn("architect", llm_config, messages)
     plan_content = extract_content(response)
 
     if not plan_content or not plan_content.strip():
