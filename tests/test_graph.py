@@ -11,6 +11,7 @@ Acceptance criteria:
 2. Graph pauses at each defined interrupt point rather than proceeding silently
 """
 import pytest
+from unittest.mock import patch
 
 from battalion.graph import (
     NODE_ARCHITECT,
@@ -23,9 +24,10 @@ from battalion.graph import (
     NODE_REVIEWER_RED,
     NODE_REVIEWER_REFACTOR,
     build_graph,
+    resume_ticket,
     run_ticket,
 )
-from battalion.state.models import Budget, CheckpointType, RunState, RunStatus
+from battalion.state.models import Budget, CheckpointType, InterruptLogEntry, RunState, RunStatus
 from battalion.llm.litellm_client import NodeLLMConfig
 
 
@@ -259,3 +261,238 @@ class TestGraphIntegration:
         assert NODE_REFACTORER == "refactorer"
         assert NODE_PAUSE == "awaiting_human"
         assert NODE_DONE == "done"
+
+
+# =============================================================================
+# Real end-to-end execution tests (mocked node internals, real graph routing)
+#
+# Every test above this point only checks that the graph *compiles* or that
+# nodes/edges exist by name -- none of them actually invoke the graph and
+# watch it route. That gap is exactly how four real bugs shipped past 192
+# passing tests: interrupts fired during Architect/Driver/Refactorer were
+# silently ignored (edges were unconditional), a rejected RED check was
+# routed to Driver(GREEN) as if it had passed (accept/reject both set
+# phase="driver"), every Reviewer checkpoint crashed with an
+# InvalidUpdateError the moment it completed (a redundant add_edge fired
+# alongside add_conditional_edges to a different target), and resume_ticket
+# silently restarted every resumed run from Architect (resume_target was
+# set on the state but app.invoke() always starts at the fixed entry point
+# regardless of state contents). These tests invoke the compiled graph with
+# mocked node internals and assert on the actual call sequence and final
+# state, so a regression here fails loudly instead of compiling silently.
+# =============================================================================
+
+def _make_initial_state(ticket_id="regression-test", **overrides):
+    defaults = dict(
+        schema_version="1.0",
+        run_id=f"run-{ticket_id}",
+        ticket_id=ticket_id,
+        status=RunStatus.NOT_STARTED,
+        phase=NODE_ARCHITECT,
+        write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
+        retry_bound=2,
+        budget=Budget(limit=100, used=0),
+        reviewer_rejection_history=[],
+        interrupt_log=[],
+        manual_checkpoints=[],
+    )
+    defaults.update(overrides)
+    return RunState(**defaults)
+
+
+class TestInterruptsActuallyHaltExecution:
+    """Regression tests for bug #1: interrupts fired outside a Reviewer node
+    used to be logged but not acted on -- the graph proceeded to the next
+    node regardless."""
+
+    def test_budget_exceeded_during_architect_halts_before_driver(self, tmp_path):
+        driver_calls = []
+
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            # Blow the budget on Architect's own turn.
+            return state.model_copy(update={"budget": Budget(limit=1, used=999)})
+
+        def fake_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            driver_calls.append(mode)
+            return state.model_copy(update={"phase": "reviewer"})
+
+        with patch("battalion.nodes.architect.run_architect", side_effect=fake_architect), \
+             patch("battalion.nodes.driver.run_driver", side_effect=fake_driver):
+            app = build_graph(make_llm_configs(), base_dir=tmp_path).compile()
+            final = app.invoke(_make_initial_state(), {"recursion_limit": 5})
+
+        assert driver_calls == [], "Driver must not run once budget is exceeded"
+        assert final["status"] == RunStatus.AWAITING_HUMAN
+        assert len(final["interrupt_log"]) == 1
+        assert final["interrupt_log"][0].trigger == "budget-exceeded"
+
+    def test_manual_checkpoint_before_driver_halts(self, tmp_path):
+        driver_calls = []
+
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            return state.model_copy(update={"phase": "driver"})
+
+        def fake_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            driver_calls.append(mode)
+            return state.model_copy(update={"phase": "reviewer"})
+
+        with patch("battalion.nodes.architect.run_architect", side_effect=fake_architect), \
+             patch("battalion.nodes.driver.run_driver", side_effect=fake_driver):
+            app = build_graph(make_llm_configs(), base_dir=tmp_path).compile()
+            # Manual checkpoints are matched against the generic role string
+            # ("driver"/"reviewer"/"refactorer") that check_any_trigger is
+            # called with, not a concrete node name like NODE_DRIVER_RED --
+            # Architect's own pre-flight check for "am I about to hand off
+            # to a declared checkpoint" uses NODE_TO_PHASE[NODE_ARCHITECT],
+            # which is "driver".
+            initial = _make_initial_state(manual_checkpoints=["driver"])
+            final = app.invoke(initial, {"recursion_limit": 5})
+
+        assert driver_calls == [], "Manual checkpoint before Driver(RED) must pause first"
+        assert final["status"] == RunStatus.AWAITING_HUMAN
+        assert final["interrupt_log"][0].trigger == "manual-checkpoint"
+
+
+class TestRedCheckRoutingIsUnambiguous:
+    """Regression tests for bug #2: RED_CHECK accept and reject used to both
+    set phase="driver", so a rejected RED check was silently routed to
+    Driver(GREEN) as if it had passed."""
+
+    def test_red_check_reject_retries_driver_red_not_green(self, tmp_path):
+        calls = []
+
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            return state.model_copy(update={"phase": "driver"})
+
+        def fake_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            calls.append(f"driver_{mode}")
+            return state.model_copy(update={"phase": "reviewer"})
+
+        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+            calls.append(f"reviewer_{checkpoint.value}")
+            # Always reject: RED check "unexpectedly passed".
+            return state.model_copy(update={"phase": "driver_red", "status": RunStatus.IN_PROGRESS})
+
+        with patch("battalion.nodes.architect.run_architect", side_effect=fake_architect), \
+             patch("battalion.nodes.driver.run_driver", side_effect=fake_driver), \
+             patch("battalion.nodes.reviewer.run_reviewer", side_effect=fake_reviewer):
+            app = build_graph(make_llm_configs(), base_dir=tmp_path).compile()
+            try:
+                app.invoke(_make_initial_state(), {"recursion_limit": 5})
+            except Exception:
+                pass  # Expected: mock always rejects, hits recursion limit eventually.
+
+        # The bug: driver_green would appear here even though every reviewer
+        # call rejected. It must not.
+        assert "driver_green" not in calls
+        assert calls.count("driver_red") >= 2
+
+    def test_red_check_accept_advances_to_driver_green(self, tmp_path):
+        calls = []
+
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            return state.model_copy(update={"phase": "driver"})
+
+        def fake_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            calls.append(f"driver_{mode}")
+            return state.model_copy(update={"phase": "reviewer"})
+
+        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+            calls.append(f"reviewer_{checkpoint.value}")
+            if checkpoint == CheckpointType.RED_CHECK:
+                return state.model_copy(update={"phase": "driver_green", "status": RunStatus.IN_PROGRESS})
+            # Reject everything after RED_CHECK so the run halts predictably
+            # once we've proven the RED_CHECK -> GREEN transition happened.
+            return state.model_copy(update={"phase": "driver", "status": RunStatus.IN_PROGRESS})
+
+        with patch("battalion.nodes.architect.run_architect", side_effect=fake_architect), \
+             patch("battalion.nodes.driver.run_driver", side_effect=fake_driver), \
+             patch("battalion.nodes.reviewer.run_reviewer", side_effect=fake_reviewer):
+            app = build_graph(make_llm_configs(), base_dir=tmp_path).compile()
+            try:
+                app.invoke(_make_initial_state(), {"recursion_limit": 6})
+            except Exception:
+                pass
+
+        assert "driver_green" in calls
+
+
+class TestReviewerCheckpointsDoNotCrash:
+    """Regression tests for bug #3: every Reviewer node had a redundant
+    add_edge alongside add_conditional_edges, which LangGraph fired in the
+    same step whenever the conditional picked a different target --
+    guaranteed InvalidUpdateError the moment any checkpoint completed."""
+
+    def test_full_accept_path_completes_without_crashing(self, tmp_path):
+        """Architect -> Driver(RED) -> Reviewer(accept) -> Driver(GREEN) ->
+        Reviewer(accept) -> Refactorer -> Reviewer(accept) -> DONE, with
+        every reviewer call accepting. Must reach DONE, not raise."""
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            return state.model_copy(update={"phase": "driver"})
+
+        def fake_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            return state.model_copy(update={"phase": "reviewer"})
+
+        def fake_refactorer(state, refactor_text, llm_config, base_dir, prompts_dir=None):
+            return state.model_copy(update={"phase": "reviewer"})
+
+        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+            accept_phase = {
+                CheckpointType.RED_CHECK: "driver_green",
+                CheckpointType.GREEN_CHECK: "refactorer",
+                CheckpointType.REFACTOR_CHECK: "done",
+            }[checkpoint]
+            status = RunStatus.DONE if accept_phase == "done" else RunStatus.IN_PROGRESS
+            return state.model_copy(update={"phase": accept_phase, "status": status})
+
+        with patch("battalion.nodes.architect.run_architect", side_effect=fake_architect), \
+             patch("battalion.nodes.driver.run_driver", side_effect=fake_driver), \
+             patch("battalion.nodes.refactorer.run_refactorer", side_effect=fake_refactorer), \
+             patch("battalion.nodes.reviewer.run_reviewer", side_effect=fake_reviewer):
+            app = build_graph(make_llm_configs(), base_dir=tmp_path).compile()
+            # Must not raise InvalidUpdateError.
+            final = app.invoke(_make_initial_state(), {"recursion_limit": 10})
+
+        assert final["status"] == RunStatus.DONE
+        assert final["phase"] == "done"
+
+
+class TestResumeActuallyResumes:
+    """Regression tests for bug #4: resume_ticket set resume_target on the
+    state but app.invoke() always starts at the fixed entry point
+    (Architect) regardless of state contents -- every resume silently
+    restarted the ticket from scratch."""
+
+    def test_resume_does_not_rerun_architect(self, tmp_path):
+        calls = []
+
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            calls.append("architect")
+            return state.model_copy(update={"phase": "driver"})
+
+        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+            calls.append(f"reviewer_{checkpoint.value}")
+            # REFACTOR_CHECK accept -> phase="done" -> routes straight to
+            # NODE_DONE, so this test doesn't need to also mock Driver or
+            # Refactorer to reach a clean terminal state.
+            return state.model_copy(update={"phase": "done", "status": RunStatus.DONE})
+
+        paused_state = _make_initial_state(
+            status=RunStatus.AWAITING_HUMAN,
+            phase="awaiting_human",
+            interrupt_log=[
+                InterruptLogEntry(
+                    trigger="budget-exceeded",
+                    timestamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                    context={"next_phase": NODE_REVIEWER_REFACTOR},
+                )
+            ],
+        )
+
+        with patch("battalion.nodes.architect.run_architect", side_effect=fake_architect), \
+             patch("battalion.nodes.reviewer.run_reviewer", side_effect=fake_reviewer):
+            final = resume_ticket(paused_state, make_llm_configs(), base_dir=tmp_path, max_turns=5)
+
+        assert "architect" not in calls, "Resuming must not re-run Architect from scratch"
+        assert calls == ["reviewer_refactor-check"]
+        assert final["status"] == RunStatus.DONE

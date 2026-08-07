@@ -59,7 +59,7 @@ class _BoundWriteTool:
     def write(self, relative_path: str, content: str) -> None:
         target = self.resolve(relative_path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
+        target.write_text(content, encoding="utf-8")
 
     def _violate(self, attempted_path: str) -> None:
         if self._on_violation is not None:

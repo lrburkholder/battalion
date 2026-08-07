@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,14 +48,17 @@ _EXPECT_PASS_BY_CHECKPOINT: dict[CheckpointType, bool] = {
 
 # Phase to move to when the checkpoint's expectation is met (accept).
 _NEXT_PHASE_ON_ACCEPT: dict[CheckpointType, str] = {
-    CheckpointType.RED_CHECK: "driver",       # correctly-failing test confirmed -> do GREEN
+    CheckpointType.RED_CHECK: "driver_green",  # correctly-failing test confirmed -> do GREEN
     CheckpointType.GREEN_CHECK: "refactorer",  # tests pass -> refactor step
     CheckpointType.REFACTOR_CHECK: "done",     # still passes after refactor -> complete
 }
 
 # Phase to retry when the checkpoint's expectation is NOT met (reject).
 _RETRY_PHASE_ON_REJECT: dict[CheckpointType, str] = {
-    CheckpointType.RED_CHECK: "driver",        # retry RED
+    CheckpointType.RED_CHECK: "driver_red",    # retry RED — must be distinct from the
+                                                 # accept value above (both used to be
+                                                 # "driver", which made accept and reject
+                                                 # indistinguishable to the graph's routing)
     CheckpointType.GREEN_CHECK: "driver",      # retry GREEN
     CheckpointType.REFACTOR_CHECK: "refactorer",  # retry REFACTOR
 }
@@ -91,9 +95,14 @@ def make_clean_copy(src_dir: str | Path) -> Path:
 
 def run_tests_via_subprocess(clean_dir: str | Path) -> TestRunResult:
     """Run pytest in clean_dir via subprocess. This is the real, un-mocked
-    default — Reviewer never takes Driver's word for pass/fail."""
+    default — Reviewer never takes Driver's word for pass/fail.
+
+    Uses sys.executable (the interpreter running Battalion) rather than the
+    bare "python" from PATH, so the clean-tree re-run uses the same Python
+    that has Battalion's test dependencies installed regardless of which
+    venv the caller activated."""
     proc = subprocess.run(
-        ["python", "-m", "pytest", "-q"],
+        [sys.executable, "-m", "pytest", "-q"],
         cwd=str(clean_dir),
         capture_output=True,
         text=True,

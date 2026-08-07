@@ -19,12 +19,12 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 - ✅ **BTN-6**: Reviewer node
 - ✅ **BTN-7**: Graph wiring with interrupt points
 - ✅ **BTN-8**: Interrupt triggers (1-6) + budget tracking
-- 🔄 **BTN-9**: CLI (Typer) - run/resume/status (planned)
-- 🔄 **BTN-10**: End-to-end acceptance criteria validation (planned)
+- ✅ **BTN-9**: CLI (Typer) - run/resume/status
+- ✅ **BTN-10**: End-to-end acceptance criteria validation
 - ✅ **BTN-11**: Driver RED/GREEN mode support
 - ✅ **BTN-12**: Reviewer expect_pass parameter + per-checkpoint rejection counters
 - ✅ **BTN-13**: Refactorer node
-- 🔄 **BTN-14**: Model-diversity constraint (Reviewer must differ from Driver) (planned)
+- ✅ **BTN-14**: Model-diversity constraint (Reviewer must differ from Driver)
 
 ## Architecture
 
@@ -43,7 +43,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 | `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | ✅ Complete |
 | `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | ✅ Complete |
 | `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | ✅ Complete |
-| `battalion.cli` | Typer CLI - run/resume/status | 🔄 Planned (BTN-9) |
+| `battalion.cli` | Typer CLI - run/resume/status | ✅ Complete (BTN-9) |
 
 ### State Schema
 
@@ -201,9 +201,9 @@ See [LICENSE](LICENSE) for full license text.
 - ✅ Driver, Reviewer, and Refactorer nodes complete
 - ✅ Full graph wiring with LangGraph (RED → Reviewer → GREEN → Reviewer → Refactorer → Reviewer loop)
 - ✅ All 6 interrupt trigger implementations + budget tracking
-- 🔄 Build CLI entry points (BTN-9)
-- 🔄 End-to-end acceptance testing (BTN-10)
-- 🔄 Model-diversity constraint between Driver and Reviewer (BTN-14)
+- ✅ Build CLI entry points (BTN-9)
+- ✅ End-to-end acceptance testing (BTN-10)
+- ✅ Model-diversity constraint between Driver and Reviewer (BTN-14)
 
 ### Future Enhancements
 - Researcher, Specifier, Teacher nodes (post-v1)

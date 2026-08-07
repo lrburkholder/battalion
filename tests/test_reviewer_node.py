@@ -120,7 +120,12 @@ def test_refactor_check_rejects_on_fail(tmp_path):
 def test_red_check_accept_advances_to_driver_for_green(tmp_path):
     (tmp_path / "src").mkdir()
     updated = fake_failed(tmp_path, checkpoint=CheckpointType.RED_CHECK)
-    assert updated.phase == "driver"
+    # Was "driver" (generic) — now "driver_green", distinct from the reject
+    # value "driver_red" below. The two used to collide (both "driver"),
+    # which made the graph's RED_CHECK routing unable to tell accept from
+    # reject: a rejected RED check was silently routed to Driver(GREEN) as
+    # if it had passed.
+    assert updated.phase == "driver_green"
     assert updated.status == RunStatus.IN_PROGRESS
 
 
@@ -141,7 +146,9 @@ def test_refactor_check_accept_marks_done(tmp_path):
 def test_red_check_reject_retries_driver(tmp_path):
     (tmp_path / "src").mkdir()
     updated = fake_passed(tmp_path, checkpoint=CheckpointType.RED_CHECK)  # unexpected pass = reject
-    assert updated.phase == "driver"
+    # Was "driver" (same as the accept value above); now "driver_red" so
+    # the graph can actually route reject differently from accept.
+    assert updated.phase == "driver_red"
 
 
 def test_green_check_reject_retries_driver(tmp_path):
@@ -368,5 +375,5 @@ def test_run_reviewer_end_to_end_with_real_defaults_red_check(tmp_path):
         call_llm_fn=lambda *a, **kw: litellm_response("unused on accept"),
     )
 
-    assert updated.phase == "driver"
+    assert updated.phase == "driver_green"
     assert updated.reviewer_rejection_history == []

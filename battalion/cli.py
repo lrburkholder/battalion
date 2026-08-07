@@ -53,7 +53,7 @@ def _load_spec_text(spec_path: str) -> str:
     """Load spec text from file or return the string directly."""
     path = Path(spec_path)
     if path.exists():
-        return path.read_text()
+        return path.read_text(encoding="utf-8")
     # If not a file, treat as literal spec text
     return spec_path
 
@@ -119,12 +119,13 @@ def run(
     
     # Run the graph
     typer.echo(f"Starting run: {run_id}")
-    final_state = run_ticket(
-        ticket_id=spec_text,
+    final_state = RunState.model_validate(run_ticket(
+        ticket_id=ticket_id,
+        spec_text=spec_text,
         llm_configs=cfg.models,
         base_dir=cfg.base_dir,
         prompts_dir=cfg.prompts_dir,
-    )
+    ))
     
     # Save final state
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,12 +160,12 @@ def resume(
     
     # Resume the run
     typer.echo(f"Resuming run: {run_id}")
-    final_state = resume_ticket(
+    final_state = RunState.model_validate(resume_ticket(
         state=state,
         llm_configs=cfg.models,
         base_dir=cfg.base_dir,
         prompts_dir=cfg.prompts_dir,
-    )
+    ))
     
     # Save updated state
     save_state(final_state, state_file)

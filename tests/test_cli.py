@@ -41,7 +41,7 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     # Mock the graph execution to avoid actual LLM calls
     import battalion.cli as cli_module
     
-    def mock_run_ticket(ticket_id, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50):
         return RunState(
             schema_version="1.0",
             run_id="run-BTN-9-test",
@@ -84,7 +84,7 @@ def test_run_force_overwrites_existing(tmp_path, monkeypatch):
     """Test that --force overwrites existing state file."""
     import battalion.cli as cli_module
     
-    def mock_run_ticket(ticket_id, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50):
         return RunState(
             schema_version="1.0",
             run_id="run-BTN-9-test",
@@ -244,7 +244,7 @@ def test_run_with_config_file(tmp_path, monkeypatch):
     
     captured_config = {}
     
-    def mock_run_ticket(ticket_id, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50):
         captured_config["llm_configs"] = llm_configs
         captured_config["base_dir"] = base_dir
         captured_config["prompts_dir"] = prompts_dir
@@ -297,7 +297,7 @@ def test_run_with_model_overrides(tmp_path, monkeypatch):
     
     captured_config = {}
     
-    def mock_run_ticket(ticket_id, llm_configs, base_dir, prompts_dir, max_turns=50):
+    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50):
         captured_config["llm_configs"] = llm_configs
         return RunState(
             schema_version="1.0",

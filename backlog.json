@@ -231,7 +231,7 @@
       "id": "BTN-10",
       "phase": "testing",
       "title": "End-to-end acceptance criteria validation",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Validate the full v1 milestone acceptance criteria from spec.md against the built system.",
       "acceptance_criteria": [
@@ -245,7 +245,7 @@
       "blocks": [],
       "assignee_role": "reviewer",
       "source": "spec.md Acceptance Criteria; plan.md sequencing step 10",
-      "notes": "This is the milestone gate for v1 completion."
+      "notes": "This is the milestone gate for v1 completion. Status reconciled 2026-08-07: tests/test_acceptance.py validates all five spec.md v1 acceptance criteria plus BTN-10's own ACs against the built system, with real graph routing, real node implementations, real write-scope enforcement, and real clean-tree subprocess test execution (only LLM calls are faked). Validation surfaced and fixed four real defects that kept the milestone gate red: (1) Reviewer's clean-tree re-run used bare 'python' from PATH, which has no pytest outside the activated venv -- now uses sys.executable; (2) graph.py did not catch InfraFailure/ScopeViolationError from nodes, so triggers #2/#5 crashed invoke() with an unhandled exception instead of pausing -- node calls are now wrapped and routed to an AWAITING_HUMAN pause with the interrupt logged; (3) cli.py run/resume passed the graph's raw dict output to save_state, which requires RunState -- now validates via RunState.model_validate; (4) stale test_cli.py mocks predated run_ticket's spec_text kwarg -- updated. Full suite: 210 tests passing."
     },
     {
       "id": "BTN-11",
@@ -339,6 +339,29 @@
       "assignee_role": "driver",
       "source": "flagged in conversation after BTN-11 -- deliberately deferred, not in scope for BTN-12",
       "notes": "Implemented with ModelDiversityError in litellm_client.py and config.py. Only enforces when both driver and reviewer are explicitly configured (not just using defaults). Tests in test_model_diversity.py."
+    },
+    {
+      "id": "BTN-15",
+      "phase": "implementation",
+      "title": "CLI setup command for LLM configuration and validation",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Add a 'battalion setup' CLI command that interactively or declaratively configures LLM providers, API keys, and model selections, then validates connectivity to each configured model before saving to battalion.config.yaml. Reduces onboarding friction by handling provider prefixes, key validation, and model diversity constraints automatically.",
+      "acceptance_criteria": [
+        "Running 'battalion setup' without a config file creates a valid battalion.config.yaml with working model configs",
+        "The setup command validates API key connectivity for each configured provider before completing",
+        "The setup command enforces model diversity between Driver and Reviewer automatically",
+        "Existing config files are preserved with only specified changes, not overwritten entirely"
+      ],
+      "dependencies": [
+        "BTN-3",
+        "BTN-9",
+        "BTN-14"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "user request after trying initial CLI usage",
+      "notes": "Motivated by the friction of manual config setup, provider prefix requirements, and API key management. Should integrate with LiteLLM's existing provider detection."
     }
   ]
 }

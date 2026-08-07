@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "run_id": "run-c:\\src\\Battalion\\battalion\\test_ticket.md",
+  "ticket_id": "c:\\src\\Battalion\\battalion\\test_ticket.md",
+  "status": "blocked",
+  "phase": "recursion_limit_exceeded",
+  "write_scope": {
+    "architect": [
+      "plan.md"
+    ],
+    "driver": [
+      "src/"
+    ],
+    "reviewer": []
+  },
+  "reviewer_rejection_history": [],
+  "retry_bound": 2,
+  "budget": {
+    "limit": 100,
+    "used": 0
+  },
+  "interrupt_log": [],
+  "manual_checkpoints": [],
+  "resume_target": null
+}
