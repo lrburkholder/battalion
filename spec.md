@@ -19,7 +19,7 @@ run automatically.
   hardcoded to one provider)
 - Local JSON as the default state/ticket persistence layer, following
   `regiment-backlog.json`'s existing schema conventions
-- A versioned state schema (JSON) shared across all three nodes
+- A versioned state schema (JSON) shared across all four nodes
 - Per-node declared, enforced write scope
 - The v1 interrupt taxonomy (see below)
 - CLI entry point, local machine execution
@@ -36,7 +36,7 @@ run automatically.
 ## State Schema (v1, draft)
 Follows `regiment-backlog.json` conventions: explicit `schema_version`,
 enum-constrained `status`, per-item dependency/blocking fields. Lives as one
-versioned contract alongside the graph code; all three nodes validate against
+versioned contract alongside the graph code; all four nodes validate against
 it rather than maintaining separate sub-schemas.
 
 Fields per ticket/run (draft — to be refined during Architect phase):
@@ -95,8 +95,9 @@ the ticket's state at creation, adjustable by the human at any interrupt.
 - CLI UX for resuming a paused/interrupted run
 
 ## Acceptance Criteria (v1 milestone)
-- A ticket can flow Architect → Driver → Reviewer end-to-end without human
-  intervention when no interrupt trigger fires
+- A ticket can flow Architect → Driver (RED) → Reviewer → Driver (GREEN) →
+  Reviewer → Refactorer → Reviewer end-to-end without human intervention when
+  no interrupt trigger fires
 - Each of the 6 interrupt triggers can be independently demonstrated (a
   scenario exists that reliably fires each one)
 - A paused run can be resumed by a human after review, from the CLI

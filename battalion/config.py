@@ -24,7 +24,6 @@ class BattalionConfig(BaseModel):
     manual_checkpoints: list[str] = Field(default_factory=list)
     write_scope: dict[str, list[str]] = Field(default_factory=dict)
 
-
 def load_config(
     config_path: str | Path | None = None,
     cli_overrides: dict[str, Any] | None = None,
@@ -120,3 +119,35 @@ def load_config(
         manual_checkpoints=manual_checkpoints,
         write_scope=write_scope,
     )
+
+
+def save_config(
+    models: dict[str, dict[str, Any]],
+    config_path: str | Path | None = None,
+    existing: dict[str, Any] | None = None,
+) -> Path:
+    """Merge the given per-node models into a battalion.config.yaml.
+
+    Every existing top-level key that isn't being replaced is preserved
+    verbatim (BTN-15 AC: "existing config files are preserved with only
+    specified changes, not overwritten entirely"). `existing` defaults to
+    the current file contents, or {} if the file doesn't exist yet.
+
+    Args:
+        models: {"node": {"model": "provider/model", ...}} to write.
+        config_path: YAML file to write (defaults to battalion.config.yaml).
+        existing: Raw YAML to merge into (defaults to the file on disk).
+
+    Returns:
+        The Path that was written.
+    """
+    import yaml
+
+    path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    if existing is None and path.exists():
+        existing = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    data = {**(existing or {}), "models": models}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return path

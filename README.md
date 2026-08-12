@@ -10,7 +10,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 ## Status
 
-**Current Milestone**: v1 (Core Architecture)
+**Current Milestone**: v1 core complete; onboarding and observability next
 - ✅ **BTN-1**: State models + persistence layer
 - ✅ **BTN-2**: Per-node write-scope tool binding
 - ✅ **BTN-3**: LiteLLM client wrapper
@@ -25,6 +25,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 - ✅ **BTN-12**: Reviewer expect_pass parameter + per-checkpoint rejection counters
 - ✅ **BTN-13**: Refactorer node
 - ✅ **BTN-14**: Model-diversity constraint (Reviewer must differ from Driver)
+- ✅ **BTN-15**: CLI setup command for LLM configuration and validation
 
 ## Architecture
 
@@ -43,7 +44,10 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 | `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | ✅ Complete |
 | `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | ✅ Complete |
 | `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | ✅ Complete |
-| `battalion.cli` | Typer CLI - run/resume/status | ✅ Complete (BTN-9) |
+| `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | ✅ Complete |
+| `battalion.setup` | Provider discovery, configuration, and connectivity checks | ✅ Complete (BTN-15) |
+| `battalion.progress` | Human-readable CLI progress events | ✅ Complete |
+| `battalion.cli` | Typer CLI - run/resume/status/setup | ✅ Complete (BTN-9, BTN-15) |
 
 ### State Schema
 
@@ -52,7 +56,7 @@ The versioned state contract includes:
 - `run_id`: Unique run identifier
 - `ticket_id`: Current ticket being processed
 - `status`: Current run status (not-started, in-progress, blocked, awaiting-human, done, failed-infra)
-- `phase`: Current node/phase (architect, driver, reviewer)
+- `phase`: Current node/phase (architect, driver, reviewer, refactorer, pause, or done)
 - `write_scope`: Per-node declared write permissions
 - `reviewer_rejection_history`: Tracking for interrupt trigger #1
 - `retry_bound`: Configurable retry limits
@@ -81,24 +85,61 @@ Each node declares which files/directories it may create/edit as part of its nod
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/battalion.git
+git clone https://github.com/lrburkholder/battalion.git
 cd battalion
 
-# Install in development mode
-pip install -e .
-
-# Install test dependencies
-pip install pytest pytest-cov
+# Create a virtual environment, activate it for your shell, then install dependencies
+python -m venv .venv
+python -m pip install -e ".[dev]"
+python -m pip install langgraph  # temporary until declared in pyproject.toml
 ```
+
+Battalion requires Python 3.11 or newer. The project imports LangGraph at
+runtime; until it is declared in `pyproject.toml`, install a compatible
+`langgraph` package explicitly in a fresh environment.
+
+### Configure Models
+
+Battalion uses LiteLLM model identifiers such as `openai/gpt-4.1-mini` or
+`anthropic/claude-sonnet-4-20250514`. Configure provider credentials in the
+environment; do not put API keys in `battalion.config.yaml`.
+
+BTN-15 adds a guided setup command:
+
+```bash
+python -m battalion setup
+
+# Non-interactive example
+python -m battalion setup \
+  --model-architect provider/model-a \
+  --model-driver provider/model-b \
+  --model-reviewer provider/model-c \
+  --model-refactorer provider/model-b
+```
+
+Driver and Reviewer must use different model identifiers. Use `--no-validate`
+only when intentionally skipping live provider connectivity checks.
+
+### Run Battalion
+
+```bash
+python -m battalion run BTN-16 --spec path/to/spec.md
+python -m battalion status run-BTN-16 --human
+python -m battalion resume run-BTN-16
+```
+
+Run `python -m battalion <command> --help` for the authoritative options while
+the CLI is evolving.
 
 ### Running Tests
 
 ```bash
-# Run all tests
-python -m pytest tests/ -v
+# Run all tests (offline; provider calls are mocked)
+python -m pytest
 
-# Run with coverage
-python -m pytest tests/ --cov=battalion --cov-report=term-missing
+# Optional coverage report (requires pytest-cov)
+python -m pip install pytest-cov
+python -m pytest --cov=battalion --cov-report=term-missing
 ```
 
 ### Project Structure
@@ -106,7 +147,12 @@ python -m pytest tests/ --cov=battalion --cov-report=term-missing
 ```
 battalion/
 ├── __init__.py
+├── __main__.py                 # `python -m battalion`
+├── cli.py                      # Typer commands: run/resume/status/setup
+├── config.py                   # Configuration loading and validation
 ├── graph.py                    # StateGraph wiring, edges, interrupt points (BTN-7)
+├── progress.py                 # CLI progress display
+├── setup.py                    # Guided model/provider setup (BTN-15)
 ├── llm/
 │   ├── __init__.py
 │   └── litellm_client.py      # Per-node LiteLLM wrapper (BTN-3)
@@ -138,6 +184,7 @@ prompts/                        # Node system prompts, overridable per node
 └── refactorer.md
 
 tests/
+├── test_acceptance.py         # End-to-end v1 acceptance criteria
 ├── test_architect_node.py     # Architect node tests
 ├── test_driver_node.py        # Driver node tests
 ├── test_reviewer_node.py      # Reviewer node tests
@@ -148,6 +195,7 @@ tests/
 ├── test_models.py            # State model tests
 ├── test_persistence.py        # Persistence tests
 ├── test_prompt_loader.py      # Prompt loading/override tests
+├── test_setup.py              # Guided setup tests (BTN-15)
 └── test_tool_binding.py       # Tool binding tests
 
 # Configuration
@@ -160,8 +208,11 @@ tests/
 
 - **Python**: >= 3.11
 - **Core**: 
+  - `langgraph` - Graph construction and execution (runtime import; packaging declaration pending)
   - `pydantic>=2.0` - Data validation and models
   - `litellm>=1.40` - Multi-provider LLM abstraction
+  - `typer>=0.9` - CLI framework
+  - `pyyaml>=6.0` - YAML configuration
 - **Development**:
   - `pytest>=8.0` - Testing framework
   - `pytest-cov` - Coverage reporting
@@ -197,13 +248,22 @@ See [LICENSE](LICENSE) for full license text.
 
 ## Roadmap
 
-### v1 Milestone (Current Focus)
+### v1 Milestone (Complete)
 - ✅ Driver, Reviewer, and Refactorer nodes complete
 - ✅ Full graph wiring with LangGraph (RED → Reviewer → GREEN → Reviewer → Refactorer → Reviewer loop)
 - ✅ All 6 interrupt trigger implementations + budget tracking
 - ✅ Build CLI entry points (BTN-9)
 - ✅ End-to-end acceptance testing (BTN-10)
 - ✅ Model-diversity constraint between Driver and Reviewer (BTN-14)
+
+### Active Work
+
+- ✅ Guided LLM configuration and connectivity validation (BTN-15)
+- ✅ Role prompts aligned with node authority and output contracts (BTN-25)
+- ⏳ Persist and assemble role-appropriate node context (BTN-26)
+- ⏳ Per-call and per-node cost reporting (BTN-16)
+- ⏳ Interrupt/checkpoint web UI (BTN-17)
+- ⏳ Public documentation site (BTN-18)
 
 ### Future Enhancements
 - Researcher, Specifier, Teacher nodes (post-v1)

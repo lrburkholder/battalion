@@ -1,15 +1,15 @@
-Learner Node
+Recon Node
 Purpose
 
-The Learner node observes a completed execution and proposes reusable engineering knowledge for future executions.
+The Recon node observes a completed execution and proposes reusable engineering knowledge for future executions.
 
-The Learner does not modify execution behavior for the current run.
+Recon does not modify execution behavior for the current run.
 
 Instead, it produces candidate Instincts that may be reviewed, accepted, edited, or discarded by the human operator.
 
 Responsibilities
 
-The Learner SHALL:
+Recon SHALL:
 
 analyze the completed execution graph
 identify recurring or noteworthy engineering lessons
@@ -18,7 +18,7 @@ attach evidence supporting each Instinct
 assign an initial confidence level
 identify the execution context in which the Instinct applies
 
-The Learner SHALL NOT:
+Recon SHALL NOT:
 
 modify repository standards
 modify architecture documents
@@ -52,7 +52,7 @@ Accepted instincts become available to future executions.
 
 Success Criteria
 
-A successful Learner execution:
+A successful Recon execution:
 
 captures useful engineering knowledge
 avoids duplicating existing instincts

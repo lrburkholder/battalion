@@ -344,7 +344,7 @@
       "id": "BTN-15",
       "phase": "implementation",
       "title": "CLI setup command for LLM configuration and validation",
-      "status": "not-started",
+      "status": "done",
       "priority": "P2",
       "description": "Add a 'battalion setup' CLI command that interactively or declaratively configures LLM providers, API keys, and model selections, then validates connectivity to each configured model before saving to battalion.config.yaml. Reduces onboarding friction by handling provider prefixes, key validation, and model diversity constraints automatically.",
       "acceptance_criteria": [
@@ -425,6 +425,54 @@
       "assignee_role": "driver",
       "source": "spun out of 2026-08-04 discussion re: portfolio-site framing",
       "notes": "Follow-up ticket (not yet created) should expand this to include Dojo and Writer's Bloc once those repos exist -- deliberately not designed for today, since designing for unbuilt spinoffs risks pulling their scope forward prematurely."
+    },
+    {
+      "id": "BTN-25",
+      "phase": "implementation",
+      "title": "Align role prompts with node contracts",
+      "status": "done",
+      "priority": "P1",
+      "description": "Tighten Architect, Driver, Reviewer, and Refactorer prompts around their actual authority, inputs, output parsers, write-root semantics, and checkpoint responsibilities.",
+      "acceptance_criteria": [
+        "Every file-producing prompt requires the exact files JSON contract and paths relative to the bound src root",
+        "RED, GREEN, Reviewer, and Refactorer prompts do not claim authority or execution capabilities their nodes do not have",
+        "Reviewer emits only a normalized rejection-cause sentence compatible with same-cause detection",
+        "Architect distinguishes evidence, assumptions, decisions, open questions, and deferred work",
+        "Static prompt-contract tests protect the mechanically significant instructions"
+      ],
+      "dependencies": [
+        "BTN-11",
+        "BTN-12",
+        "BTN-13"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "2026-08-11 prompt review",
+      "notes": "Prompt-only improvement. Context propagation is tracked separately in BTN-26."
+    },
+    {
+      "id": "BTN-26",
+      "phase": "implementation",
+      "title": "Persist and assemble node execution context",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Preserve the supplied specification in RunState and assemble bounded, role-appropriate context for Architect, Driver RED/GREEN, and Refactorer instead of passing only ticket_id.",
+      "acceptance_criteria": [
+        "RunState persists the supplied specification across save, load, pause, and resume",
+        "Architect receives the specification rather than only the ticket ID",
+        "Driver receives the specification, approved plan, and relevant existing test or implementation context for its mode",
+        "Refactorer receives the passing files it is expected to improve",
+        "Context assembly is deterministic, bounded, and covered by graph-level tests"
+      ],
+      "dependencies": [
+        "BTN-1",
+        "BTN-7",
+        "BTN-25"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "discovered during 2026-08-11 prompt review",
+      "notes": "RunState currently has no spec field; run_ticket passes spec as an ignored extra, and graph node factories use state.ticket_id as simplified input."
     }
   ]
 }
