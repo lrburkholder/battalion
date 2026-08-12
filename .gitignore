@@ -220,3 +220,5 @@ __marimo__/
 # Battalion-specific
 battalion.config.yaml
 test_ticket.md
+.pages-source/
+_site/

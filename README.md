@@ -219,14 +219,17 @@ tests/
 
 ## Design Principles
 
-### ADR-001: Single Versioned State Schema
+### [ADR-0001: Single Versioned State Schema](docs/adrs/adr0001.md)
 All nodes share a single, versioned state contract rather than maintaining separate schemas. This ensures consistency across the graph and simplifies state management.
 
-### ADR-002: Structural Write Scope Enforcement
+### [ADR-0002: Structural Write Scope Enforcement](docs/adrs/adr0002.md)
 Nodes only receive tools bound to their declared write paths. This provides defense-in-depth: out-of-scope writes are prevented structurally (missing tool) rather than via runtime permission checks.
 
-### ADR-003: CLI Design
+### [ADR-0003: CLI Design](docs/adrs/adr0003.md)
 The CLI is deliberately the thinnest layer, wrapping already-working internals. This ensures the core functionality is testable and reusable without the CLI.
+
+See the [complete ADR index](docs/adrs/README.md) for all accepted architecture
+decisions and their implementation status.
 
 ## Contributing
 

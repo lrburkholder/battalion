@@ -55,7 +55,7 @@
         "BTN-6"
       ],
       "assignee_role": "driver",
-      "source": "plan.md ADR-002, sequencing step 2",
+      "source": "docs/adrs/adr0002.md; plan.md sequencing step 2",
       "notes": "Interrupt trigger #2 becomes defense-in-depth once this lands, per ADR-002 \u2014 still log attempted out-of-scope calls."
     },
     {
@@ -160,7 +160,7 @@
       "title": "Graph wiring \u2014 StateGraph, edges, interrupt points",
       "status": "done",
       "priority": "P1",
-      "description": "Wire Architect, Driver (RED/GREEN modes), Reviewer, and Refactorer into a LangGraph StateGraph with the correct edges and interrupt pause points, per the RED -> Reviewer -> GREEN -> Reviewer -> Refactorer -> Reviewer loop (revised during architecture pass -- see plan.md ADR-006 through ADR-009).",
+      "description": "Wire Architect, Driver (RED/GREEN modes), Reviewer, and Refactorer into a LangGraph StateGraph with the correct edges and interrupt pause points, per the RED -> Reviewer -> GREEN -> Reviewer -> Refactorer -> Reviewer loop (revised during architecture pass -- see ADR-0006 through ADR-0009 in docs/adrs/).",
       "acceptance_criteria": [
         "A ticket flows Architect -> Driver -> Reviewer end-to-end with no interrupt trigger firing",
         "Graph pauses at each defined interrupt point rather than proceeding silently"
@@ -267,7 +267,7 @@
         "BTN-13"
       ],
       "assignee_role": "driver",
-      "source": "plan.md ADR-006",
+      "source": "docs/adrs/adr0006.md",
       "notes": "Discovered during architecture pass before BTN-7, not part of original BTN-5 scope."
     },
     {
@@ -292,7 +292,7 @@
         "BTN-8"
       ],
       "assignee_role": "driver",
-      "source": "plan.md ADR-007, ADR-009",
+      "source": "docs/adrs/adr0007.md; docs/adrs/adr0009.md",
       "notes": "The expect_pass gap was caught during the architecture pass, not discovered later during BTN-7 wiring -- flagged before any graph code depended on the old always-pass-is-accept behavior."
     },
     {
@@ -316,7 +316,7 @@
         "BTN-7"
       ],
       "assignee_role": "driver",
-      "source": "plan.md ADR-008",
+      "source": "docs/adrs/adr0008.md",
       "notes": "New node discovered during architecture pass -- not in original v1 scope (Architect/Driver/Reviewer only). Status reconciled 2026-08-02: nodes/refactorer.py implements this per ADR-008 with test_refactorer_node.py passing; backlog.json had not been updated to reflect this."
     },
     {
