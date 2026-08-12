@@ -1,0 +1,8 @@
+title: Battalion
+description: A human-directed SDLC orchestrator
+theme: jekyll-theme-modernist
+repository: lrburkholder/battalion
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
