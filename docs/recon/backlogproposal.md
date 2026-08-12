@@ -1,60 +1,53 @@
-# Backlog Proposal — Recon Capability
+# Backlog Proposal — Recon and Engineering Knowledge
 
-The identifiers below begin after the tickets currently assigned in
-`backlog.json`. They remain proposals until copied into the canonical backlog.
+**Status:** Accepted into `backlog.json` on 2026-08-11
 
-## BTN-19
+This proposal replaces the earlier Recon-only ordering. Recon cannot produce
+useful, reviewable knowledge until Battalion has a durable execution record and
+an Instinct contract. Retrieval also depends on the bounded context assembly
+tracked by BTN-26.
 
-Introduce Recon node.
+The canonical ticket definitions and acceptance criteria live in
+`backlog.json`. The accepted sequence is:
 
-Creates candidate instincts from completed executions.
+## BTN-19 — Durable execution record and artifact provenance
 
----
+Persist the evidence Recon will inspect: node inputs and outputs, review and
+test results, tool activity, model identity, and produced artifacts.
 
-## BTN-20
+## BTN-20 — Instinct data contract
 
-Implement Instinct schema.
+Define candidate and accepted Instincts, including recommendation, evidence,
+audience, applicability, tags, provenance, lifecycle status, and supersession
+metadata. Confidence is not assigned at creation.
 
-Markdown format.
+## BTN-21 — Immutable Intel repository
 
-Metadata validation.
+Persist accepted Instincts under stable identifiers. Accepted records are
+immutable; changed guidance creates a new record that may supersede an older
+one while preserving history.
 
-Unique identifiers.
+## BTN-22 — Recon candidate generation
 
----
+After a completed run, inspect its durable execution record and produce zero or
+more candidate Instincts. Recon cannot publish knowledge or change the completed
+run.
 
-## BTN-21
+## BTN-23 — Operator review and promotion workflow
 
-Implement Instinct repository.
+Allow a human to accept, edit then accept, or reject each candidate. Only this
+workflow may promote a candidate into the Intel repository.
 
-Persist accepted instincts.
+## BTN-24 — Deterministic retrieval and node-specific injection
 
-Reject unapproved instincts.
+Select accepted, active Instincts using explicit audience, tag, and
+applicability rules, then assemble bounded role-specific context through the
+BTN-26 context path.
 
----
+## Deferred
 
-## BTN-22
-
-Implement relevance selection.
-
-Select only instincts relevant to the current node and task.
-
----
-
-## BTN-23
-
-Implement instinct review workflow.
-
-Human may:
-
-- Accept
-- Edit
-- Reject
-
----
-
-## BTN-24
-
-Implement instinct supersession.
-
-Allow newer instincts to supersede older ones while preserving history.
+- Operational usefulness feedback and confidence scoring, until real retrieval
+  usage provides evidence.
+- Semantic or embedding-based retrieval.
+- Automatic promotion of Instincts into standards or architecture.
+- Cross-project knowledge sharing.
