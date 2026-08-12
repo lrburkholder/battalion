@@ -55,6 +55,7 @@ The versioned state contract includes:
 - `schema_version`: Schema version identifier
 - `run_id`: Unique run identifier
 - `ticket_id`: Current ticket being processed
+- `spec`: Supplied ticket specification retained across pause and resume
 - `status`: Current run status (not-started, in-progress, blocked, awaiting-human, done, failed-infra)
 - `phase`: Current node/phase (architect, driver, reviewer, refactorer, pause, or done)
 - `write_scope`: Per-node declared write permissions
@@ -264,7 +265,7 @@ See [LICENSE](LICENSE) for full license text.
 
 - ✅ Guided LLM configuration and connectivity validation (BTN-15)
 - ✅ Role prompts aligned with node authority and output contracts (BTN-25)
-- ⏳ Persist and assemble role-appropriate node context (BTN-26)
+- ✅ Persist and assemble role-appropriate node context (BTN-26)
 - ⏳ Per-call and per-node cost reporting (BTN-16)
 - ⏳ Interrupt/checkpoint web UI (BTN-17)
 

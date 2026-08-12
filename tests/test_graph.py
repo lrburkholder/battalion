@@ -27,6 +27,7 @@ from battalion.graph import (
     resume_ticket,
     run_ticket,
 )
+from battalion.context import MAX_CONTEXT_CHARS
 from battalion.state.models import Budget, CheckpointType, InterruptLogEntry, RunState, RunStatus
 from battalion.llm.litellm_client import NodeLLMConfig
 
@@ -496,3 +497,98 @@ class TestResumeActuallyResumes:
         assert "architect" not in calls, "Resuming must not re-run Architect from scratch"
         assert calls == ["reviewer_refactor-check"]
         assert final["status"] == RunStatus.DONE
+
+
+class TestExecutionContext:
+    """BTN-26 role context is persisted, bounded, and assembled by the graph."""
+
+    def test_run_ticket_retains_supplied_specification(self, tmp_path):
+        captured = {}
+
+        class FakeApp:
+            def compile(self):
+                return self
+
+            def invoke(self, state, config):
+                captured["state"] = state
+                return state
+
+        with patch("battalion.graph.build_graph", return_value=FakeApp()):
+            final = run_ticket(
+                "BTN-26-test",
+                make_llm_configs(),
+                spec_text="Persisted specification",
+                base_dir=tmp_path,
+            )
+
+        assert captured["state"].spec == "Persisted specification"
+        assert final.spec == "Persisted specification"
+
+    def test_graph_supplies_deterministic_role_specific_context(self, tmp_path):
+        source = tmp_path / "src"
+        source.mkdir()
+        (tmp_path / "plan.md").write_text("Approved plan content", encoding="utf-8")
+        (source / "widget.py").write_text("IMPLEMENTATION_SENTINEL", encoding="utf-8")
+        (source / "test_widget.py").write_text("TEST_SENTINEL", encoding="utf-8")
+        captured = {}
+
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            captured["architect"] = spec_text
+            return state.model_copy(update={"phase": "driver"})
+
+        def fake_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            captured[f"driver_{mode}"] = ticket_text
+            return state.model_copy(update={"phase": "reviewer"})
+
+        def fake_refactorer(state, refactor_text, llm_config, base_dir, prompts_dir=None):
+            captured["refactorer"] = refactor_text
+            return state.model_copy(update={"phase": "reviewer"})
+
+        def fake_reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+            phase = {
+                CheckpointType.RED_CHECK: "driver_green",
+                CheckpointType.GREEN_CHECK: "refactorer",
+                CheckpointType.REFACTOR_CHECK: "done",
+            }[checkpoint]
+            status = RunStatus.DONE if phase == "done" else RunStatus.IN_PROGRESS
+            return state.model_copy(update={"phase": phase, "status": status})
+
+        initial = _make_initial_state(spec="SPECIFICATION_SENTINEL")
+        with patch("battalion.nodes.architect.run_architect", side_effect=fake_architect), \
+             patch("battalion.nodes.driver.run_driver", side_effect=fake_driver), \
+             patch("battalion.nodes.refactorer.run_refactorer", side_effect=fake_refactorer), \
+             patch("battalion.nodes.reviewer.run_reviewer", side_effect=fake_reviewer):
+            final = build_graph(make_llm_configs(), base_dir=tmp_path).compile().invoke(
+                initial, {"recursion_limit": 10}
+            )
+
+        assert final["status"] == RunStatus.DONE
+        assert final["spec"] == "SPECIFICATION_SENTINEL"
+        assert "SPECIFICATION_SENTINEL" in captured["architect"]
+        assert "Approved plan content" in captured["driver_red"]
+        assert "IMPLEMENTATION_SENTINEL" in captured["driver_red"]
+        assert "TEST_SENTINEL" not in captured["driver_red"]
+        assert "Approved plan content" in captured["driver_green"]
+        assert "TEST_SENTINEL" in captured["driver_green"]
+        assert "IMPLEMENTATION_SENTINEL" not in captured["driver_green"]
+        assert "IMPLEMENTATION_SENTINEL" in captured["refactorer"]
+        assert "TEST_SENTINEL" in captured["refactorer"]
+        assert all(len(context) <= MAX_CONTEXT_CHARS for context in captured.values())
+
+    def test_context_file_order_is_stable_and_bounded(self, tmp_path):
+        from battalion.context import driver_context
+
+        source = tmp_path / "src"
+        source.mkdir()
+        (tmp_path / "plan.md").write_text("plan", encoding="utf-8")
+        (source / "zeta.py").write_text("z" * (MAX_CONTEXT_CHARS * 2), encoding="utf-8")
+        (source / "alpha.py").write_text("alpha", encoding="utf-8")
+        state = _make_initial_state(spec="spec")
+
+        first = driver_context(state, tmp_path, "red")
+        second = driver_context(state, tmp_path, "red")
+
+        assert first == second
+        assert len(first) <= MAX_CONTEXT_CHARS
+        assert first.index("src/alpha.py") < first.index("src/zeta.py")
+        assert "[truncated]" in first

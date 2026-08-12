@@ -605,7 +605,7 @@
       "id": "BTN-26",
       "phase": "implementation",
       "title": "Persist and assemble node execution context",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Preserve the supplied specification in RunState and assemble bounded, role-appropriate context for Architect, Driver RED/GREEN, and Refactorer instead of passing only ticket_id.",
       "acceptance_criteria": [
@@ -623,7 +623,7 @@
       "blocks": [],
       "assignee_role": "architect",
       "source": "discovered during 2026-08-11 prompt review",
-      "notes": "RunState currently has no spec field; run_ticket passes spec as an ignored extra, and graph node factories use state.ticket_id as simplified input."
+      "notes": "Implemented with a backward-compatible RunState spec field and one deterministic, bounded context assembler used by Architect, Driver RED/GREEN, and Refactorer."
     }
   ]
 }

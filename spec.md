@@ -43,6 +43,7 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `schema_version`
 - `run_id`
 - `ticket_id`
+- `spec` (the supplied ticket specification, persisted for every role and resume)
 - `status` (enum: not-started, in-progress, blocked, awaiting-human,
   done, failed-infra)
 - `phase` (which node currently owns the ticket)
@@ -57,6 +58,11 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `interrupt_log` (list of {trigger, timestamp, resolution})
 - `manual_checkpoints` (list of phase names the user has declared a mandatory
   pause after — supports interrupt trigger #6)
+
+Role context is assembled deterministically from this persisted specification,
+the approved plan, and files under the declared Driver source roots. Context is
+bounded before each LLM call: RED receives existing implementation context,
+GREEN receives accepted RED tests, and Refactorer receives the passing file set.
 
 ## Interrupt Taxonomy (v1, final)
 | # | Trigger | Definition | Handling |

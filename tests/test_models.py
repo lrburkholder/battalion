@@ -28,6 +28,11 @@ def test_valid_state_constructs():
     assert state.status == RunStatus.NOT_STARTED
 
 
+def test_specification_is_part_of_run_state():
+    state = make_valid_state(spec="The supplied ticket specification")
+    assert state.spec == "The supplied ticket specification"
+
+
 def test_status_must_be_valid_enum_value():
     with pytest.raises(ValidationError):
         make_valid_state(status="not-a-real-status")

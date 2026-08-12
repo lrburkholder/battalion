@@ -128,9 +128,9 @@ run, resume, persistence, or review paths.
   future work, but must not change the v1 budget interrupt semantics.
 - Role prompts evolve faster than node code. Prompt changes can still change
   behavior materially and should be reviewed as role-definition changes.
-- The graph currently retains only `ticket_id` in `RunState`; the supplied
-  specification is discarded and source context is not assembled for Driver or
-  Refactorer. Prompt quality cannot compensate for missing task and code context.
+- BTN-26 persists the supplied specification in `RunState` and assembles
+  deterministic, bounded context for Architect, Driver RED/GREEN, and
+  Refactorer through one canonical context path.
 - Recon is the canonical name for Battalion's knowledge-capture role; Learner
   refers only to its historical Regiment predecessor. Draft Recon and Intel
   ticket proposals must still be reconciled with `backlog.json` before

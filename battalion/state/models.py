@@ -69,6 +69,7 @@ class RunState(BaseModel):
     schema_version: str
     run_id: str
     ticket_id: str
+    spec: str = ""
     status: RunStatus
     phase: str
     write_scope: dict[str, list[str]] = Field(default_factory=dict)
