@@ -50,7 +50,8 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `reviewer_rejection_history` (list of {cause, cycle_number, checkpoint} —
   root-cause tracked for interrupt trigger #1. checkpoint (added in v1.1,
   BTN-12) scopes cycle_number to be per-checkpoint-type (red-check,
-  green-check, refactor-check), not ticket-wide — see plan.md ADR-009.)
+  green-check, refactor-check), not ticket-wide — see
+  `docs/adrs/adr0009.md`.)
 - `retry_bound` (configurable per ticket, per open decision)
 - `budget` (tracked per graph run, not per node)
 - `interrupt_log` (list of {trigger, timestamp, resolution})

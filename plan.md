@@ -68,66 +68,23 @@ invariants should not depend on their concrete transport or persistence shapes.
 
 ## ADR log
 
-### ADR-001: Pydantic owns state validation
+The canonical decision records live in [`docs/adrs/`](docs/adrs/README.md).
+The decisions implemented by the v1 architecture are:
 
-Define the shared, versioned state contract as Pydantic models. This keeps
-validation and Python types together and avoids a separate JSON-Schema-to-model
-translation layer. The tradeoff is that Pydantic is a core dependency.
+| ADR | Decision |
+| --- | --- |
+| [ADR-0001](docs/adrs/adr0001.md) | Use Pydantic for state validation |
+| [ADR-0002](docs/adrs/adr0002.md) | Enforce write scope through tool binding |
+| [ADR-0003](docs/adrs/adr0003.md) | Keep Typer as a thin CLI |
+| [ADR-0004](docs/adrs/adr0004.md) | Implement native Battalion roles |
+| [ADR-0005](docs/adrs/adr0005.md) | Externalize role prompts |
+| [ADR-0006](docs/adrs/adr0006.md) | Split Driver into RED and GREEN modes |
+| [ADR-0007](docs/adrs/adr0007.md) | Review against an expected outcome |
+| [ADR-0008](docs/adrs/adr0008.md) | Give Refactorer Driver's implementation scope |
+| [ADR-0009](docs/adrs/adr0009.md) | Count rejection causes per checkpoint type |
 
-### ADR-002: Enforce write scope through tool binding
-
-Construct each node's write tools at graph-build time using only its declared
-paths. A node should never receive a tool capable of writing elsewhere.
-Runtime scope violations remain a defense-in-depth interrupt and audit signal.
-
-### ADR-003: Keep Typer as a thin CLI
-
-Use Typer for `run`, `resume`, `status`, and setup commands. CLI handlers adapt
-arguments and presentation to reusable runtime functions; they do not own graph
-policy.
-
-### ADR-004: Implement native Battalion roles
-
-Architect, Driver, Reviewer, and Refactorer are native graph nodes, not wrappers
-over earlier Regi or Copilot agents. Earlier material can inform behavior but
-does not define runtime interfaces.
-
-### ADR-005: Externalize role prompts
-
-Store default role prompts in top-level `prompts/`. Node functions may accept
-explicit prompt or prompt-directory overrides for testing and customization.
-Missing or empty required prompts fail clearly instead of silently degrading.
-
-Prompt text must mirror the node's mechanically enforced contract: Architect
-emits Markdown plan content; file-producing roles emit complete file contents in
-the `{"files": {...}}` JSON shape using paths relative to their bound `src/`
-root; Reviewer emits only one normalized rejection-cause sentence. Prompts must
-not claim access to tools, tests, repository context, or authority the node does
-not actually receive.
-
-### ADR-006: Split Driver into RED and GREEN modes
-
-The Driver has explicit RED and GREEN modes with the same output shape. RED
-produces failing tests; GREEN produces the smallest implementation that makes
-the accepted tests pass. This creates independently reviewable checkpoints.
-
-### ADR-007: Review against an expected outcome
-
-Reviewer acceptance means the observed result matches the checkpoint's expected
-result. RED expects failure; GREEN and REFACTOR expect success. A passing RED
-test is therefore not automatically an acceptance.
-
-### ADR-008: Give Refactorer Driver's implementation scope
-
-Refactorer preserves behavior while improving implementation and uses the same
-declared implementation scope as Driver. One scope declaration avoids duplicated
-paths drifting apart. This shared scope does not grant architectural authority.
-
-### ADR-009: Count rejection causes per checkpoint type
-
-Track repeated Reviewer root causes independently for RED, GREEN, and REFACTOR
-checkpoints. Similar wording at different phases must not create a false
-"rejected twice" interrupt.
+Future-facing knowledge-system records are indexed separately in the same
+directory and are not part of the shipped v1 graph.
 
 ## Interrupt contract
 
