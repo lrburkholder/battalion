@@ -427,6 +427,157 @@
       "notes": "Completed 2026-08-11. The public site is deployed at https://lrburkholder.github.io/battalion/ via a GitHub Actions Pages workflow. Its explicit allowlist publishes README.md, spec.md, plan.md, LICENSE, and ADR-0001 through ADR-0012; draft Recon, Intel, and UI content is excluded. Live verification confirmed the landing page, spec, plan, and ADR index return HTTP 200, all checked internal links resolve, and the excluded documentation paths return HTTP 404. BTN-10 was already done before deployment. A future follow-up may expand the site to Dojo and Writer's Bloc if those repositories are created; they were deliberately not included in BTN-18."
     },
     {
+      "id": "BTN-19",
+      "phase": "implementation",
+      "title": "Durable execution record and artifact provenance",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Persist a durable, versioned record of each node execution so completed runs can be inspected by humans, Recon, and future observability surfaces without depending on transient conversation or logs.",
+      "acceptance_criteria": [
+        "Each node execution records its role, phase, model identity, bounded input references, output or verdict, start/end timestamps, and outcome",
+        "Review results, test outcomes, tool activity, interrupts, and produced artifacts are linked to the node execution that created them",
+        "Artifact provenance identifies the originating run and node without embedding unbounded artifact contents in RunState",
+        "Execution records survive save, load, pause, resume, and completion",
+        "The persisted format is versioned and validated, with graph-level tests covering a complete run"
+      ],
+      "dependencies": [
+        "BTN-1",
+        "BTN-7",
+        "BTN-10"
+      ],
+      "blocks": [
+        "BTN-22"
+      ],
+      "assignee_role": "architect",
+      "source": "docs/recon/backlogproposal.md; docs/intel/spec.md; docs/ui/spec.md; 2026-08-11 backlog reconciliation",
+      "notes": "Foundation shared by Recon and future observability work. This ticket records durable evidence; it does not implement cost reporting, a web UI, or knowledge generation. State and provenance changes are architectural and require the relevant specification or ADR update."
+    },
+    {
+      "id": "BTN-20",
+      "phase": "implementation",
+      "title": "Instinct data contract",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Define the versioned contract for candidate and accepted Instincts, including recommendation, evidence, audience, applicability, tags, provenance, lifecycle status, and supersession metadata.",
+      "acceptance_criteria": [
+        "The contract validates stable identifier, schema version, lifecycle status, recommendation, evidence references, audience, applicability, tags, and creation provenance",
+        "Candidate and accepted lifecycle states are explicit and validation prevents a candidate from masquerading as accepted knowledge",
+        "Supersession references another stable Instinct identifier while preserving the earlier record",
+        "Accepted Instincts contain enough evidence and scope to remain understandable without conversational context",
+        "Confidence is not assigned at creation; operational confidence remains deferred until feedback evidence exists"
+      ],
+      "dependencies": [
+        "BTN-1"
+      ],
+      "blocks": [
+        "BTN-21",
+        "BTN-22"
+      ],
+      "assignee_role": "architect",
+      "source": "docs/recon/spec.md; docs/intel/spec.md; docs/adrs/adr0010.md; docs/adrs/adr0011.md; docs/adrs/adr0012.md",
+      "notes": "Resolve the remaining draft-spec conflict before implementation: Recon must not assign an initial confidence value because ADR-0012 defines confidence as observed operational usefulness. ADR-0011 and ADR-0012 are still Proposed and must not be presented as shipped behavior."
+    },
+    {
+      "id": "BTN-21",
+      "phase": "implementation",
+      "title": "Immutable Intel repository",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Persist human-accepted Instincts under stable identifiers, enforce immutability, and preserve history when newer guidance supersedes older knowledge.",
+      "acceptance_criteria": [
+        "Only accepted Instincts can be stored in the active Intel repository",
+        "An accepted Instinct cannot be edited or overwritten in place",
+        "Changed guidance is stored as a new Instinct that may supersede an earlier stable identifier",
+        "Superseded records remain retrievable for provenance but are excluded from active retrieval",
+        "Repository persistence and validation are covered without network services or embedding dependencies"
+      ],
+      "dependencies": [
+        "BTN-20"
+      ],
+      "blocks": [
+        "BTN-23",
+        "BTN-24"
+      ],
+      "assignee_role": "driver",
+      "source": "docs/intel/spec.md; docs/adrs/adr0010.md; docs/adrs/adr0011.md",
+      "notes": "Use local repository-backed persistence for the first vertical slice. Semantic indexes, remote stores, and cross-project sharing are explicitly deferred."
+    },
+    {
+      "id": "BTN-22",
+      "phase": "implementation",
+      "title": "Recon candidate generation",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Introduce Recon as a post-completion role that reads a durable execution record and produces zero or more evidence-backed candidate Instincts for human review.",
+      "acceptance_criteria": [
+        "Recon runs only after a completed execution and receives the BTN-19 execution record rather than transient conversation state",
+        "Recon emits zero or more candidate Instincts that validate against BTN-20",
+        "Every candidate cites evidence from the completed execution and scopes where its recommendation applies",
+        "Recon avoids proposing a candidate that duplicates an existing accepted Instinct supplied for comparison",
+        "Recon cannot publish knowledge, modify standards or architecture, affect the completed run, or bypass human review"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-20"
+      ],
+      "blocks": [
+        "BTN-23"
+      ],
+      "assignee_role": "architect",
+      "source": "docs/recon/spec.md; docs/recon/backlogproposal.md; docs/adrs/adr0011.md",
+      "notes": "Adding a role and post-completion graph authority is an architectural change. Read philosophy.md and update the relevant specification or ADR before implementation. Recon is the canonical name; Learner is historical terminology only."
+    },
+    {
+      "id": "BTN-23",
+      "phase": "implementation",
+      "title": "Operator review and Instinct promotion workflow",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Provide an explicit human workflow to accept, edit then accept, or reject each Recon candidate, with only approved knowledge promoted into the Intel repository.",
+      "acceptance_criteria": [
+        "The operator can accept, edit then accept, or reject each candidate independently",
+        "Accepting validates the candidate and stores a new immutable accepted Instinct through BTN-21",
+        "Editing creates the accepted content without mutating the original Recon candidate or its provenance",
+        "Rejected candidates never become eligible for retrieval",
+        "Every decision records the operator action, timestamp, candidate identifier, and resulting accepted identifier when applicable"
+      ],
+      "dependencies": [
+        "BTN-21",
+        "BTN-22"
+      ],
+      "blocks": [
+        "BTN-24"
+      ],
+      "assignee_role": "driver",
+      "source": "docs/recon/spec.md; docs/intel/spec.md; docs/adrs/adr0011.md; philosophy.md",
+      "notes": "Human acceptance is an authority boundary, not an optional convenience. No automatic promotion path is in scope."
+    },
+    {
+      "id": "BTN-24",
+      "phase": "implementation",
+      "title": "Deterministic retrieval and node-specific Instinct injection",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Retrieve accepted, active Instincts with explicit rules and assemble bounded, role-specific knowledge context through Battalion's canonical context path.",
+      "acceptance_criteria": [
+        "Retrieval considers only accepted, active, non-superseded Instincts",
+        "Selection uses deterministic audience, tag, and applicability rules with stable ordering and documented tie-breaking",
+        "Each execution role receives only Instincts relevant to that role and task",
+        "Injected context is bounded, identifies every supplied Instinct, and is assembled through BTN-26 rather than a parallel prompt path",
+        "Tests demonstrate distinct role-specific selections and explain why included and excluded Instincts were selected",
+        "Semantic or embedding-based retrieval, operational feedback, confidence scoring, and cross-project sharing remain out of scope"
+      ],
+      "dependencies": [
+        "BTN-21",
+        "BTN-23",
+        "BTN-26"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "docs/intel/spec.md; docs/adrs/adr0011.md; 2026-08-11 backlog reconciliation",
+      "notes": "This is the smallest inspectable retrieval vertical slice. Confidence ranking must wait until real operator-feedback evidence exists; ADR-0012 remains future-facing."
+    },
+    {
       "id": "BTN-25",
       "phase": "implementation",
       "title": "Align role prompts with node contracts",
