@@ -1,14 +1,17 @@
-# Backlog Proposal — Learner Capability
+# Backlog Proposal — Recon Capability
 
-## BTN-15
+The identifiers below begin after the tickets currently assigned in
+`backlog.json`. They remain proposals until copied into the canonical backlog.
 
-Introduce Learner node.
+## BTN-19
+
+Introduce Recon node.
 
 Creates candidate instincts from completed executions.
 
 ---
 
-## BTN-16
+## BTN-20
 
 Implement Instinct schema.
 
@@ -20,7 +23,7 @@ Unique identifiers.
 
 ---
 
-## BTN-17
+## BTN-21
 
 Implement Instinct repository.
 
@@ -30,7 +33,7 @@ Reject unapproved instincts.
 
 ---
 
-## BTN-18
+## BTN-22
 
 Implement relevance selection.
 
@@ -38,7 +41,7 @@ Select only instincts relevant to the current node and task.
 
 ---
 
-## BTN-19
+## BTN-23
 
 Implement instinct review workflow.
 
@@ -50,7 +53,7 @@ Human may:
 
 ---
 
-## BTN-20
+## BTN-24
 
 Implement instinct supersession.
 

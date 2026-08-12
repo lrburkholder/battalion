@@ -1,4 +1,4 @@
-"""Battalion CLI: run / resume / status."""
+"""Battalion CLI: run / resume / status / setup."""
 
 from __future__ import annotations
 
@@ -21,7 +21,14 @@ from battalion.interrupts.triggers import (
 from battalion.progress import ProgressDisplay
 from battalion.state.persistence import save_state, load_state
 from battalion.state.models import RunState, RunStatus, Budget
-from battalion.config import load_config, BattalionConfig
+from battalion.config import load_config, BattalionConfig, DEFAULT_CONFIG_PATH
+from battalion.llm.litellm_client import ModelDiversityError
+from battalion.setup import (
+    ConnectivityCheckFailed,
+    MissingApiKey,
+    ProviderNotDetected,
+    run_setup,
+)
 
 app = typer.Typer(
     name="battalion",
@@ -253,6 +260,58 @@ def status(
     
     state = load_state(state_file)
     _print_status(state, human=human)
+
+
+def _prompt_value(message: str, default: str) -> str:
+    """Interactive prompt; returns the entered value or the default."""
+    try:
+        value = input(f"{message} [{default}]: ").strip()
+    except EOFError:
+        return default
+    return value or default
+
+
+@app.command()
+def setup(
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to battalion.config.yaml (default: ./battalion.config.yaml)"),
+    model_architect: str | None = typer.Option(None, "--model-architect"),
+    model_driver: str | None = typer.Option(None, "--model-driver"),
+    model_reviewer: str | None = typer.Option(None, "--model-reviewer"),
+    model_refactorer: str | None = typer.Option(None, "--model-refactorer"),
+    validate: bool = typer.Option(True, "--validate/--no-validate", help="Run live connectivity checks before saving"),
+):
+    """Configure LLM providers and validate connectivity, writing battalion.config.yaml."""
+    overrides = {
+        "architect": model_architect,
+        "driver": model_driver,
+        "reviewer": model_reviewer,
+        "refactorer": model_refactorer,
+    }
+    interactive = sys.stdin.isatty()
+    try:
+        written = run_setup(
+            config_path=config or DEFAULT_CONFIG_PATH,
+            model_overrides=overrides,
+            validate=validate,
+            prompt=_prompt_value if interactive else None,
+            echo=typer.echo,
+        )
+    except ProviderNotDetected as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+    except MissingApiKey as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+    except ConnectivityCheckFailed as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+    except ModelDiversityError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Setup complete. Config written to: {config or DEFAULT_CONFIG_PATH}")
+    for node in ("architect", "driver", "reviewer", "refactorer"):
+        typer.echo(f"  {node}: {written[node]['model']}")
 
 
 def main() -> None:
