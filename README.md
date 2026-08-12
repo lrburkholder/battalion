@@ -258,6 +258,7 @@ See [LICENSE](LICENSE) for full license text.
 - ✅ Build CLI entry points (BTN-9)
 - ✅ End-to-end acceptance testing (BTN-10)
 - ✅ Model-diversity constraint between Driver and Reviewer (BTN-14)
+- ✅ [Public documentation site](https://lrburkholder.github.io/battalion/) (BTN-18)
 
 ### Active Work
 
@@ -266,7 +267,6 @@ See [LICENSE](LICENSE) for full license text.
 - ⏳ Persist and assemble role-appropriate node context (BTN-26)
 - ⏳ Per-call and per-node cost reporting (BTN-16)
 - ⏳ Interrupt/checkpoint web UI (BTN-17)
-- ⏳ Public documentation site (BTN-18)
 
 ### Future Enhancements
 - Researcher, Specifier, Teacher nodes (post-v1)

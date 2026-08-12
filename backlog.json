@@ -410,7 +410,7 @@
       "id": "BTN-18",
       "phase": "rollout",
       "title": "Public GitHub Pages site",
-      "status": "not-started",
+      "status": "done",
       "priority": "P3",
       "description": "Publish README/architecture docs (spec.md, plan.md, ADRs) as a GitHub Pages site once v1 acceptance criteria pass. Scoped to Battalion only.",
       "acceptance_criteria": [
@@ -424,7 +424,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "spun out of 2026-08-04 discussion re: portfolio-site framing",
-      "notes": "Follow-up ticket (not yet created) should expand this to include Dojo and Writer's Bloc once those repos exist -- deliberately not designed for today, since designing for unbuilt spinoffs risks pulling their scope forward prematurely."
+      "notes": "Completed 2026-08-11. The public site is deployed at https://lrburkholder.github.io/battalion/ via a GitHub Actions Pages workflow. Its explicit allowlist publishes README.md, spec.md, plan.md, LICENSE, and ADR-0001 through ADR-0012; draft Recon, Intel, and UI content is excluded. Live verification confirmed the landing page, spec, plan, and ADR index return HTTP 200, all checked internal links resolve, and the excluded documentation paths return HTTP 404. BTN-10 was already done before deployment. A future follow-up may expand the site to Dojo and Writer's Bloc if those repositories are created; they were deliberately not included in BTN-18."
     },
     {
       "id": "BTN-25",
