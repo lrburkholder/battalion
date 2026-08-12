@@ -13,6 +13,7 @@ def make_state():
         schema_version="1.0",
         run_id="run-001",
         ticket_id="BTN-1",
+        spec="Persist this specification across invocations.",
         status=RunStatus.IN_PROGRESS,
         phase="driver",
         write_scope={"driver": ["src/"]},
@@ -72,6 +73,7 @@ def test_second_invocation_resumes_from_saved_state(tmp_path):
     resumed = load_state(path)
     assert resumed.status == RunStatus.IN_PROGRESS
     assert resumed.phase == "driver"
+    assert resumed.spec == "Persist this specification across invocations."
 
 
 def test_interrupt_log_with_entry_round_trips(tmp_path):

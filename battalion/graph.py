@@ -29,6 +29,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 
 from battalion.interrupts.budget import increment_budget
+from battalion.context import architect_context, driver_context, refactorer_context
 from battalion.interrupts.triggers import (
     TRIGGER_SAME_ROOT_CAUSE,
     check_any_trigger,
@@ -164,8 +165,7 @@ def _make_architect_node(
         state = increment_budget(state)
         
         # Run Architect node
-        # Note: spec_text comes from the initial state or ticket
-        spec_text = state.ticket_id  # Simplified for now; real impl would load spec
+        spec_text = architect_context(state)
         
         if on_node_event is not None:
             on_node_event({
@@ -249,9 +249,7 @@ def _make_driver_node(
         # Increment budget for this LLM call
         state = increment_budget(state)
         
-        # Determine ticket text from state
-        # For now, use ticket_id as the input; real impl would use full ticket
-        ticket_text = state.ticket_id
+        ticket_text = driver_context(state, base_dir, mode)
         
         if on_node_event is not None:
             on_node_event({
@@ -420,8 +418,7 @@ def _make_refactorer_node(
         # Increment budget for this LLM call
         state = increment_budget(state)
         
-        # Refactor text from state
-        refactor_text = state.ticket_id  # Simplified
+        refactor_text = refactorer_context(state, base_dir)
         
         if on_node_event is not None:
             on_node_event({

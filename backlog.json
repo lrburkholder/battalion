@@ -52,7 +52,8 @@
       "blocks": [
         "BTN-4",
         "BTN-5",
-        "BTN-6"
+        "BTN-6",
+        "BTN-28"
       ],
       "assignee_role": "driver",
       "source": "docs/adrs/adr0002.md; plan.md sequencing step 2",
@@ -221,7 +222,8 @@
         "BTN-7"
       ],
       "blocks": [
-        "BTN-10"
+        "BTN-10",
+        "BTN-27"
       ],
       "assignee_role": "driver",
       "source": "plan.md sequencing step 9, ADR-003",
@@ -242,7 +244,9 @@
         "BTN-8",
         "BTN-9"
       ],
-      "blocks": [],
+      "blocks": [
+        "BTN-27"
+      ],
       "assignee_role": "reviewer",
       "source": "spec.md Acceptance Criteria; plan.md sequencing step 10",
       "notes": "This is the milestone gate for v1 completion. Status reconciled 2026-08-07: tests/test_acceptance.py validates all five spec.md v1 acceptance criteria plus BTN-10's own ACs against the built system, with real graph routing, real node implementations, real write-scope enforcement, and real clean-tree subprocess test execution (only LLM calls are faked). Validation surfaced and fixed four real defects that kept the milestone gate red: (1) Reviewer's clean-tree re-run used bare 'python' from PATH, which has no pytest outside the activated venv -- now uses sys.executable; (2) graph.py did not catch InfraFailure/ScopeViolationError from nodes, so triggers #2/#5 crashed invoke() with an unhandled exception instead of pausing -- node calls are now wrapped and routed to an AWAITING_HUMAN pause with the interrupt logged; (3) cli.py run/resume passed the graph's raw dict output to save_state, which requires RunState -- now validates via RunState.model_validate; (4) stale test_cli.py mocks predated run_ticket's spec_text kwarg -- updated. Full suite: 210 tests passing."
@@ -605,7 +609,7 @@
       "id": "BTN-26",
       "phase": "implementation",
       "title": "Persist and assemble node execution context",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Preserve the supplied specification in RunState and assemble bounded, role-appropriate context for Architect, Driver RED/GREEN, and Refactorer instead of passing only ticket_id.",
       "acceptance_criteria": [
@@ -620,10 +624,71 @@
         "BTN-7",
         "BTN-25"
       ],
-      "blocks": [],
+      "blocks": [
+        "BTN-24",
+        "BTN-27",
+        "BTN-28"
+      ],
       "assignee_role": "architect",
       "source": "discovered during 2026-08-11 prompt review",
-      "notes": "RunState currently has no spec field; run_ticket passes spec as an ignored extra, and graph node factories use state.ticket_id as simplified input."
+      "notes": "Implemented with a backward-compatible RunState spec field and one deterministic, bounded context assembler used by Architect, Driver RED/GREEN, and Refactorer."
+    },
+    {
+      "id": "BTN-27",
+      "phase": "implementation",
+      "title": "Preserve caller-supplied run configuration",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Make the CLI and reusable runtime execute the same caller-supplied RunState contract instead of constructing configuration-aware state in the CLI and then replacing it with hardcoded defaults inside run_ticket.",
+      "acceptance_criteria": [
+        "The CLI passes one caller-created initial RunState into the reusable graph execution path rather than allowing run_ticket to recreate it",
+        "Configured budget limit, manual checkpoints, write scope, specification, retry bound, run identifier, and ticket identifier are preserved through initial invocation",
+        "Pause and resume preserve the same run configuration without resetting fields to runtime defaults",
+        "The reusable run API has one documented source of truth for initial state and rejects conflicting duplicate configuration",
+        "A CLI-level acceptance test proves that non-default budget, checkpoint, and write-scope values reach graph execution unchanged",
+        "Existing run, resume, persistence, interrupt, and BTN-10 acceptance behavior remains passing"
+      ],
+      "dependencies": [
+        "BTN-1",
+        "BTN-7",
+        "BTN-9",
+        "BTN-10",
+        "BTN-26"
+      ],
+      "blocks": [
+        "BTN-28"
+      ],
+      "assignee_role": "driver",
+      "source": "2026-08-11 backlog reconciliation; battalion/cli.py run command; battalion/graph.py run_ticket",
+      "notes": "Current CLI code constructs a RunState using loaded budget, checkpoint, and write-scope configuration, but run_ticket creates a second state with hardcoded defaults. This is a dogfooding gate and may reveal that BTN-10's CLI acceptance coverage was incomplete; update acceptance evidence rather than silently changing the shipped contract."
+    },
+    {
+      "id": "BTN-28",
+      "phase": "implementation",
+      "title": "Project-layout-aware scoped writes",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Generalize Driver RED/GREEN and Refactorer write roots so Battalion can operate on explicitly declared project layouts instead of requiring every project to place both tests and implementation under a hardcoded src/ directory.",
+      "acceptance_criteria": [
+        "Run configuration can declare distinct allowed test and implementation roots for Driver RED, Driver GREEN, and Refactorer without weakening per-node structural scope enforcement",
+        "RED output is restricted to declared test roots and test-file shapes; GREEN and Refactorer output are restricted to declared implementation roots",
+        "Reviewer verification runs against the configured project root and does not assume tests live under src/",
+        "Battalion's own root-level battalion/ and tests/ layout can be represented without granting a writing node repository-wide authority",
+        "Traversal, absolute-path, undeclared-root, and cross-role write attempts remain mechanically blocked and independently tested",
+        "Default configuration preserves existing src/-layout behavior for current users",
+        "The write-scope contract, role authority impact, and migration behavior are recorded in the relevant specification and an accepted ADR"
+      ],
+      "dependencies": [
+        "BTN-2",
+        "BTN-11",
+        "BTN-13",
+        "BTN-26",
+        "BTN-27"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "2026-08-11 dogfooding reconciliation; docs/adrs/adr0002.md; battalion/scope/tool_binding.py; battalion/nodes/driver.py",
+      "notes": "This is an architectural change because it alters declared node authority and write-scope semantics. It must not be implemented as a repository-wide write tool or a CLI-only special case. Completion is the mechanical gate for a controlled Battalion-on-Battalion implementation run."
     }
   ]
 }

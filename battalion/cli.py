@@ -169,6 +169,7 @@ def run(
         schema_version="1.0",
         run_id=run_id,
         ticket_id=ticket_id,
+        spec=spec_text,
         status=RunStatus.NOT_STARTED,
         phase="architect",
         write_scope=cfg.write_scope,
