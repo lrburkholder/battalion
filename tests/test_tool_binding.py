@@ -13,7 +13,12 @@ import pytest
 
 from pathlib import Path
 
-from battalion.scope.tool_binding import ScopeViolationError, build_write_tools
+from battalion.scope.tool_binding import (
+    ScopeViolationError,
+    build_write_tools,
+    resolve_scoped_batch,
+    scope_key_for_phase,
+)
 
 
 WRITE_SCOPE = {
@@ -108,3 +113,22 @@ def test_driver_write_blocked_for_absolute_path(tmp_path):
 def test_unknown_node_name_gets_empty_toolset():
     tools = build_write_tools("nonexistent-node", WRITE_SCOPE)
     assert tools == {}
+
+
+def test_phase_scope_key_prefers_explicit_entry_and_legacy_fallback():
+    assert scope_key_for_phase(WRITE_SCOPE, "driver_red") == "driver"
+    explicit = {**WRITE_SCOPE, "driver_red": []}
+    assert scope_key_for_phase(explicit, "driver_red") == "driver_red"
+
+
+def test_multi_root_batch_only_resolves_declared_qualified_roots(tmp_path):
+    scope = {"driver_green": ["battalion/", "plugins/"]}
+    tools = build_write_tools("driver_green", scope, base_dir=tmp_path)
+    targets = resolve_scoped_batch(tools, ["battalion/a.py", "plugins/b.py"])
+    for tool, path in targets:
+        tool.write(path, "ok")
+    assert (tmp_path / "battalion" / "a.py").exists()
+    assert (tmp_path / "plugins" / "b.py").exists()
+
+    with pytest.raises(ScopeViolationError):
+        resolve_scoped_batch(tools, ["tests/test_a.py"])

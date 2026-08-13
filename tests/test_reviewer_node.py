@@ -270,7 +270,33 @@ def test_run_reviewer_raises_clear_error_when_src_missing(tmp_path):
     state = make_state()
 
     with pytest.raises(SourceTreeMissing):
-        fake_passed(tmp_path, state=state, checkpoint=CheckpointType.GREEN_CHECK)
+        fake_passed(tmp_path / "missing-project", state=state, checkpoint=CheckpointType.GREEN_CHECK)
+
+
+def test_reviewer_copies_configured_project_root_not_src(tmp_path):
+    (tmp_path / "battalion").mkdir()
+    (tmp_path / "tests").mkdir()
+    captured = {}
+
+    def capture_root(root):
+        captured["root"] = root
+        return tmp_path / "clean"
+
+    run_reviewer(
+        make_state(write_scope={
+            "driver_red": ["tests/"],
+            "driver_green": ["battalion/"],
+            "refactorer": ["battalion/"],
+            "reviewer": [],
+        }),
+        base_dir=tmp_path,
+        llm_config=NodeLLMConfig(model="test-model"),
+        checkpoint=CheckpointType.GREEN_CHECK,
+        make_clean_copy_fn=capture_root,
+        run_tests_fn=lambda clean: TestRunResult(passed=True, output="ok", returncode=0),
+        call_llm_fn=lambda *a, **kw: litellm_response("unused"),
+    )
+    assert captured["root"] == tmp_path
 
 
 def test_run_reviewer_cleans_up_temp_clean_copy_dir():
@@ -318,6 +344,21 @@ def test_make_clean_copy_is_independent_of_original(tmp_path):
 
     (src / "module.py").write_text("x = 2")
     assert (clean / "module.py").read_text() == "x = 1"
+
+
+def test_make_clean_copy_excludes_local_runtime_metadata(tmp_path):
+    (tmp_path / "battalion").mkdir()
+    (tmp_path / "battalion" / "module.py").write_text("VALUE = 1")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("local metadata")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "large.bin").write_text("generated")
+
+    clean = make_clean_copy(tmp_path)
+
+    assert (clean / "battalion" / "module.py").exists()
+    assert not (clean / ".git").exists()
+    assert not (clean / ".venv").exists()
 
 
 def test_run_tests_via_subprocess_detects_passing_tests(tmp_path):
@@ -377,3 +418,25 @@ def test_run_reviewer_end_to_end_with_real_defaults_red_check(tmp_path):
 
     assert updated.phase == "driver_green"
     assert updated.reviewer_rejection_history == []
+
+
+def test_run_reviewer_real_defaults_support_root_level_tests_layout(tmp_path):
+    (tmp_path / "battalion").mkdir()
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_thing.py").write_text("def test_thing():\n    assert True\n")
+
+    updated = run_reviewer(
+        make_state(write_scope={
+            "driver_red": ["tests/"],
+            "driver_green": ["battalion/"],
+            "refactorer": ["battalion/"],
+            "reviewer": [],
+        }),
+        base_dir=tmp_path,
+        llm_config=NodeLLMConfig(model="test-model"),
+        checkpoint=CheckpointType.GREEN_CHECK,
+        call_llm_fn=lambda *a, **kw: litellm_response("unused on accept"),
+    )
+
+    assert updated.phase == "refactorer"

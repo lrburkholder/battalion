@@ -1,9 +1,8 @@
 """Tests for battalion.nodes.refactorer — BTN-13 implementation.
 
-Refactorer is structurally identical to Driver (same file output format,
-same scope enforcement), but uses node_name='driver' when calling
-build_write_tools so it shares Driver's declared src/ write_scope entry
-per ADR-008.
+Refactorer is structurally identical to Driver (same file output format and
+scope enforcement). It accepts an explicit phase scope and preserves the
+legacy shared Driver scope per ADR-0008/ADR-0013.
 """
 import pytest
 
@@ -183,7 +182,7 @@ def test_run_refactorer_raises_clear_error_when_driver_scope_missing_src(tmp_pat
             base_dir=tmp_path,
             call_llm_fn=lambda *a, **kw: files_response({"module.py": "x = 1"}),
         )
-    assert "src/" in str(exc_info.value)
+    assert "write roots" in str(exc_info.value)
     assert "driver" in str(exc_info.value)
 
 
@@ -310,3 +309,39 @@ def test_run_refactorer_prompts_dir_override(tmp_path):
     )
 
     assert captured["system_content"] == "OVERRIDE PROMPT"
+
+
+def test_refactorer_prefers_its_distinct_implementation_scope(tmp_path):
+    state = make_state(write_scope={
+        "driver_red": ["tests/"],
+        "driver_green": ["generated/"],
+        "refactorer": ["battalion/"],
+        "reviewer": [],
+    })
+    run_refactorer(
+        state,
+        refactor_text="refactor",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: files_response({"widget.py": "VALUE = 1"}),
+    )
+    assert (tmp_path / "battalion" / "widget.py").exists()
+    assert not (tmp_path / "generated" / "widget.py").exists()
+
+
+def test_refactorer_cannot_traverse_into_test_root(tmp_path):
+    state = make_state(write_scope={
+        "driver_red": ["tests/"],
+        "driver_green": ["battalion/"],
+        "refactorer": ["battalion/"],
+        "reviewer": [],
+    })
+    with pytest.raises(ScopeViolationError):
+        run_refactorer(
+            state,
+            refactor_text="refactor",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({"../tests/helper.py": "VALUE = 1"}),
+        )
+    assert not (tmp_path / "tests" / "helper.py").exists()

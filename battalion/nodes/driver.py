@@ -22,7 +22,11 @@ from typing import Any, Callable, Literal
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
-from battalion.scope.tool_binding import build_write_tools
+from battalion.scope.tool_binding import (
+    build_write_tools,
+    resolve_scoped_batch,
+    scope_key_for_phase,
+)
 from battalion.state.models import RunState, RunStatus
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
@@ -105,8 +109,7 @@ def run_driver(
     mode: Literal["red", "green"] | None = None,
     on_stream: Callable[[dict], None] | None = None,
 ) -> RunState:
-    """Run the Driver node: produce file writes from ticket_text, write
-    them under the declared 'src/' scope, and return updated state.
+    """Run the Driver node and write output through its phase-bound roots.
 
     mode (BTN-11, ADR-006), if given, must be "red" or "green":
       - None (default): original BTN-5 combined behavior — loads
@@ -123,13 +126,15 @@ def run_driver(
     if mode is not None and mode not in ("red", "green"):
         raise ValueError(f"mode must be 'red', 'green', or None, got {mode!r}")
 
+    phase_scope_key = "driver" if mode is None else f"driver_{mode}"
+    scope_key = scope_key_for_phase(state.write_scope, phase_scope_key)
     write_tools = build_write_tools(
-        "driver", state.write_scope, base_dir=base_dir, on_violation=on_violation
+        scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
     )
-    if "src/" not in write_tools:
+    if not write_tools:
         raise WriteScopeMisconfigured(
-            "state.write_scope['driver'] has no 'src/' entry — "
-            "the Driver node cannot write its output."
+            f"state.write_scope[{scope_key!r}] declares no write roots — "
+            f"Driver {mode or 'combined'} cannot write its output."
         )
 
     prompt_node_name = "driver" if mode is None else f"driver-{mode}"
@@ -167,12 +172,11 @@ def run_driver(
                 f"GREEN mode must not produce test files, got: {test_files}"
             )
 
-    tool = write_tools["src/"]
-    # Pre-validate every path before writing any of them, so a scope
-    # violation on file N doesn't leave files 1..N-1 written to disk.
-    for relative_path in files:
-        tool.resolve(relative_path)
-    for relative_path, content in files.items():
+    try:
+        targets = resolve_scoped_batch(write_tools, list(files))
+    except ValueError as exc:
+        raise WriteScopeMisconfigured(str(exc)) from exc
+    for (tool, relative_path), content in zip(targets, files.values(), strict=True):
         tool.write(relative_path, content)
 
     return state.model_copy(update={

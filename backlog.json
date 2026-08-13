@@ -666,7 +666,7 @@
       "id": "BTN-28",
       "phase": "implementation",
       "title": "Project-layout-aware scoped writes",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Generalize Driver RED/GREEN and Refactorer write roots so Battalion can operate on explicitly declared project layouts instead of requiring every project to place both tests and implementation under a hardcoded src/ directory.",
       "acceptance_criteria": [
@@ -688,7 +688,7 @@
       "blocks": [],
       "assignee_role": "architect",
       "source": "2026-08-11 dogfooding reconciliation; docs/adrs/adr0002.md; battalion/scope/tool_binding.py; battalion/nodes/driver.py",
-      "notes": "This is an architectural change because it alters declared node authority and write-scope semantics. It must not be implemented as a repository-wide write tool or a CLI-only special case. Completion is the mechanical gate for a controlled Battalion-on-Battalion implementation run."
+      "notes": "Completed 2026-08-13. ADR-0013 adds explicit driver_red, driver_green, and refactorer phase scopes with legacy driver fallback, preserving the default src/ layout. Each phase builds only its selected bound tools; multi-root output requires a declared root prefix and batches are fully validated before writes. Reviewer now verifies a clean copy of the configured project root while excluding local runtime metadata. Battalion's tests/ plus battalion/ layout is covered without repository-wide write authority, and context/prompt contracts follow the configured roots. Focused scope/node suite: 86 passed. Reviewer suite: 29 passed. Prompt/graph contracts: 37 passed. Full suite: 273 passed."
     }
   ]
 }

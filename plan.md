@@ -82,6 +82,7 @@ The decisions implemented by the v1 architecture are:
 | [ADR-0007](docs/adrs/adr0007.md) | Review against an expected outcome |
 | [ADR-0008](docs/adrs/adr0008.md) | Give Refactorer Driver's implementation scope |
 | [ADR-0009](docs/adrs/adr0009.md) | Count rejection causes per checkpoint type |
+| [ADR-0013](docs/adrs/adr0013.md) | Bind write tools to project layout phases |
 
 Future-facing knowledge-system records are indexed separately in the same
 directory and are not part of the shipped v1 graph.

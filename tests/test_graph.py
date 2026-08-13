@@ -648,3 +648,29 @@ class TestExecutionContext:
         assert len(first) <= MAX_CONTEXT_CHARS
         assert first.index("src/alpha.py") < first.index("src/zeta.py")
         assert "[truncated]" in first
+
+    def test_context_uses_phase_specific_layout_roots(self, tmp_path):
+        from battalion.context import driver_context, refactorer_context
+
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "battalion").mkdir()
+        (tmp_path / "tests" / "test_widget.py").write_text("TEST_SENTINEL")
+        (tmp_path / "battalion" / "widget.py").write_text("IMPLEMENTATION_SENTINEL")
+        state = _make_initial_state(write_scope={
+            "architect": ["plan.md"],
+            "driver_red": ["tests/"],
+            "driver_green": ["battalion/"],
+            "refactorer": ["battalion/"],
+            "reviewer": [],
+        })
+
+        red = driver_context(state, tmp_path, "red")
+        green = driver_context(state, tmp_path, "green")
+        refactor = refactorer_context(state, tmp_path)
+
+        assert "IMPLEMENTATION_SENTINEL" in red
+        assert "TEST_SENTINEL" not in red
+        assert "TEST_SENTINEL" in green
+        assert "IMPLEMENTATION_SENTINEL" not in green
+        assert "TEST_SENTINEL" in refactor
+        assert "IMPLEMENTATION_SENTINEL" in refactor

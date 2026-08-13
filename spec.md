@@ -47,7 +47,8 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `status` (enum: not-started, in-progress, blocked, awaiting-human,
   done, failed-infra)
 - `phase` (which node currently owns the ticket)
-- `write_scope` (per-node declared file scope, checked before writes)
+- `write_scope` (per-phase declared file scope, bound before writes; supports
+  `driver_red`, `driver_green`, and `refactorer`, with legacy `driver` fallback)
 - `reviewer_rejection_history` (list of {cause, cycle_number, checkpoint} —
   root-cause tracked for interrupt trigger #1. checkpoint (added in v1.1,
   BTN-12) scopes cycle_number to be per-checkpoint-type (red-check,
@@ -83,10 +84,23 @@ one exists purely because the user asked for a stop at a specific point,
 which the original taxonomy had no way to express.
 
 ## Write Scope Model
-Each node declares which files it may create/edit as part of its node
-definition (mirroring regi-documenter/regi-specifier's existing prose-scoping
-pattern, but enforced mechanically rather than by prose alone). Checked before
-every write executes; violation triggers interrupt #2.
+Each writing phase declares which project-relative roots it may create or edit.
+Driver RED uses `driver_red`, Driver GREEN uses `driver_green`, and Refactorer
+uses `refactorer`. A phase receives tools bound only to that entry; Reviewer
+receives none. An explicitly empty phase entry grants no write authority.
+
+For backward compatibility, a missing phase entry falls back to `driver`, whose
+default is `["src/"]`. One-root output is relative to that root. Multi-root
+output must prefix each path with a declared root. Absolute paths, traversal,
+undeclared-root selection, and attempts to reach another phase's roots are
+blocked before any file in the output batch is written and trigger interrupt
+#2's audit path.
+
+Reviewer independently copies and runs tests from the configured project root,
+so test discovery is not coupled to a `src/` directory. For example, Battalion
+itself can use `driver_red: ["tests/"]`, `driver_green: ["battalion/"]`, and
+`refactorer: ["battalion/"]` without granting repository-wide write access.
+See ADR-0013.
 
 ## Retry / Loop Bounds
 Configurable per ticket rather than a fixed global constant — set as part of

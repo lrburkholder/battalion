@@ -102,3 +102,63 @@ def build_write_tools(
             on_violation=on_violation,
         )
     return tools
+
+
+def scope_key_for_phase(
+    write_scope: dict[str, list[str]],
+    phase_key: str,
+    legacy_key: str = "driver",
+) -> str:
+    """Choose a phase-specific scope without weakening legacy runs.
+
+    An explicitly declared phase entry wins even when it is empty. Falling
+    back only when the entry is absent lets existing ``driver: [src/]``
+    configurations keep working while allowing RED, GREEN, and Refactorer to
+    receive genuinely distinct tool sets.
+    """
+    return phase_key if phase_key in write_scope else legacy_key
+
+
+def resolve_scoped_batch(
+    write_tools: dict[str, _BoundWriteTool],
+    relative_paths: list[str],
+) -> list[tuple[_BoundWriteTool, str]]:
+    """Resolve output paths to their phase-bound tools atomically.
+
+    With one declared root, legacy root-relative output remains valid. A
+    root-qualified path is also accepted. With multiple roots, qualification
+    is required so the target is unambiguous. No tool outside ``write_tools``
+    can be selected.
+    """
+    directory_tools = {key: tool for key, tool in write_tools.items() if key.endswith("/")}
+    if not directory_tools:
+        raise ValueError("a writing phase requires at least one declared directory root")
+
+    resolved: list[tuple[_BoundWriteTool, str]] = []
+    for supplied_path in relative_paths:
+        normalized = supplied_path.replace("\\", "/")
+        if Path(supplied_path).is_absolute() or normalized.startswith("/"):
+            # Any bound tool can report the same structural violation; it
+            # still cannot write beyond its own root.
+            next(iter(directory_tools.values())).resolve(supplied_path)
+
+        matches = [root for root in directory_tools if normalized.startswith(root)]
+        if matches:
+            root = max(matches, key=len)
+            path_within_root = normalized[len(root):]
+            if not path_within_root:
+                directory_tools[root].resolve("../")
+            resolved.append((directory_tools[root], path_within_root))
+            continue
+
+        if len(directory_tools) != 1:
+            # Route through a bound tool's local guard so the normal
+            # violation audit callback fires as well as the hard block.
+            next(iter(directory_tools.values())).resolve(f"../{normalized}")
+        tool = next(iter(directory_tools.values()))
+        resolved.append((tool, supplied_path))
+
+    # Validate the complete batch before the caller performs any write.
+    for tool, path_within_root in resolved:
+        tool.resolve(path_within_root)
+    return resolved

@@ -380,3 +380,69 @@ def test_run_driver_mode_none_skips_test_file_enforcement(tmp_path):
     assert (tmp_path / "src" / "module.py").exists()
     assert (tmp_path / "src" / "test_module.py").exists()
     assert updated.phase == "reviewer"
+
+
+def test_red_and_green_use_distinct_declared_roots(tmp_path):
+    scope = {
+        "driver_red": ["tests/"],
+        "driver_green": ["battalion/"],
+        "refactorer": ["battalion/"],
+        "reviewer": [],
+    }
+    run_driver(
+        make_state(write_scope=scope),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: files_response({"test_widget.py": "def test_x(): pass"}),
+        mode="red",
+    )
+    run_driver(
+        make_state(write_scope=scope),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: files_response({"widget.py": "VALUE = 1"}),
+        mode="green",
+    )
+    assert (tmp_path / "tests" / "test_widget.py").exists()
+    assert (tmp_path / "battalion" / "widget.py").exists()
+
+
+def test_red_cannot_traverse_into_implementation_root(tmp_path):
+    scope = {"driver_red": ["tests/"], "driver_green": ["battalion/"], "reviewer": []}
+    with pytest.raises(ScopeViolationError):
+        run_driver(
+            make_state(write_scope=scope),
+            ticket_text="ticket",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response(
+                {"../battalion/test_sneaky.py": "def test_x(): pass"}
+            ),
+            mode="red",
+        )
+    assert not (tmp_path / "battalion" / "test_sneaky.py").exists()
+
+
+def test_multiple_declared_roots_require_a_declared_root_prefix(tmp_path):
+    scope = {"driver_green": ["battalion/", "plugins/"], "reviewer": []}
+    run_driver(
+        make_state(write_scope=scope),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: files_response({"plugins/widget.py": "VALUE = 1"}),
+        mode="green",
+    )
+    assert (tmp_path / "plugins" / "widget.py").exists()
+
+    with pytest.raises(ScopeViolationError):
+        run_driver(
+            make_state(write_scope=scope),
+            ticket_text="ticket",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({"undeclared/widget.py": "VALUE = 2"}),
+            mode="green",
+        )
