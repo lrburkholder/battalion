@@ -1,5 +1,7 @@
 ## Engineering Knowledge System
 
+**Status:** Draft, except for the BTN-20 Instinct data contract described below.
+
 ### Purpose
 
 Battalion SHALL accumulate engineering knowledge across executions while preserving
@@ -43,13 +45,21 @@ The Intel Repository stores accepted instincts.
 
 Each instinct SHALL contain:
 
-- metadata
+- a stable identifier and schema version
+- an explicit candidate or accepted lifecycle
 - recommendation
-- supporting evidence
-- retrieval metadata
-- feedback statistics
+- bounded supporting evidence references and descriptions
+- role audience, applicability, and tags
+- creation provenance
+- optional supersession metadata
 
-Accepted instincts are immutable.
+Accepted instincts additionally require human-acceptance provenance. A
+candidate cannot be represented as accepted without that provenance.
+
+Confidence is not part of the creation contract. Feedback statistics and
+operational confidence remain deferred until retrieval usage exists.
+
+Accepted instincts are immutable once repository persistence is implemented.
 
 New knowledge supersedes previous knowledge by creating a new instinct.
 
@@ -119,3 +129,7 @@ Operator Feedback
 ↓
 
 Updated Retrieval Confidence
+
+The lifecycle after Instinct creation remains future-facing; BTN-20 defines the
+validated records but does not ship Recon, promotion, repository persistence,
+retrieval, or feedback behavior.

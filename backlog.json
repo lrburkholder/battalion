@@ -460,7 +460,7 @@
       "id": "BTN-20",
       "phase": "implementation",
       "title": "Instinct data contract",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Define the versioned contract for candidate and accepted Instincts, including recommendation, evidence, audience, applicability, tags, provenance, lifecycle status, and supersession metadata.",
       "acceptance_criteria": [
@@ -479,7 +479,7 @@
       ],
       "assignee_role": "architect",
       "source": "docs/recon/spec.md; docs/intel/spec.md; docs/adrs/adr0010.md; docs/adrs/adr0011.md; docs/adrs/adr0012.md",
-      "notes": "Resolve the remaining draft-spec conflict before implementation: Recon must not assign an initial confidence value because ADR-0012 defines confidence as observed operational usefulness. ADR-0011 and ADR-0012 are still Proposed and must not be presented as shipped behavior."
+      "notes": "Completed 2026-08-13. Added a strict, separately versioned Instinct contract with discriminated candidate and accepted types, bounded execution evidence, role audience, explicit applicability, tags, creation and human-acceptance provenance, and forward-only supersession references. Creation-time confidence is rejected and remains deferred pending operational feedback. Updated spec.md and the Intel/Recon drafts without presenting proposed ADR-0011 or ADR-0012 as shipped lifecycle behavior. Full suite: 291 passed."
     },
     {
       "id": "BTN-21",

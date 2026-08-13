@@ -78,6 +78,26 @@ persisted state or workspace artifacts. The record is part of `RunState`, so
 normal JSON save/load and graph pause/resume preserve the same evidence without
 a second persistence or resumption path.
 
+### Instinct data contract
+
+BTN-20 introduces a separately versioned `1.0` contract under
+`battalion.intel.models`. An Instinct has a stable `INS-...` identifier,
+recommendation, bounded execution-record evidence, role audience, explicit
+applicability, tags, creation provenance, and an optional identifier for the
+older Instinct it supersedes. Supersession creates a forward reference from the
+new record; it does not replace or rewrite the earlier record.
+
+Lifecycle is a discriminated contract rather than an unchecked string:
+
+- `CandidateInstinct` has lifecycle `candidate` and no authority as knowledge.
+- `AcceptedInstinct` has lifecycle `accepted` and requires separate human
+  acceptance provenance.
+
+Both forms reject undeclared fields. In particular, confidence is not creation
+metadata. Operational confidence remains deferred until retrieval usage and
+operator-feedback evidence exist. This contract does not add Recon to the
+graph, persist an Intel repository, or implement retrieval.
+
 Role context is assembled deterministically from this persisted specification,
 the approved plan, and files under the declared Driver source roots. Context is
 bounded before each LLM call: RED receives existing implementation context,
