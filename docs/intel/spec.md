@@ -1,6 +1,7 @@
 ## Engineering Knowledge System
 
-**Status:** Draft, except for the BTN-20 Instinct data contract described below.
+**Status:** Draft, except for the BTN-20 Instinct data contract and BTN-21 local
+repository behavior described below.
 
 ### Purpose
 
@@ -59,9 +60,15 @@ candidate cannot be represented as accepted without that provenance.
 Confidence is not part of the creation contract. Feedback statistics and
 operational confidence remain deferred until retrieval usage exists.
 
-Accepted instincts are immutable once repository persistence is implemented.
+BTN-21 persists accepted instincts as one local JSON record per stable
+identifier. Candidate instincts are rejected, and create-only writes prevent an
+accepted identifier from being edited or overwritten in place.
 
-New knowledge supersedes previous knowledge by creating a new instinct.
+New knowledge supersedes previous knowledge by creating a new instinct whose
+`supersedes_id` references a record already in the repository. Superseded
+records remain directly retrievable for provenance and are omitted from active
+listing. Semantic indexes, remote stores, and cross-project sharing are not
+part of this repository slice.
 
 ---
 
@@ -130,6 +137,6 @@ Operator Feedback
 
 Updated Retrieval Confidence
 
-The lifecycle after Instinct creation remains future-facing; BTN-20 defines the
-validated records but does not ship Recon, promotion, repository persistence,
-retrieval, or feedback behavior.
+Recon, promotion, retrieval integration, and feedback remain future-facing.
+BTN-20 defines the validated records, and BTN-21 provides immutable local
+persistence for accepted records without adding either feature to the graph.
