@@ -19,8 +19,9 @@ Boundaries:
 - Prefer deletion and direct code over new abstractions.
 - Keep the change small and local; leave already-clear code alone.
 - Do not claim that tests were executed.
-- Treat every output path as relative to the node's `src/` write root. Do not
-  prefix paths with `src/`, use absolute paths, or use `..` traversal.
+- Treat every output path as relative to the declared Refactorer implementation
+  root. Do not use absolute paths or `..` traversal. If the run declares
+  multiple roots, prefix each path with one of those declared roots.
 - Return complete contents for every changed file, not patches or excerpts.
 
 Output exactly one valid JSON object:

@@ -1,7 +1,7 @@
 """Reviewer node (BTN-6, extended in BTN-12).
 
-Reviewer's core mechanism is unchanged from BTN-6: copy the current src/
-tree into an isolated location, re-run the tests that exist there via
+Reviewer's core mechanism is unchanged from BTN-6: copy the configured project
+root into an isolated location, re-run the tests that exist there via
 subprocess, never trust a self-reported pass/fail. What BTN-12 adds is
 checkpoint-awareness (ADR-007, ADR-009): which outcome counts as "accept"
 depends on the checkpoint being reviewed --
@@ -80,16 +80,22 @@ class EmptyReviewContent(Exception):
 
 
 class SourceTreeMissing(Exception):
-    """Raised when base_dir/src doesn't exist yet — Reviewer has nothing
-    to copy or test. Without this check, shutil.copytree would raise a
-    raw, unclear FileNotFoundError instead."""
+    """Backward-compatible name for a missing configured project root."""
 
 
 def make_clean_copy(src_dir: str | Path) -> Path:
     """Copy src_dir into a fresh temporary directory, independent of the
-    original — this is the "clean tree" in clean-tree re-verification."""
+    original — this is the "clean tree" in clean-tree re-verification.
+
+    Repository metadata, local environments, and generated caches are not
+    project inputs and can make root-level copies prohibitively large.
+    """
     dest = Path(tempfile.mkdtemp(prefix="battalion-clean-"))
-    shutil.copytree(src_dir, dest, dirs_exist_ok=True)
+    ignore = shutil.ignore_patterns(
+        ".battalion", ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+        ".venv", "__pycache__", "node_modules",
+    )
+    shutil.copytree(src_dir, dest, dirs_exist_ok=True, ignore=ignore)
     return dest
 
 
@@ -123,8 +129,7 @@ def run_reviewer(
     run_tests_fn: Callable[[Path], TestRunResult] = run_tests_via_subprocess,
     on_stream: Callable[[dict], None] | None = None,
 ) -> RunState:
-    """Run the Reviewer node: independently re-run tests from a clean copy
-    of the current src/ tree, and return updated state.
+    """Independently re-run tests from a clean copy of the project root.
 
     checkpoint (required, BTN-12/ADR-007) determines both which outcome
     counts as accept (RED_CHECK expects failure; GREEN_CHECK and
@@ -142,13 +147,14 @@ def run_reviewer(
             f"writes files, but found tool entries: {sorted(write_tools.keys())}"
         )
 
-    src_dir = Path(base_dir) / "src"
-    if not src_dir.exists():
+    project_root = Path(base_dir)
+    if not project_root.is_dir():
         raise SourceTreeMissing(
-            f"No src/ directory found at {src_dir} — Reviewer has nothing to test."
+            f"Configured project root does not exist at {project_root} — "
+            "Reviewer has nothing to test."
         )
 
-    clean_dir = make_clean_copy_fn(src_dir)
+    clean_dir = make_clean_copy_fn(project_root)
     try:
         result = run_tests_fn(clean_dir)
     finally:

@@ -26,10 +26,23 @@ def _driver_files(
     base_dir: str | Path,
     selection: Literal["tests", "implementation", "all"],
 ) -> list[tuple[str, str]]:
-    """Read eligible files inside Driver's declared roots in stable order."""
+    """Read eligible files inside phase-appropriate roots in stable order."""
     base = Path(base_dir).resolve()
     candidates: dict[str, Path] = {}
-    for scope in sorted(state.write_scope.get("driver", [])):
+    if selection == "tests":
+        keys = ["driver_red"] if "driver_red" in state.write_scope else ["driver"]
+    elif selection == "implementation":
+        keys = ["driver_green"] if "driver_green" in state.write_scope else ["driver"]
+    else:
+        keys = [
+            key
+            for key in ("driver_red", "driver_green", "refactorer")
+            if key in state.write_scope
+        ]
+        if not keys:
+            keys = ["driver"]
+    scopes = {scope for key in keys for scope in state.write_scope.get(key, [])}
+    for scope in sorted(scopes):
         root = (base / scope).resolve()
         if not root.is_relative_to(base) or not root.exists():
             continue

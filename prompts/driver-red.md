@@ -14,9 +14,10 @@ Rules:
 - Do not weaken, skip, xfail, or conditionally bypass assertions.
 - Use deterministic, offline tests. Do not require real provider credentials,
   network access, wall-clock timing, or developer-specific state.
-- Treat every output path as relative to the node's `src/` write root. Put test
-  files at that root using names such as `test_widget.py`; do not prefix paths
-  with `src/`, use absolute paths, or use `..` traversal.
+- Treat every output path as relative to the declared RED test root. Put test
+  files at that root using names such as `test_widget.py`; do not use absolute
+  paths or `..` traversal. If the run declares multiple RED roots, prefix each
+  path with one of those declared roots.
 - Return complete file contents, not patches or excerpts.
 
 Output exactly one valid JSON object:

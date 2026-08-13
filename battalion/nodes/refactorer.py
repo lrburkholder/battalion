@@ -1,10 +1,8 @@
-"""Refactorer node (BTN-13, plan.md ADR-008).
+"""Refactorer node (BTN-13, ADR-0008, ADR-0013).
 
-New node, same shape as Driver: builds its own scoped write tools
-internally, but calls build_write_tools with node_name='driver' (not
-'refactorer') since it shares Driver's declared src/ write_scope entry
-rather than getting its own. Refactors passing code without changing
-behavior; re-checked by Reviewer with expect_pass=True.
+The Refactorer builds scoped write tools from its explicit phase entry when
+present. Legacy configurations share Driver's implementation scope. It
+refactors passing code without changing behavior and is re-checked by Reviewer.
 
 The key distinction from Driver: this node is called after GREEN_check
 passes, and its sole job is to improve the code's structure/clarity without
@@ -20,7 +18,11 @@ from typing import Any, Callable
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
-from battalion.scope.tool_binding import build_write_tools
+from battalion.scope.tool_binding import (
+    build_write_tools,
+    resolve_scoped_batch,
+    scope_key_for_phase,
+)
 from battalion.state.models import RunState, RunStatus
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
@@ -89,24 +91,22 @@ def run_refactorer(
     prompts_dir: str | Path | None = None,
     on_stream: Callable[[dict], None] | None = None,
 ) -> RunState:
-    """Run the Refactorer node: refactor passing code without changing
-    behavior, write refactored files under src/, and return updated state.
+    """Run Refactorer and write output through its implementation roots.
 
-    Per ADR-008, this node uses node_name='driver' when calling
-    build_write_tools, so it shares Driver's declared write_scope entry
-    (typically 'src/') rather than requiring its own 'refactorer' key.
+    Per ADR-0013, an explicit ``refactorer`` scope wins. Legacy configurations
+    fall back to Driver's scope per ADR-0008.
 
     Raises InfraFailure (from call_llm_fn), WriteScopeMisconfigured,
     MalformedRefactorerOutput, EmptyRefactorerOutput on failure — never
     silently swallows any of them."""
-    # ADR-008: use "driver" as node_name to share its write_scope entry
+    scope_key = scope_key_for_phase(state.write_scope, "refactorer")
     write_tools = build_write_tools(
-        "driver", state.write_scope, base_dir=base_dir, on_violation=on_violation
+        scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
     )
-    if "src/" not in write_tools:
+    if not write_tools:
         raise WriteScopeMisconfigured(
-            "state.write_scope['driver'] has no 'src/' entry — "
-            "the Refactorer node cannot write its output."
+            f"state.write_scope[{scope_key!r}] declares no write roots — "
+            "Refactorer cannot write its output."
         )
 
     resolved_prompt = system_prompt or load_system_prompt(
@@ -129,12 +129,11 @@ def run_refactorer(
             "ticket to 'reviewer' having written nothing."
         )
 
-    tool = write_tools["src/"]
-    # Pre-validate every path before writing any of them, so a scope
-    # violation on file N doesn't leave files 1..N-1 written to disk.
-    for relative_path in files:
-        tool.resolve(relative_path)
-    for relative_path, content in files.items():
+    try:
+        targets = resolve_scoped_batch(write_tools, list(files))
+    except ValueError as exc:
+        raise WriteScopeMisconfigured(str(exc)) from exc
+    for (tool, relative_path), content in zip(targets, files.values(), strict=True):
         tool.write(relative_path, content)
 
     return state.model_copy(update={

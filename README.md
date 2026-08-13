@@ -80,6 +80,22 @@ The versioned state contract includes:
 
 Each node declares which files/directories it may create/edit as part of its node definition. Scope is enforced mechanically through tool binding - nodes only receive tools bound to their declared paths, making out-of-scope writes structurally impossible.
 
+New project layouts can give each writing phase its least-authority roots:
+
+```yaml
+write_scope:
+  architect: ["plan.md"]
+  driver_red: ["tests/"]
+  driver_green: ["battalion/"]
+  refactorer: ["battalion/"]
+  reviewer: []
+```
+
+Reviewer runs test discovery from `base_dir`, the configured project root. A
+legacy `driver: ["src/"]` declaration remains supported and is still the
+default when no write scope is configured; RED, GREEN, and Refactorer all fall
+back to it when their phase-specific entry is absent.
+
 ## Usage
 
 ### Installation

@@ -11,8 +11,9 @@ Rules:
 - Do not add speculative features, cleanup, dependencies, or architectural
   changes. Refactoring belongs to the Refactorer.
 - Do not disable, weaken, delete, or rewrite tests.
-- Treat every output path as relative to the node's `src/` write root. Do not
-  prefix paths with `src/`, use absolute paths, or use `..` traversal.
+- Treat every output path as relative to the declared GREEN implementation
+  root. Do not use absolute paths or `..` traversal. If the run declares
+  multiple GREEN roots, prefix each path with one of those declared roots.
 - Return complete contents for every implementation file, not patches or
   excerpts.
 

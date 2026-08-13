@@ -5,19 +5,26 @@ import pytest
 from battalion.prompts.loader import load_system_prompt
 
 
-@pytest.mark.parametrize(
-    "name",
-    ["driver", "driver-red", "driver-green", "refactorer"],
-)
-def test_file_producing_prompts_match_json_and_path_contract(name):
+@pytest.mark.parametrize("name", ["driver", "driver-red", "driver-green", "refactorer"])
+def test_file_producing_prompts_match_json_contract(name):
     prompt = load_system_prompt(name)
-    normalized = " ".join(prompt.split())
 
     assert '"files"' in prompt
-    assert "relative to the node's `src/` write root" in normalized
-    assert "prefix paths with `src/`" in normalized
     assert "do not" in prompt.lower()
     assert "Return JSON only" in prompt
+
+
+def test_file_producing_prompts_match_layout_aware_path_contract():
+    combined = " ".join(load_system_prompt("driver").split())
+    assert "relative to the node's `src/` write root" in combined
+    assert "do not prefix paths with `src/`" in combined.lower()
+
+    for name in ("driver-red", "driver-green", "refactorer"):
+        normalized = " ".join(load_system_prompt(name).split())
+        assert "declared" in normalized
+        assert "multiple" in normalized
+        assert "absolute paths" in normalized
+        assert "`..` traversal" in normalized
 
 
 def test_red_and_green_prompts_preserve_mode_authority():
