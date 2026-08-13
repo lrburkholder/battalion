@@ -485,7 +485,7 @@
       "id": "BTN-21",
       "phase": "implementation",
       "title": "Immutable Intel repository",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Persist human-accepted Instincts under stable identifiers, enforce immutability, and preserve history when newer guidance supersedes older knowledge.",
       "acceptance_criteria": [
@@ -504,7 +504,7 @@
       ],
       "assignee_role": "driver",
       "source": "docs/intel/spec.md; docs/adrs/adr0010.md; docs/adrs/adr0011.md",
-      "notes": "Use local repository-backed persistence for the first vertical slice. Semantic indexes, remote stores, and cross-project sharing are explicitly deferred."
+      "notes": "Completed 2026-08-13. Added a local directory-backed Intel repository that stores only validated AcceptedInstinct records under stable identifiers using create-only writes. Existing records cannot be overwritten; replacements receive new identifiers and must reference an existing superseded record. Historical records remain directly retrievable while active listing excludes superseded guidance. Persistence, boundary validation, referential integrity, and tamper detection are covered without network or embedding dependencies. Full suite: 298 passed."
     },
     {
       "id": "BTN-22",

@@ -11,6 +11,11 @@ from battalion.intel.models import (
     InstinctEvidenceReference,
     InstinctLifecycle,
 )
+from battalion.intel.repository import (
+    ImmutableInstinctError,
+    InstinctNotFoundError,
+    IntelRepository,
+)
 
 __all__ = [
     "AcceptedInstinct",
@@ -22,4 +27,7 @@ __all__ = [
     "InstinctCreationProvenance",
     "InstinctEvidenceReference",
     "InstinctLifecycle",
+    "ImmutableInstinctError",
+    "InstinctNotFoundError",
+    "IntelRepository",
 ]

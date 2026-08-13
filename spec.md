@@ -96,7 +96,20 @@ Lifecycle is a discriminated contract rather than an unchecked string:
 Both forms reject undeclared fields. In particular, confidence is not creation
 metadata. Operational confidence remains deferred until retrieval usage and
 operator-feedback evidence exist. This contract does not add Recon to the
-graph, persist an Intel repository, or implement retrieval.
+graph or implement retrieval.
+
+### Immutable Intel repository
+
+BTN-21 persists each `AcceptedInstinct` as local JSON under its stable
+identifier. Repository writes use create-only semantics: an existing identifier
+cannot be replaced, including with identical content. Candidate Instincts are
+rejected at the repository boundary.
+
+Changed guidance is stored under a new identifier whose `supersedes_id` must
+refer to an existing accepted record. Both records remain directly retrievable
+for provenance. Active listing excludes every record referenced as superseded,
+without deleting or editing its persisted history. Semantic indexing, remote
+storage, cross-project sharing, and graph integration remain deferred.
 
 Role context is assembled deterministically from this persisted specification,
 the approved plan, and files under the declared Driver source roots. Context is
