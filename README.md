@@ -229,6 +229,14 @@ Nodes only receive tools bound to their declared write paths. This provides defe
 ### [ADR-0003: CLI Design](docs/adrs/adr0003.md)
 The CLI is deliberately the thinnest layer, wrapping already-working internals. This ensures the core functionality is testable and reusable without the CLI.
 
+The reusable `run_ticket(initial_state, llm_configs, ...)` API takes one
+complete, caller-created `RunState`. That state is the sole source of truth for
+the run identifier, ticket identifier, specification, budget, manual
+checkpoints, write scope, and retry bound. These values are not also accepted as
+separate arguments, so callers cannot provide conflicting duplicate
+configuration. `resume_ticket` likewise continues from the persisted
+`RunState`, changing only the execution bookkeeping required to resume.
+
 See the [complete ADR index](docs/adrs/README.md) for all accepted architecture
 decisions and their implementation status.
 

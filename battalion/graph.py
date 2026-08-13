@@ -793,27 +793,23 @@ def resume_ticket(
 
 
 def run_ticket(
-    ticket_id: str,
+    initial_state: RunState,
     llm_configs: dict[str, Any],
-    spec_text: str | None = None,
     base_dir: str = ".",
     prompts_dir: str | None = None,
     max_turns: int = 50,
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
 ) -> RunState:
-    """Run a ticket through the graph from start to finish (or interrupt).
+    """Run a caller-created state through the graph until done or interrupted.
     
-    This is a convenience function that:
-    1. Creates initial state
-    2. Builds the graph
-    3. Runs the graph
-    4. Returns final state
+    ``initial_state`` is the sole source of truth for run configuration.  The
+    function deliberately does not accept duplicate ticket, specification,
+    budget, checkpoint, scope, or retry arguments that could conflict with it.
     
     Args:
-        ticket_id: The ticket ID to run
+        initial_state: Complete initial state, including all run configuration
         llm_configs: Per-node LLM configurations
-        spec_text: The specification text for the ticket
         base_dir: Base directory for file operations
         prompts_dir: Directory containing node system prompts
         max_turns: Maximum number of graph iterations (safety limit)
@@ -823,28 +819,7 @@ def run_ticket(
     Returns:
         Final RunState after graph completes or interrupts
     """
-    from battalion.state.models import Budget, RunStatus
     from langgraph.errors import GraphRecursionError
-    
-    # Create initial state
-    initial_state = RunState(
-        schema_version="1.0",
-        run_id=f"run-{ticket_id}",
-        ticket_id=ticket_id,
-        spec=spec_text or ticket_id,
-        status=RunStatus.NOT_STARTED,
-        phase=NODE_ARCHITECT,
-        write_scope={
-            "architect": ["plan.md"],
-            "driver": ["src/"],
-            "reviewer": [],
-        },
-        retry_bound=2,
-        budget=Budget(limit=100, used=0),
-        reviewer_rejection_history=[],
-        interrupt_log=[],
-        manual_checkpoints=[],
-    )
     
     # Build graph
     graph = build_graph(

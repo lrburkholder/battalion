@@ -558,7 +558,7 @@ class TestProgressEvents:
 
         with run_with_mocked_llms(arch_llm, driver_llm, reviewer_llm, refactorer_llm):
             final = run_ticket(
-                "BTN-EVT", make_configs(), spec_text="widget",
+                make_initial_state(tmp_path, "BTN-EVT", spec="widget"), make_configs(),
                 base_dir=str(tmp_path), on_node_event=events.append,
             )
 
@@ -611,7 +611,7 @@ class TestProgressEvents:
 
         with run_with_mocked_llms(arch_llm, driver_llm, reviewer_llm, refactorer_llm):
             final = run_ticket(
-                "BTN-EVT2", make_configs(), spec_text="widget",
+                make_initial_state(tmp_path, "BTN-EVT2", spec="widget"), make_configs(),
                 base_dir=str(tmp_path), on_token=token_events.append,
             )
 
@@ -641,7 +641,7 @@ class TestProgressEvents:
 
         with run_with_mocked_llms(arch_llm, driver_llm, reviewer_llm, refactorer_llm):
             final = run_ticket(
-                "BTN-EVT3", make_configs(), spec_text="widget",
+                make_initial_state(tmp_path, "BTN-EVT3", spec="widget"), make_configs(),
                 base_dir=str(tmp_path), on_node_event=events.append,
             )
 

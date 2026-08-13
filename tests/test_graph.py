@@ -498,11 +498,7 @@ class TestResumeActuallyResumes:
         assert calls == ["reviewer_refactor-check"]
         assert final["status"] == RunStatus.DONE
 
-
-class TestExecutionContext:
-    """BTN-26 role context is persisted, bounded, and assembled by the graph."""
-
-    def test_run_ticket_retains_supplied_specification(self, tmp_path):
+    def test_resume_preserves_saved_run_configuration(self, tmp_path):
         captured = {}
 
         class FakeApp:
@@ -513,16 +509,76 @@ class TestExecutionContext:
                 captured["state"] = state
                 return state
 
-        with patch("battalion.graph.build_graph", return_value=FakeApp()):
-            final = run_ticket(
-                "BTN-26-test",
-                make_llm_configs(),
-                spec_text="Persisted specification",
-                base_dir=tmp_path,
-            )
+        paused = _make_initial_state(
+            run_id="saved-run",
+            ticket_id="saved-ticket",
+            spec="saved specification",
+            status=RunStatus.AWAITING_HUMAN,
+            phase="awaiting_human",
+            write_scope={"architect": ["a.md"], "driver": ["pkg/"], "reviewer": []},
+            retry_bound=9,
+            budget=Budget(limit=17, used=4),
+            manual_checkpoints=["reviewer_green"],
+            interrupt_log=[
+                InterruptLogEntry(
+                    trigger="manual-checkpoint",
+                    timestamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                    context={"next_phase": NODE_DRIVER_GREEN},
+                )
+            ],
+        )
 
-        assert captured["state"].spec == "Persisted specification"
-        assert final.spec == "Persisted specification"
+        with patch("battalion.graph.build_graph", return_value=FakeApp()):
+            resume_ticket(paused, make_llm_configs(), base_dir=tmp_path)
+
+        resumed = captured["state"]
+        for field in (
+            "run_id", "ticket_id", "spec", "write_scope", "retry_bound",
+            "budget", "manual_checkpoints", "interrupt_log",
+        ):
+            assert getattr(resumed, field) == getattr(paused, field)
+
+
+class TestExecutionContext:
+    """BTN-26 role context is persisted, bounded, and assembled by the graph."""
+
+    def test_run_ticket_preserves_caller_supplied_initial_state(self, tmp_path):
+        captured = {}
+
+        class FakeApp:
+            def compile(self):
+                return self
+
+            def invoke(self, state, config):
+                captured["state"] = state
+                return state
+
+        initial = _make_initial_state(
+            run_id="custom-run-id",
+            ticket_id="custom-ticket-id",
+            spec="Persisted specification",
+            write_scope={"architect": ["custom-plan.md"], "driver": ["pkg/"], "reviewer": []},
+            retry_bound=7,
+            budget=Budget(limit=13, used=2),
+            manual_checkpoints=["driver_green"],
+        )
+
+        with patch("battalion.graph.build_graph", return_value=FakeApp()):
+            final = run_ticket(initial, make_llm_configs(), base_dir=tmp_path)
+
+        assert captured["state"] == initial
+        assert final == initial
+
+    def test_run_ticket_rejects_duplicate_run_configuration(self, tmp_path):
+        initial = _make_initial_state()
+
+        with pytest.raises(TypeError, match="unexpected keyword argument 'ticket_id'"):
+            run_ticket(
+                initial,
+                make_llm_configs(),
+                base_dir=tmp_path,
+                ticket_id="conflicting-ticket",
+            )
 
     def test_graph_supplies_deterministic_role_specific_context(self, tmp_path):
         source = tmp_path / "src"

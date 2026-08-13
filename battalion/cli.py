@@ -185,8 +185,7 @@ def run(
     display = ProgressDisplay()
     with display:
         final_state = RunState.model_validate(run_ticket(
-            ticket_id=ticket_id,
-            spec_text=spec_text,
+            initial_state=initial_state,
             llm_configs=cfg.models,
             base_dir=cfg.base_dir,
             prompts_dir=cfg.prompts_dir,

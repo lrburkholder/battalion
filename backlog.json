@@ -637,7 +637,7 @@
       "id": "BTN-27",
       "phase": "implementation",
       "title": "Preserve caller-supplied run configuration",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Make the CLI and reusable runtime execute the same caller-supplied RunState contract instead of constructing configuration-aware state in the CLI and then replacing it with hardcoded defaults inside run_ticket.",
       "acceptance_criteria": [
@@ -660,7 +660,7 @@
       ],
       "assignee_role": "driver",
       "source": "2026-08-11 backlog reconciliation; battalion/cli.py run command; battalion/graph.py run_ticket",
-      "notes": "Current CLI code constructs a RunState using loaded budget, checkpoint, and write-scope configuration, but run_ticket creates a second state with hardcoded defaults. This is a dogfooding gate and may reveal that BTN-10's CLI acceptance coverage was incomplete; update acceptance evidence rather than silently changing the shipped contract."
+      "notes": "Completed 2026-08-13. The CLI now passes its complete caller-created RunState to run_ticket, whose signature makes that state the sole source of initial run configuration and rejects duplicate ticket/specification configuration. Regression coverage proves non-default identifiers, specification, budget, checkpoints, write scope, and retry bound reach initial graph invocation unchanged; resume preserves the saved configuration. Reusable API behavior is documented in README.md. Focused graph/CLI/acceptance tests: 55 passed. Full suite: 261 passed."
     },
     {
       "id": "BTN-28",

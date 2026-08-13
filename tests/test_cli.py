@@ -41,7 +41,7 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     # Mock the graph execution to avoid actual LLM calls
     import battalion.cli as cli_module
     
-    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         return RunState(
             schema_version="1.0",
             run_id="run-BTN-9-test",
@@ -84,7 +84,7 @@ def test_run_force_overwrites_existing(tmp_path, monkeypatch):
     """Test that --force overwrites existing state file."""
     import battalion.cli as cli_module
     
-    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         return RunState(
             schema_version="1.0",
             run_id="run-BTN-9-test",
@@ -247,7 +247,7 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
     from datetime import datetime, timezone
     from battalion.interrupts.triggers import TRIGGER_INFRA_FAILURE
 
-    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         return RunState(
             schema_version="1.0",
             run_id="run-BTN-9-test",
@@ -290,7 +290,7 @@ def test_run_with_config_file(tmp_path, monkeypatch):
     
     captured_config = {}
     
-    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         captured_config["llm_configs"] = llm_configs
         captured_config["base_dir"] = base_dir
         captured_config["prompts_dir"] = prompts_dir
@@ -337,13 +337,62 @@ manual_checkpoints: ["reviewer"]
     assert captured_config["prompts_dir"] is None
 
 
+def test_run_passes_configured_initial_state_to_graph_unchanged(tmp_path, monkeypatch):
+    """BTN-27: the CLI-created RunState is the runtime's source of truth."""
+    import battalion.cli as cli_module
+
+    captured = {}
+
+    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+        captured["state"] = initial_state
+        return initial_state.model_copy(update={"status": RunStatus.DONE, "phase": "done"})
+
+    monkeypatch.setattr(cli_module, "run_ticket", mock_run_ticket)
+
+    config_file = tmp_path / "battalion.config.yaml"
+    config_file.write_text(
+        """
+budget_limit: 13
+manual_checkpoints: ["driver_green"]
+write_scope:
+  architect: ["custom-plan.md"]
+  driver: ["pkg/", "checks/"]
+  reviewer: []
+""",
+        encoding="utf-8",
+    )
+    spec_file = tmp_path / "ticket-spec.md"
+    spec_file.write_text("Caller supplied specification", encoding="utf-8")
+
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        result = runner.invoke(
+            app,
+            ["run", "BTN-27-test", "--spec", str(spec_file), "--config", str(config_file)],
+        )
+
+    assert result.exit_code == 0
+    state = captured["state"]
+    assert state.run_id == "run-BTN-27-test"
+    assert state.ticket_id == "BTN-27-test"
+    assert state.spec == "Caller supplied specification"
+    assert state.budget == Budget(limit=13, used=0)
+    assert state.manual_checkpoints == ["driver_green"]
+    assert state.write_scope == {
+        "architect": ["custom-plan.md"],
+        "driver": ["pkg/", "checks/"],
+        "reviewer": [],
+    }
+    assert state.retry_bound == 2
+
+
 def test_run_with_model_overrides(tmp_path, monkeypatch):
     """Test that CLI model flags override config file."""
     import battalion.cli as cli_module
     
     captured_config = {}
     
-    def mock_run_ticket(ticket_id, spec_text, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         captured_config["llm_configs"] = llm_configs
         return RunState(
             schema_version="1.0",
