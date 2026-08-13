@@ -36,12 +36,15 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 | `battalion.state.models` | Versioned state contract (Pydantic models) | ✅ Complete |
 | `battalion.state.persistence` | Local JSON load/save | ✅ Complete |
 | `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
+| `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
+| `battalion.intel.review` | Audited operator review and promotion boundary | 🚧 In progress (BTN-23) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
 | `battalion.nodes.architect` | Architecture planning node | ✅ Complete |
 | `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | ✅ Complete |
 | `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | ✅ Complete |
 | `battalion.nodes.refactorer` | Refactor node sharing Driver's write scope (ADR-008) | ✅ Complete |
+| `battalion.nodes.recon` | Post-completion candidate Instinct generation | ✅ Complete (BTN-22) |
 | `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | ✅ Complete |
 | `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | ✅ Complete |
 | `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | ✅ Complete |
@@ -171,6 +174,10 @@ battalion/
 ├── graph.py                    # StateGraph wiring, edges, interrupt points (BTN-7)
 ├── progress.py                 # CLI progress display
 ├── setup.py                    # Guided model/provider setup (BTN-15)
+├── intel/
+│   ├── models.py               # Candidate and accepted Instinct contracts (BTN-20)
+│   ├── repository.py           # Immutable accepted-Instinct storage (BTN-21)
+│   └── review.py               # Operator decisions and promotion workflow (BTN-23)
 ├── llm/
 │   ├── __init__.py
 │   └── litellm_client.py      # Per-node LiteLLM wrapper (BTN-3)
@@ -184,6 +191,7 @@ battalion/
 │   ├── driver.py               # Driver node, RED/GREEN modes (BTN-5, BTN-11)
 │   ├── reviewer.py             # Reviewer node, expect_pass + per-checkpoint counters (BTN-6, BTN-12)
 │   ├── refactorer.py           # Refactorer node (BTN-13)
+│   ├── recon.py                # Post-completion candidate generation (BTN-22)
 │   └── errors.py               # Shared node error types
 ├── scope/
 │   ├── __init__.py
@@ -210,6 +218,7 @@ tests/
 ├── test_graph.py              # StateGraph wiring tests
 ├── test_interrupts.py         # Interrupt trigger tests
 ├── test_litellm_client.py     # LiteLLM client tests
+├── test_instinct_review.py    # Operator review and promotion tests
 ├── test_models.py            # State model tests
 ├── test_persistence.py        # Persistence tests
 ├── test_prompt_loader.py      # Prompt loading/override tests

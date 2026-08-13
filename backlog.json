@@ -6,6 +6,7 @@
     "in-progress",
     "blocked",
     "in-review",
+    "cancelled",
     "done"
   ],
   "items": [
@@ -369,6 +370,7 @@
     },
     {
       "id": "BTN-16",
+      "phase": "implementation",
       "title": "Cost/budget reporting granularity",
       "status": "not-started",
       "priority": "P3",
@@ -386,13 +388,13 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "spun out of 2026-08-04 discussion re: portfolio-project overlap with Battalion's existing budget tracking",
-      "notes": "Do not start before BTN-10 confirms BTN-8's tracking actually holds up during a real end-to-end run -- BTN-8 is marked done but its behavior under a genuine full-graph run hasn't been validated yet (BTN-10 is not-started). Building a reporting layer on top of an unvalidated foundation risks having to redo it. Not intended as a standalone cost-estimator product; that would be a separate future extraction, not this ticket's scope."
+      "notes": "BTN-10 is done and the run-level budget foundation has end-to-end acceptance coverage, so this ticket is no longer dependency-blocked. BTN-19 now provides the durable per-node execution record that cost observations should extend rather than creating a parallel telemetry store. Not intended as a standalone cost-estimator product; that would be a separate future extraction, not this ticket's scope."
     },
     {
       "id": "BTN-17",
       "phase": "implementation",
       "title": "Interrupt/checkpoint web UI",
-      "status": "not-started",
+      "status": "cancelled",
       "priority": "P3",
       "description": "Web UI surfacing interrupt_log and current status/phase for a run, so a human can see why the graph paused and approve/resume without the CLI. Wired to the existing CLI resume path, not a parallel code path. Explicitly scoped to interrupt visibility and resume/approve actions -- not a token-streaming chat interface.",
       "acceptance_criteria": [
@@ -408,7 +410,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "spun out of 2026-08-04 discussion re: portfolio-project overlap; Luke's existing future-UI intent",
-      "notes": "Deliberately scoped down from a generic 'Copilot-style UI' to what Battalion's human-in-the-loop model actually needs: visibility into why the graph paused, and a way to act on it. Blocked on BTN-10 for the same reason as BTN-15 -- no UI work on top of an unvalidated v1 core."
+      "notes": "Cancelled as no longer required on 2026-08-13. Battalion's planned UI has diverged from this narrow interrupt/checkpoint surface, so implementing these acceptance criteria would create the wrong product boundary. No BTN-17 implementation was shipped. Future UI work must be specified and ticketed from the revised UI direction rather than treating this ticket as completed or silently reusing its scope."
     },
     {
       "id": "BTN-18",
@@ -510,7 +512,7 @@
       "id": "BTN-22",
       "phase": "implementation",
       "title": "Recon candidate generation",
-      "status": "complete",
+      "status": "done",
       "priority": "P2",
       "description": "Introduce Recon as a post-completion role that reads a durable execution record and produces zero or more evidence-backed candidate Instincts for human review.",
       "acceptance_criteria": [
@@ -535,7 +537,7 @@
       "id": "BTN-23",
       "phase": "implementation",
       "title": "Operator review and Instinct promotion workflow",
-      "status": "not-started",
+      "status": "done",
       "priority": "P2",
       "description": "Provide an explicit human workflow to accept, edit then accept, or reject each Recon candidate, with only approved knowledge promoted into the Intel repository.",
       "acceptance_criteria": [
@@ -553,8 +555,7 @@
         "BTN-24"
       ],
       "assignee_role": "driver",
-      "source": "docs/recon/spec.md; docs/intel/spec.md; docs/adrs/adr0011.md; philosophy.md",
-      "notes": "Human acceptance is an authority boundary, not an optional convenience. No automatic promotion path is in scope."
+      "source": "docs/recon/spec.md; docs/intel/spec.md; docs/adrs/adr0011.md; philosophy.md"
     },
     {
       "id": "BTN-24",

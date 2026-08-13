@@ -85,6 +85,7 @@ The decisions implemented by the v1 architecture are:
 | [ADR-0013](docs/adrs/adr0013.md) | Bind write tools to project layout phases |
 | [ADR-0014](docs/adrs/adr0014.md) | Persist a bounded execution record in RunState |
 | [ADR-0015](docs/adrs/adr0015.md) | Keep Recon outside the completed execution graph |
+| [ADR-0016](docs/adrs/adr0016.md) | Make Instinct promotion an audited human boundary |
 
 Future-facing knowledge-system records are indexed separately in the same
 directory and are not part of the shipped v1 graph.

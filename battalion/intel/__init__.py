@@ -16,6 +16,14 @@ from battalion.intel.repository import (
     InstinctNotFoundError,
     IntelRepository,
 )
+from battalion.intel.review import (
+    DecisionAlreadyRecordedError,
+    DecisionNotFoundError,
+    InstinctDecisionRepository,
+    InstinctReviewDecision,
+    InstinctReviewWorkflow,
+    ReviewAction,
+)
 
 __all__ = [
     "AcceptedInstinct",
@@ -30,4 +38,10 @@ __all__ = [
     "ImmutableInstinctError",
     "InstinctNotFoundError",
     "IntelRepository",
+    "DecisionAlreadyRecordedError",
+    "DecisionNotFoundError",
+    "InstinctDecisionRepository",
+    "InstinctReviewDecision",
+    "InstinctReviewWorkflow",
+    "ReviewAction",
 ]
