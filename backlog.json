@@ -510,7 +510,7 @@
       "id": "BTN-22",
       "phase": "implementation",
       "title": "Recon candidate generation",
-      "status": "not-started",
+      "status": "complete",
       "priority": "P2",
       "description": "Introduce Recon as a post-completion role that reads a durable execution record and produces zero or more evidence-backed candidate Instincts for human review.",
       "acceptance_criteria": [
@@ -529,7 +529,7 @@
       ],
       "assignee_role": "architect",
       "source": "docs/recon/spec.md; docs/recon/backlogproposal.md; docs/adrs/adr0011.md",
-      "notes": "Adding a role and post-completion graph authority is an architectural change. Read philosophy.md and update the relevant specification or ADR before implementation. Recon is the canonical name; Learner is historical terminology only."
+      "notes": "Completed 2026-08-13. Added Recon as a post-completion, read-only role that consumes the BTN-19 durable execution record and accepted Instincts supplied for duplicate comparison. Candidate output is validated against BTN-20, mechanically tied to real execution evidence, de-duplicated, and returned separately from RunState. Recon has no write or Intel repository authority. ADR-0015 and spec.md record the boundary and correct the older draft's transient conversation-history input. Full suite: 306 passed."
     },
     {
       "id": "BTN-23",
