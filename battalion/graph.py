@@ -23,13 +23,22 @@ and pauses. The CLI (BTN-9) will handle resumption.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable
 
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 
 from battalion.interrupts.budget import increment_budget
-from battalion.context import architect_context, driver_context, refactorer_context
+from battalion.context import (
+    architect_context,
+    driver_context,
+    refactorer_context,
+    reviewer_context,
+)
+from battalion.intel.models import AcceptedInstinct, InstinctAudience
+from battalion.intel.repository import IntelRepository
+from battalion.intel.retrieval import InstinctRetriever
 from battalion.interrupts.triggers import (
     TRIGGER_SAME_ROOT_CAUSE,
     check_any_trigger,
@@ -55,6 +64,15 @@ NODE_REFACTORER = "refactorer"
 NODE_REVIEWER_REFACTOR = "reviewer_refactor"
 NODE_DONE = "done"
 NODE_PAUSE = "awaiting_human"
+
+
+def _role_instincts(
+    retriever: InstinctRetriever,
+    state: RunState,
+    role: InstinctAudience,
+) -> tuple[AcceptedInstinct, ...]:
+    task_text = f"{state.ticket_id}\n{state.spec}"
+    return retriever.retrieve(role, task_text).selected
 
 # Phase to node name mapping for state transitions
 PHASE_TO_NODE = {
@@ -161,6 +179,7 @@ def _make_architect_node(
     prompts_dir: str | None = None,
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
+    instinct_retriever: InstinctRetriever | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create the Architect node function for the graph."""
     from battalion.nodes.architect import run_architect
@@ -175,7 +194,12 @@ def _make_architect_node(
         state = increment_budget(state)
         
         # Run Architect node
-        spec_text = architect_context(state)
+        instincts = (
+            _role_instincts(instinct_retriever, state, InstinctAudience.ARCHITECT)
+            if instinct_retriever is not None
+            else ()
+        )
+        spec_text = architect_context(state, instincts=instincts)
         
         if on_node_event is not None:
             on_node_event({
@@ -245,6 +269,7 @@ def _make_driver_node(
     prompts_dir: str | None = None,
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
+    instinct_retriever: InstinctRetriever | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Driver node function for the graph.
     
@@ -264,7 +289,12 @@ def _make_driver_node(
         # Increment budget for this LLM call
         state = increment_budget(state)
         
-        ticket_text = driver_context(state, base_dir, mode)
+        instincts = (
+            _role_instincts(instinct_retriever, state, InstinctAudience.DRIVER)
+            if instinct_retriever is not None
+            else ()
+        )
+        ticket_text = driver_context(state, base_dir, mode, instincts=instincts)
         
         if on_node_event is not None:
             on_node_event({
@@ -339,6 +369,7 @@ def _make_reviewer_node(
     prompts_dir: str | None = None,
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
+    instinct_retriever: InstinctRetriever | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Reviewer node function for the graph.
     
@@ -367,6 +398,14 @@ def _make_reviewer_node(
             })
         try:
             node_kwargs = {"on_stream": on_token} if on_token is not None else {}
+            if instinct_retriever is not None:
+                instincts = _role_instincts(
+                    instinct_retriever, state, InstinctAudience.REVIEWER
+                )
+                if instincts:
+                    node_kwargs["instinct_context"] = reviewer_context(
+                        state, instincts=instincts
+                    )
             new_state = run_reviewer(
                 state=state,
                 base_dir=base_dir,
@@ -430,6 +469,7 @@ def _make_refactorer_node(
     prompts_dir: str | None = None,
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
+    instinct_retriever: InstinctRetriever | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create the Refactorer node function for the graph."""
     from battalion.nodes.refactorer import run_refactorer
@@ -447,7 +487,12 @@ def _make_refactorer_node(
         # Increment budget for this LLM call
         state = increment_budget(state)
         
-        refactor_text = refactorer_context(state, base_dir)
+        instincts = (
+            _role_instincts(instinct_retriever, state, InstinctAudience.REFACTORER)
+            if instinct_retriever is not None
+            else ()
+        )
+        refactor_text = refactorer_context(state, base_dir, instincts=instincts)
         
         if on_node_event is not None:
             on_node_event({
@@ -552,6 +597,7 @@ def build_graph(
     prompts_dir: str | None = None,
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
+    intel_repository: IntelRepository | None = None,
 ) -> StateGraph:
     """Build the Battalion StateGraph with all nodes and edges.
     
@@ -570,20 +616,37 @@ def build_graph(
                   ({"type": "token"|"reasoning", "content": ...}). Forwarded
                   to each node's LLM call, which uses it only when the
                   provider streams.
+        intel_repository: Optional accepted-Instinct repository. Defaults to
+                          ``<base_dir>/.battalion/intel``.
     
     Returns:
         Configured StateGraph ready to run
     """
     graph = StateGraph(RunState)
+    repository = intel_repository or IntelRepository(
+        Path(base_dir) / ".battalion" / "intel"
+    )
+    instinct_retriever = InstinctRetriever(repository)
     
     # --- Create node functions ---
-    architect_node = _make_architect_node(llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
-    driver_red_node = _make_driver_node("red", llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
-    driver_green_node = _make_driver_node("green", llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
-    reviewer_red_node = _make_reviewer_node(CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
-    reviewer_green_node = _make_reviewer_node(CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
-    refactorer_node = _make_refactorer_node(llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
-    reviewer_refactor_node = _make_reviewer_node(CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir, on_node_event=on_node_event, on_token=on_token)
+    shared = {
+        "on_node_event": on_node_event,
+        "on_token": on_token,
+        "instinct_retriever": instinct_retriever,
+    }
+    architect_node = _make_architect_node(llm_configs, base_dir, prompts_dir, **shared)
+    driver_red_node = _make_driver_node("red", llm_configs, base_dir, prompts_dir, **shared)
+    driver_green_node = _make_driver_node("green", llm_configs, base_dir, prompts_dir, **shared)
+    reviewer_red_node = _make_reviewer_node(
+        CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir, **shared
+    )
+    reviewer_green_node = _make_reviewer_node(
+        CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir, **shared
+    )
+    refactorer_node = _make_refactorer_node(llm_configs, base_dir, prompts_dir, **shared)
+    reviewer_refactor_node = _make_reviewer_node(
+        CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir, **shared
+    )
     done_node = _make_done_node()
     pause_node = _make_pause_node()
     

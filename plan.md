@@ -86,9 +86,11 @@ The decisions implemented by the v1 architecture are:
 | [ADR-0014](docs/adrs/adr0014.md) | Persist a bounded execution record in RunState |
 | [ADR-0015](docs/adrs/adr0015.md) | Keep Recon outside the completed execution graph |
 | [ADR-0016](docs/adrs/adr0016.md) | Make Instinct promotion an audited human boundary |
+| [ADR-0018](docs/adrs/adr0018.md) | Use literal, inspectable Instinct retrieval |
 
-Future-facing knowledge-system records are indexed separately in the same
-directory and are not part of the shipped v1 graph.
+Knowledge-system records are indexed separately in the same directory. BTN-24
+adds accepted Instinct retrieval to role context without adding Recon or human
+promotion to the execution graph.
 
 ## Interrupt contract
 
@@ -135,6 +137,9 @@ run, resume, persistence, or review paths.
 - BTN-26 persists the supplied specification in `RunState` and assembles
   deterministic, bounded context for Architect, Driver RED/GREEN, and
   Refactorer through one canonical context path.
+- BTN-24 selects active accepted Instincts with literal audience,
+  applicability, and tag rules, then injects whole identified entries through
+  that same bounded context path for every execution role.
 - Recon is the canonical name for Battalion's knowledge-capture role; Learner
   refers only to its historical Regiment predecessor. Draft Recon and Intel
   ticket proposals must still be reconciled with `backlog.json` before

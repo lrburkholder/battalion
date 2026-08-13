@@ -128,6 +128,7 @@ def run_reviewer(
     make_clean_copy_fn: Callable[[Path], Path] = make_clean_copy,
     run_tests_fn: Callable[[Path], TestRunResult] = run_tests_via_subprocess,
     on_stream: Callable[[dict], None] | None = None,
+    instinct_context: str | None = None,
 ) -> RunState:
     """Independently re-run tests from a clean copy of the project root.
 
@@ -173,9 +174,12 @@ def run_reviewer(
     resolved_prompt = system_prompt or load_system_prompt(
         "reviewer", prompts_dir=prompts_dir
     )
+    user_content = f"Test output:\n{result.output}"
+    if instinct_context:
+        user_content = f"{instinct_context}\n\n{user_content}"
     messages = [
         {"role": "system", "content": resolved_prompt},
-        {"role": "user", "content": f"Test output:\n{result.output}"},
+        {"role": "user", "content": user_content},
     ]
     if on_stream is not None:
         response = call_llm_fn("reviewer", llm_config, messages, on_stream=on_stream)

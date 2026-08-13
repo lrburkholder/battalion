@@ -27,6 +27,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 - ✅ **BTN-14**: Model-diversity constraint (Reviewer must differ from Driver)
 - ✅ **BTN-15**: CLI setup command for LLM configuration and validation
 - ✅ **BTN-16**: Per-call LLM cost capture and per-phase reporting
+- ✅ **BTN-24**: Deterministic, role-specific Instinct retrieval and injection
 
 ## Architecture
 
@@ -39,6 +40,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 | `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
 | `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
 | `battalion.intel.review` | Audited operator review and promotion boundary | 🚧 In progress (BTN-23) |
+| `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
 | `battalion.nodes.architect` | Architecture planning node | ✅ Complete |

@@ -1,7 +1,7 @@
 ## Engineering Knowledge System
 
-**Status:** Draft, except for the BTN-20 Instinct data contract, BTN-21 local
-repository behavior, and BTN-23 promotion behavior described below.
+**Status:** Draft, except for the implemented BTN-20 through BTN-24 behavior
+described below.
 
 ### Purpose
 
@@ -91,6 +91,15 @@ Intel SHALL:
 Different nodes MAY receive different instincts.
 
 Intel SHALL NOT modify instincts.
+
+BTN-24 retrieves only accepted, active, non-superseded records. Audience must
+match the execution role. Normalized literal applicability exclusions take
+precedence over inclusions; a non-empty inclusion list requires a task match.
+Eligible records are ordered by descending applicability matches, descending
+tag matches, then ascending stable identifier. Each role queries independently,
+and whole identified records are injected through the bounded BTN-26 context
+path. Semantic retrieval, feedback, confidence, and cross-project sharing are
+not part of this slice.
 
 ---
 

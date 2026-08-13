@@ -561,7 +561,7 @@
       "id": "BTN-24",
       "phase": "implementation",
       "title": "Deterministic retrieval and node-specific Instinct injection",
-      "status": "not-started",
+      "status": "done",
       "priority": "P2",
       "description": "Retrieve accepted, active Instincts with explicit rules and assemble bounded, role-specific knowledge context through Battalion's canonical context path.",
       "acceptance_criteria": [
