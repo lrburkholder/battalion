@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from battalion.graph import run_ticket, resume_ticket
+from battalion.execution import summarize_costs
 from battalion.interrupts.triggers import (
     TRIGGER_BUDGET_EXCEEDED,
     TRIGGER_INFRA_FAILURE,
@@ -44,7 +45,7 @@ def _state_path(run_id: str) -> Path:
     return STATE_DIR / f"{run_id}.json"
 
 
-def _print_status(state: RunState, human: bool = False) -> None:
+def _print_status(state: RunState, human: bool = False, costs: bool = False) -> None:
     """Print run status as JSON or human-readable."""
     if human:
         # Human-readable summary
@@ -61,9 +62,25 @@ def _print_status(state: RunState, human: bool = False) -> None:
                 typer.echo(f"  {i}. {entry.trigger} @ {entry.timestamp.isoformat()}")
                 if entry.resolution:
                     typer.echo(f"     Resolution: {entry.resolution}")
+        if costs:
+            summary = summarize_costs(state.execution_record)
+            typer.echo("\nLLM costs:")
+            for phase in summary["phases"]:
+                typer.echo(
+                    f"  {phase['phase']}: {phase['calls']} call(s), "
+                    f"{phase['input_tokens']} in / {phase['output_tokens']} out, "
+                    f"${phase['cost_usd']:.6f}"
+                )
+            typer.echo(
+                f"  Total: {summary['calls']} call(s), "
+                f"{summary['input_tokens']} in / {summary['output_tokens']} out, "
+                f"${summary['cost_usd']:.6f}"
+            )
     else:
-        # JSON output
-        typer.echo(state.model_dump_json(indent=2))
+        if costs:
+            typer.echo(json.dumps(summarize_costs(state.execution_record), indent=2))
+        else:
+            typer.echo(state.model_dump_json(indent=2))
 
 
 def _describe_interrupt(entry) -> str:
@@ -250,6 +267,7 @@ def resume(
 def status(
     run_id: str = typer.Argument(..., help="Run ID (e.g., run-BTN-123)"),
     human: bool = typer.Option(False, "--human", "-h", help="Human-readable output (default: JSON)"),
+    costs: bool = typer.Option(False, "--costs", help="Include per-phase LLM token and dollar costs"),
 ):
     """Show run status and interrupt history."""
     state_file = _state_path(run_id)
@@ -259,7 +277,7 @@ def status(
         raise typer.Exit(1)
     
     state = load_state(state_file)
-    _print_status(state, human=human)
+    _print_status(state, human=human, costs=costs)
 
 
 def _prompt_value(message: str, default: str) -> str:

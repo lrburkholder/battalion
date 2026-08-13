@@ -21,6 +21,8 @@ status states whether it is part of the shipped system.
 | [ADR-0013](adr0013.md) | Bind write tools to project layout phases | Accepted | BTN-28 |
 | [ADR-0014](adr0014.md) | Persist a bounded execution record in RunState | Accepted | BTN-19 |
 | [ADR-0015](adr0015.md) | Keep Recon outside the completed execution graph | Accepted | BTN-22 |
+| [ADR-0016](adr0016.md) | Make Instinct promotion an audited human boundary | Accepted | BTN-23 |
+| [ADR-0017](adr0017.md) | Attribute LLM costs to durable node executions | Accepted | BTN-16 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique

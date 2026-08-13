@@ -12,6 +12,8 @@ from battalion.state.models import (
     ArtifactProvenance,
     CheckpointType,
     EvidenceReference,
+    ExecutionRecord,
+    LLMCallCost,
     NodeExecution,
     ReviewResult,
     RunState,
@@ -86,6 +88,7 @@ class ExecutionCapture:
     before_files: dict[str, str]
     base_dir: Path
     written_paths: set[str]
+    llm_calls: list[LLMCallCost]
 
     @classmethod
     def start(
@@ -100,6 +103,7 @@ class ExecutionCapture:
             before_files=_snapshot(root, _scope_entries(state, node_name)),
             base_dir=root,
             written_paths=set(),
+            llm_calls=[],
         )
         _ACTIVE_CAPTURE.set(capture)
         return capture
@@ -208,9 +212,11 @@ class ExecutionCapture:
             review_result=review,
             artifact_provenance=artifacts,
             interrupt_ids=new_interrupt_indexes,
+            llm_calls=list(self.llm_calls),
         )
         record = new_state.execution_record.model_copy(
             update={
+                "schema_version": "1.1",
                 "node_executions": new_state.execution_record.node_executions
                 + [execution]
             }
@@ -231,3 +237,45 @@ def record_scoped_write(target: Path) -> None:
     except ValueError:
         return
     capture.written_paths.add(relative)
+
+
+def record_llm_call(call: LLMCallCost) -> None:
+    """Attach one provider completion's usage to the active node execution."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        capture.llm_calls.append(call)
+
+
+def summarize_costs(record: ExecutionRecord) -> dict[str, object]:
+    """Build a deterministic per-phase and whole-run cost projection."""
+    phases: dict[str, dict[str, object]] = {}
+    for execution in record.node_executions:
+        for call in execution.llm_calls:
+            phase = phases.setdefault(
+                execution.phase,
+                {
+                    "phase": execution.phase,
+                    "role": execution.role,
+                    "calls": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                },
+            )
+            phase["calls"] += 1
+            phase["input_tokens"] += call.input_tokens
+            phase["output_tokens"] += call.output_tokens
+            phase["cost_usd"] += call.cost_usd
+
+    ordered = []
+    for phase_name in sorted(phases):
+        phase = phases[phase_name]
+        phase["cost_usd"] = round(phase["cost_usd"], 12)
+        ordered.append(phase)
+    return {
+        "calls": sum(item["calls"] for item in ordered),
+        "input_tokens": sum(item["input_tokens"] for item in ordered),
+        "output_tokens": sum(item["output_tokens"] for item in ordered),
+        "cost_usd": round(sum(item["cost_usd"] for item in ordered), 12),
+        "phases": ordered,
+    }

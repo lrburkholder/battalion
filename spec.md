@@ -64,12 +64,19 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.0`. Each role-node attempt appends one
+`execution_record.schema_version` is `1.1` (BTN-16); persisted `1.0` records
+remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
 test outcome and acceptance decision. Tool activity, interrupts, and produced
 artifact provenance carry or reference the originating node execution.
+
+Each successful LiteLLM completion also records a bounded call identifier,
+provider-reported model, input/output token counts, and US-dollar cost on its
+originating node execution. This evidence is queryable by phase and role. It is
+separate from the integer run-level `budget`, whose unchanged semantics drive
+interrupt trigger #3 (see ADR-0017).
 
 Artifact provenance stores the project-relative path, SHA-256 digest,
 originating run, and originating node execution. It does not copy artifact

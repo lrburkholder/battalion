@@ -372,7 +372,7 @@
       "id": "BTN-16",
       "phase": "implementation",
       "title": "Cost/budget reporting granularity",
-      "status": "not-started",
+      "status": "done",
       "priority": "P3",
       "description": "Extend BTN-8's budget tracking with a per-node, per-call cost reporting layer: model, token counts in/out, and $ cost logged per call, plus a queryable summary broken down by node/phase for a given run. Additive on top of BTN-8's threshold-tracking behavior for trigger #3 -- does not change trigger #3's logic.",
       "acceptance_criteria": [
@@ -388,7 +388,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "spun out of 2026-08-04 discussion re: portfolio-project overlap with Battalion's existing budget tracking",
-      "notes": "BTN-10 is done and the run-level budget foundation has end-to-end acceptance coverage, so this ticket is no longer dependency-blocked. BTN-19 now provides the durable per-node execution record that cost observations should extend rather than creating a parallel telemetry store. Not intended as a standalone cost-estimator product; that would be a separate future extraction, not this ticket's scope."
+      "notes": "Completed 2026-08-13. Each successful LiteLLM completion now records its call identifier, provider-reported model, input/output token counts, and US-dollar cost on the originating BTN-19 node execution. The execution-record contract is version 1.1 while persisted 1.0 records remain readable. `battalion status RUN_ID --costs` provides deterministic per-phase and run totals in JSON or human-readable form. ADR-0017 documents that cost observations are durable evidence and remain separate from BTN-8's unchanged integer turn budget and trigger #3 behavior. Full suite: 316 passed."
     },
     {
       "id": "BTN-17",
