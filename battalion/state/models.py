@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -50,6 +50,70 @@ class InterruptLogEntry(BaseModel):
     timestamp: datetime
     resolution: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
+    node_execution_id: str | None = None
+
+
+class EvidenceReference(BaseModel):
+    """A bounded pointer to node input without copying its contents."""
+
+    kind: Literal["state", "artifact", "workspace"]
+    reference: str = Field(min_length=1, max_length=500)
+
+
+class ArtifactProvenance(BaseModel):
+    """Identity and digest for an artifact; contents remain on disk."""
+
+    path: str = Field(min_length=1, max_length=1000)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    originating_run_id: str
+    originating_node_execution_id: str
+
+
+class ToolActivity(BaseModel):
+    tool: str = Field(min_length=1, max_length=100)
+    action: str = Field(min_length=1, max_length=100)
+    target: str | None = Field(default=None, max_length=1000)
+    outcome: Literal["succeeded", "failed"]
+
+
+class TestOutcome(BaseModel):
+    checkpoint: CheckpointType
+    passed: bool
+    expected_to_pass: bool
+    accepted: bool
+
+
+class ReviewResult(BaseModel):
+    checkpoint: CheckpointType
+    verdict: Literal["accepted", "rejected"]
+    cause: str | None = Field(default=None, max_length=2000)
+
+
+class NodeExecution(BaseModel):
+    """Durable evidence for one attempt to execute one graph role node."""
+
+    execution_id: str
+    role: Literal["architect", "driver", "reviewer", "refactorer"]
+    phase: str
+    model_identity: str = Field(min_length=1, max_length=500)
+    input_references: list[EvidenceReference] = Field(default_factory=list, max_length=20)
+    output_reference: str | None = Field(default=None, max_length=1000)
+    verdict: str | None = Field(default=None, max_length=2000)
+    started_at: datetime
+    ended_at: datetime
+    outcome: Literal["succeeded", "rejected", "interrupted"]
+    tool_activity: list[ToolActivity] = Field(default_factory=list, max_length=100)
+    test_outcome: TestOutcome | None = None
+    review_result: ReviewResult | None = None
+    artifact_provenance: list[ArtifactProvenance] = Field(default_factory=list, max_length=100)
+    interrupt_ids: list[int] = Field(default_factory=list, max_length=20)
+
+
+class ExecutionRecord(BaseModel):
+    """Separately versioned history for all node attempts in a run."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    node_executions: list[NodeExecution] = Field(default_factory=list)
 
 
 class Budget(BaseModel):
@@ -79,3 +143,4 @@ class RunState(BaseModel):
     interrupt_log: list[InterruptLogEntry] = Field(default_factory=list)
     manual_checkpoints: list[str] = Field(default_factory=list)
     resume_target: str | None = None
+    execution_record: ExecutionRecord = Field(default_factory=ExecutionRecord)

@@ -19,6 +19,7 @@ status states whether it is part of the shipped system.
 | [ADR-0011](adr0011.md) | Establish an Engineering Knowledge System | Proposed | Future |
 | [ADR-0012](adr0012.md) | Confidence represents operational usefulness | Proposed | Future |
 | [ADR-0013](adr0013.md) | Bind write tools to project layout phases | Accepted | BTN-28 |
+| [ADR-0014](adr0014.md) | Persist a bounded execution record in RunState | Accepted | BTN-19 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique

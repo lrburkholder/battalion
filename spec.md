@@ -59,6 +59,24 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `interrupt_log` (list of {trigger, timestamp, resolution})
 - `manual_checkpoints` (list of phase names the user has declared a mandatory
   pause after — supports interrupt trigger #6)
+- `execution_record` (a separately versioned, validated history of node
+  attempts; see ADR-0014)
+
+### Durable execution record
+
+`execution_record.schema_version` is `1.0`. Each role-node attempt appends one
+record containing a stable execution identifier, role and graph phase, model
+identity, start/end timestamps, outcome, bounded input references, and an
+output reference or Reviewer verdict. Reviewer records link the clean-tree
+test outcome and acceptance decision. Tool activity, interrupts, and produced
+artifact provenance carry or reference the originating node execution.
+
+Artifact provenance stores the project-relative path, SHA-256 digest,
+originating run, and originating node execution. It does not copy artifact
+contents into `RunState`. Input references are likewise bounded pointers to
+persisted state or workspace artifacts. The record is part of `RunState`, so
+normal JSON save/load and graph pause/resume preserve the same evidence without
+a second persistence or resumption path.
 
 Role context is assembled deterministically from this persisted specification,
 the approved plan, and files under the declared Driver source roots. Context is

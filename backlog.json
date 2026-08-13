@@ -434,7 +434,7 @@
       "id": "BTN-19",
       "phase": "implementation",
       "title": "Durable execution record and artifact provenance",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Persist a durable, versioned record of each node execution so completed runs can be inspected by humans, Recon, and future observability surfaces without depending on transient conversation or logs.",
       "acceptance_criteria": [
@@ -454,7 +454,7 @@
       ],
       "assignee_role": "architect",
       "source": "docs/recon/backlogproposal.md; docs/intel/spec.md; docs/ui/spec.md; 2026-08-11 backlog reconciliation",
-      "notes": "Foundation shared by Recon and future observability work. This ticket records durable evidence; it does not implement cost reporting, a web UI, or knowledge generation. State and provenance changes are architectural and require the relevant specification or ADR update."
+      "notes": "Completed 2026-08-13. RunState now contains a separately versioned execution record with one durable entry per Architect, Driver, Reviewer, and Refactorer attempt. Entries record bounded input references, model identity, timestamps, outcome, outputs or verdicts, test/review evidence, scoped-write activity, interrupts, and content-free artifact provenance (path plus SHA-256 and originating run/node IDs). Persistence, complete-run graph coverage, and pause/save/load/resume survival are tested. ADR-0014 and spec.md document the contract. Cost reporting, a web UI, and knowledge generation remain out of scope. Full suite: 277 passed."
     },
     {
       "id": "BTN-20",
