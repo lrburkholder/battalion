@@ -60,6 +60,11 @@ class _BoundWriteTool:
         target = self.resolve(relative_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+        # Lazy import keeps the write-scope boundary independent of graph
+        # construction while allowing BTN-19 to capture even idempotent writes.
+        from battalion.execution import record_scoped_write
+
+        record_scoped_write(target)
 
     def _violate(self, attempted_path: str) -> None:
         if self._on_violation is not None:

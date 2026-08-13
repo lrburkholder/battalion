@@ -36,6 +36,7 @@ from battalion.interrupts.triggers import (
     log_interrupt,
 )
 from battalion.llm.litellm_client import InfraFailure
+from battalion.execution import ExecutionCapture
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import (
     CheckpointType,
@@ -109,6 +110,11 @@ NEXT_NODE_ON_PAUSE = {
 }
 
 
+def _configured_model(llm_configs: dict[str, Any], role: str) -> str:
+    config = llm_configs.get(role, llm_configs.get("default"))
+    return getattr(config, "model", "unconfigured")
+
+
 def _handle_node_error(
     state: RunState,
     error: Exception,
@@ -161,6 +167,10 @@ def _make_architect_node(
     from battalion.prompts.loader import load_system_prompt
     
     def node(state: RunState) -> RunState:
+        entered_state = state
+        capture = ExecutionCapture.start(
+            state, NODE_ARCHITECT, _configured_model(llm_configs, "architect"), base_dir
+        )
         # Increment budget for this LLM call
         state = increment_budget(state)
         
@@ -190,13 +200,14 @@ def _make_architect_node(
                     "node": NODE_ARCHITECT,
                     "error": str(exc),
                 })
-            return _handle_node_error(
+            paused = _handle_node_error(
                 state, exc,
                 next_phase=NODE_TO_PHASE[NODE_ARCHITECT],
                 resume_node=NEXT_NODE_ON_PAUSE[NODE_ARCHITECT],
                 node_name=NODE_ARCHITECT,
                 on_node_event=on_node_event,
             )
+            return capture.finish(entered_state, paused)
         
         # Check interrupts after node execution
         should_pause, trigger_id, context = check_any_trigger(
@@ -222,7 +233,7 @@ def _make_architect_node(
                 "phase": new_state.phase,
                 "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
             })
-        return new_state
+        return capture.finish(entered_state, new_state)
     
     return node
 
@@ -246,6 +257,10 @@ def _make_driver_node(
     node_name = NODE_DRIVER_RED if mode == "red" else NODE_DRIVER_GREEN
     
     def node(state: RunState) -> RunState:
+        entered_state = state
+        capture = ExecutionCapture.start(
+            state, node_name, _configured_model(llm_configs, "driver"), base_dir
+        )
         # Increment budget for this LLM call
         state = increment_budget(state)
         
@@ -275,13 +290,14 @@ def _make_driver_node(
                     "node": node_name,
                     "error": str(exc),
                 })
-            return _handle_node_error(
+            paused = _handle_node_error(
                 state, exc,
                 next_phase=NODE_TO_PHASE.get(f"driver_{mode}", "reviewer"),
                 resume_node=node_name,
                 node_name=node_name,
                 on_node_event=on_node_event,
             )
+            return capture.finish(entered_state, paused)
         
         # Driver always transitions to reviewer
         # The specific reviewer checkpoint is determined by the graph edges
@@ -311,7 +327,7 @@ def _make_driver_node(
                 "phase": new_state.phase,
                 "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
             })
-        return new_state
+        return capture.finish(entered_state, new_state)
     
     return node
 
@@ -335,6 +351,10 @@ def _make_reviewer_node(
     node_name = _reviewer_node_name(checkpoint)
     
     def node(state: RunState) -> RunState:
+        entered_state = state
+        capture = ExecutionCapture.start(
+            state, node_name, _configured_model(llm_configs, "reviewer"), base_dir
+        )
         # Reviewer doesn't call LLM for the actual test run, but does for
         # rejection cause articulation. Budget increment for the LLM call.
         state = increment_budget(state)
@@ -362,13 +382,14 @@ def _make_reviewer_node(
                     "node": node_name,
                     "error": str(exc),
                 })
-            return _handle_node_error(
+            paused = _handle_node_error(
                 state, exc,
                 next_phase=state.phase,
                 resume_node=CHECKPOINT_TO_RESUME_NODE[checkpoint],
                 node_name=node_name,
                 on_node_event=on_node_event,
             )
+            return capture.finish(entered_state, paused, checkpoint=checkpoint)
         
         # Reviewer sets the next phase based on accept/reject
         # But we need to check interrupts first
@@ -398,7 +419,7 @@ def _make_reviewer_node(
                 "phase": new_state.phase,
                 "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
             })
-        return new_state
+        return capture.finish(entered_state, new_state, checkpoint=checkpoint)
     
     return node
 
@@ -415,6 +436,14 @@ def _make_refactorer_node(
     from battalion.prompts.loader import load_system_prompt
     
     def node(state: RunState) -> RunState:
+        entered_state = state
+        capture = ExecutionCapture.start(
+            state, NODE_REFACTORER,
+            _configured_model(llm_configs, "refactorer")
+            if "refactorer" in llm_configs
+            else _configured_model(llm_configs, "driver"),
+            base_dir,
+        )
         # Increment budget for this LLM call
         state = increment_budget(state)
         
@@ -443,13 +472,14 @@ def _make_refactorer_node(
                     "node": NODE_REFACTORER,
                     "error": str(exc),
                 })
-            return _handle_node_error(
+            paused = _handle_node_error(
                 state, exc,
                 next_phase=NODE_TO_PHASE[NODE_REFACTORER],
                 resume_node=NEXT_NODE_ON_PAUSE[NODE_REFACTORER],
                 node_name=NODE_REFACTORER,
                 on_node_event=on_node_event,
             )
+            return capture.finish(entered_state, paused)
         
         # Check interrupts
         next_phase = NODE_TO_PHASE[NODE_REFACTORER]
@@ -476,7 +506,7 @@ def _make_refactorer_node(
                 "phase": new_state.phase,
                 "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
             })
-        return new_state
+        return capture.finish(entered_state, new_state)
     
     return node
 
