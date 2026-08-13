@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Sequence
 
+from battalion.intel.models import AcceptedInstinct
 from battalion.state.models import RunState
 
 MAX_CONTEXT_CHARS = 32_000
 MAX_FILE_CHARS = 8_000
+MAX_INSTINCT_CONTEXT_CHARS = 6_000
+MAX_INSTINCT_RECOMMENDATION_CHARS = 1_500
+MAX_INSTINCT_APPLICABILITY_CHARS = 500
 _TEXT_SUFFIXES = {
     ".c", ".cc", ".cpp", ".cs", ".css", ".go", ".h", ".hpp", ".html",
     ".java", ".js", ".json", ".jsx", ".kt", ".md", ".php", ".py",
@@ -101,25 +105,60 @@ def _bounded(sections: list[tuple[str, str]]) -> str:
     return "\n".join(chunks)
 
 
-def architect_context(state: RunState) -> str:
-    return _bounded([
-        ("Ticket", state.ticket_id),
-        ("Specification", state.spec),
-    ])
+def _instinct_context(instincts: Sequence[AcceptedInstinct]) -> str | None:
+    """Render whole, identified records into a dedicated bounded allowance."""
+
+    chunks: list[str] = []
+    used = 0
+    for instinct in instincts:
+        recommendation = instinct.recommendation[:MAX_INSTINCT_RECOMMENDATION_CHARS]
+        applicability = instinct.applicability.description[
+            :MAX_INSTINCT_APPLICABILITY_CHARS
+        ]
+        chunk = (
+            f"### {instinct.instinct_id}\n"
+            f"Recommendation: {recommendation}\n"
+            f"Applicability: {applicability}\n"
+            f"Tags: {', '.join(instinct.tags)}\n"
+        )
+        if used + len(chunk) > MAX_INSTINCT_CONTEXT_CHARS:
+            break
+        chunks.append(chunk)
+        used += len(chunk) + 1
+    return "\n".join(chunks) if chunks else None
+
+
+def _base_sections(
+    state: RunState,
+    instincts: Sequence[AcceptedInstinct],
+) -> list[tuple[str, str]]:
+    sections = [("Ticket", state.ticket_id[:500])]
+    instinct_text = _instinct_context(instincts)
+    if instinct_text is not None:
+        sections.append(("Accepted Instincts", instinct_text))
+    sections.append(("Specification", state.spec))
+    return sections
+
+
+def architect_context(
+    state: RunState,
+    *,
+    instincts: Sequence[AcceptedInstinct] = (),
+) -> str:
+    return _bounded(_base_sections(state, instincts))
 
 
 def driver_context(
     state: RunState,
     base_dir: str | Path,
     mode: Literal["red", "green"],
+    *,
+    instincts: Sequence[AcceptedInstinct] = (),
 ) -> str:
     selection = "implementation" if mode == "red" else "tests"
     file_kind = "Existing implementation" if mode == "red" else "Accepted RED tests"
-    sections = [
-        ("Ticket", state.ticket_id),
-        ("Specification", state.spec),
-        ("Approved plan", _plan_text(base_dir)),
-    ]
+    sections = _base_sections(state, instincts)
+    sections.append(("Approved plan", _plan_text(base_dir)))
     sections.extend(
         (f"{file_kind}: {relative}", content)
         for relative, content in _driver_files(state, base_dir, selection)
@@ -127,14 +166,26 @@ def driver_context(
     return _bounded(sections)
 
 
-def refactorer_context(state: RunState, base_dir: str | Path) -> str:
-    sections = [
-        ("Ticket", state.ticket_id),
-        ("Specification", state.spec),
-        ("Approved plan", _plan_text(base_dir)),
-    ]
+def refactorer_context(
+    state: RunState,
+    base_dir: str | Path,
+    *,
+    instincts: Sequence[AcceptedInstinct] = (),
+) -> str:
+    sections = _base_sections(state, instincts)
+    sections.append(("Approved plan", _plan_text(base_dir)))
     sections.extend(
         (f"Passing file: {relative}", content)
         for relative, content in _driver_files(state, base_dir, "all")
     )
     return _bounded(sections)
+
+
+def reviewer_context(
+    state: RunState,
+    *,
+    instincts: Sequence[AcceptedInstinct] = (),
+) -> str:
+    """Assemble Reviewer knowledge through the same canonical context path."""
+
+    return _bounded(_base_sections(state, instincts))

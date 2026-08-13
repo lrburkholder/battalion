@@ -149,12 +149,34 @@ Changed guidance is stored under a new identifier whose `supersedes_id` must
 refer to an existing accepted record. Both records remain directly retrievable
 for provenance. Active listing excludes every record referenced as superseded,
 without deleting or editing its persisted history. Semantic indexing, remote
-storage, cross-project sharing, and graph integration remain deferred.
+storage and cross-project sharing remain deferred.
 
-Role context is assembled deterministically from this persisted specification,
-the approved plan, and files under the declared Driver source roots. Context is
-bounded before each LLM call: RED receives existing implementation context,
-GREEN receives accepted RED tests, and Refactorer receives the passing file set.
+### Deterministic Instinct retrieval
+
+BTN-24 retrieves only accepted, active records returned by the immutable Intel
+repository. Audience membership is mandatory. Applicability exclusions take
+precedence; a non-empty inclusion list requires at least one literal normalized
+match against the ticket and specification. Eligible records are ordered by
+descending applicability-match count, descending tag-match count, then stable
+Instinct identifier. Normalization case-folds and treats punctuation as word
+separators. It does not perform semantic inference.
+
+Each execution role queries independently. Selected Instincts are rendered
+through the BTN-26 context assembler with stable identifier, recommendation,
+applicability, and tags. The dedicated Instinct allowance admits only whole
+entries inside the existing overall context bound. Reviewer receives this
+context when it invokes its rejection-cause model; accepted mechanical reviews
+do not make an LLM call.
+
+Retrieval decisions explain why each active record was included or excluded.
+Semantic or embedding-based retrieval, operator feedback, confidence scoring,
+and cross-project sharing remain out of scope.
+
+Role context is assembled deterministically from selected Instincts, this
+persisted specification, the approved plan, and files under the declared Driver
+source roots. Context is bounded before each LLM call: RED receives existing
+implementation context, GREEN receives accepted RED tests, and Refactorer
+receives the passing file set.
 
 ## Interrupt Taxonomy (v1, final)
 | # | Trigger | Definition | Handling |

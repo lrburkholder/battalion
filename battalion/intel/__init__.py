@@ -24,6 +24,11 @@ from battalion.intel.review import (
     InstinctReviewWorkflow,
     ReviewAction,
 )
+from battalion.intel.retrieval import (
+    InstinctRetriever,
+    RetrievalDecision,
+    RetrievalResult,
+)
 
 __all__ = [
     "AcceptedInstinct",
@@ -44,4 +49,7 @@ __all__ = [
     "InstinctReviewDecision",
     "InstinctReviewWorkflow",
     "ReviewAction",
+    "InstinctRetriever",
+    "RetrievalDecision",
+    "RetrievalResult",
 ]
