@@ -6,6 +6,7 @@
     "in-progress",
     "blocked",
     "in-review",
+    "cancelled",
     "done"
   ],
   "items": [
@@ -393,7 +394,7 @@
       "id": "BTN-17",
       "phase": "implementation",
       "title": "Interrupt/checkpoint web UI",
-      "status": "not-started",
+      "status": "cancelled",
       "priority": "P3",
       "description": "Web UI surfacing interrupt_log and current status/phase for a run, so a human can see why the graph paused and approve/resume without the CLI. Wired to the existing CLI resume path, not a parallel code path. Explicitly scoped to interrupt visibility and resume/approve actions -- not a token-streaming chat interface.",
       "acceptance_criteria": [
@@ -409,7 +410,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "spun out of 2026-08-04 discussion re: portfolio-project overlap; Luke's existing future-UI intent",
-      "notes": "Deliberately scoped down from a generic 'Copilot-style UI' to what Battalion's human-in-the-loop model actually needs: visibility into why the graph paused, and a way to act on it. BTN-10 is done, so the ticket is no longer dependency-blocked. BTN-19's durable execution records can support inspection, but this ticket remains limited to interrupt visibility and reuse of the canonical resume path."
+      "notes": "Cancelled as no longer required on 2026-08-13. Battalion's planned UI has diverged from this narrow interrupt/checkpoint surface, so implementing these acceptance criteria would create the wrong product boundary. No BTN-17 implementation was shipped. Future UI work must be specified and ticketed from the revised UI direction rather than treating this ticket as completed or silently reusing its scope."
     },
     {
       "id": "BTN-18",
