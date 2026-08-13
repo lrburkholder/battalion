@@ -12,6 +12,10 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
+from uuid import uuid4
+
+from battalion.execution import record_llm_call
+from battalion.state.models import LLMCallCost
 
 
 class InfraFailure(Exception):
@@ -110,11 +114,53 @@ def _default_completion_fn(**kwargs):  # pragma: no cover - thin passthrough
     return litellm.completion(**kwargs)
 
 
-def _streamed_response(full_content: str) -> dict[str, Any]:
+def _streamed_response(
+    full_content: str,
+    model: str,
+    usage: Any = None,
+    response_cost: float | None = None,
+) -> dict[str, Any]:
     """Assemble a litellm-shaped response dict from accumulated streamed
     text, so existing extract_content / extract_files helpers (which handle
     dict responses) work unchanged after a streaming call."""
-    return {"choices": [{"message": {"content": full_content}}]}
+    response = {
+        "choices": [{"message": {"content": full_content}}],
+        "model": model,
+    }
+    if usage is not None:
+        response["usage"] = usage
+    if response_cost is not None:
+        response["_hidden_params"] = {"response_cost": response_cost}
+    return response
+
+
+def _value(container: Any, key: str, default: Any = None) -> Any:
+    if isinstance(container, dict):
+        return container.get(key, default)
+    return getattr(container, key, default)
+
+
+def _record_response_cost(response: Any, configured_model: str) -> None:
+    usage = _value(response, "usage") or {}
+    hidden = _value(response, "_hidden_params") or {}
+    input_tokens = _value(usage, "prompt_tokens", _value(usage, "input_tokens", 0))
+    output_tokens = _value(
+        usage, "completion_tokens", _value(usage, "output_tokens", 0)
+    )
+    cost = _value(
+        hidden,
+        "response_cost",
+        _value(response, "response_cost", _value(usage, "cost", 0.0)),
+    )
+    record_llm_call(
+        LLMCallCost(
+            call_id=f"llm-{uuid4()}",
+            model=_value(response, "model", configured_model) or configured_model,
+            input_tokens=input_tokens or 0,
+            output_tokens=output_tokens or 0,
+            cost_usd=cost or 0.0,
+        )
+    )
 
 
 def _completion_streaming(
@@ -137,6 +183,7 @@ def _completion_streaming(
     """
     params = dict(config.extra_params)
     params["stream"] = True
+    params.setdefault("stream_options", {"include_usage": True})
     stream = completion_fn(
         model=config.model,
         messages=messages,
@@ -144,7 +191,19 @@ def _completion_streaming(
         **params,
     )
     pieces: list[str] = []
+    usage = None
+    response_cost = None
     for chunk in stream:
+        chunk_usage = getattr(chunk, "usage", None)
+        if chunk_usage is not None:
+            usage = chunk_usage
+            usage_cost = _value(chunk_usage, "cost")
+            if usage_cost is not None:
+                response_cost = usage_cost
+        hidden = getattr(chunk, "_hidden_params", None) or {}
+        chunk_cost = _value(hidden, "response_cost")
+        if chunk_cost is not None:
+            response_cost = chunk_cost
         choices = getattr(chunk, "choices", None)
         if not choices:
             continue
@@ -160,7 +219,9 @@ def _completion_streaming(
         if content:
             on_stream({"type": "token", "content": content})
             pieces.append(content)
-    return _streamed_response("".join(pieces))
+    return _streamed_response(
+        "".join(pieces), config.model, usage=usage, response_cost=response_cost
+    )
 
 
 def call_llm(
@@ -185,15 +246,18 @@ def call_llm(
     for attempt in range(1, max_attempts + 1):
         try:
             if on_stream is not None:
-                return _completion_streaming(
+                response = _completion_streaming(
                     config, messages, completion_fn, on_stream
                 )
-            return completion_fn(
-                model=config.model,
-                messages=messages,
-                temperature=config.temperature,
-                **config.extra_params,
-            )
+            else:
+                response = completion_fn(
+                    model=config.model,
+                    messages=messages,
+                    temperature=config.temperature,
+                    **config.extra_params,
+                )
+            _record_response_cost(response, config.model)
+            return response
         except Exception as exc:  # noqa: BLE001 - deliberately broad: any
             # failure here (network, provider error, timeout) should count
             # toward the retry budget rather than crash the node outright.

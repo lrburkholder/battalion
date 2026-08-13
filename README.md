@@ -26,6 +26,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 - ✅ **BTN-13**: Refactorer node
 - ✅ **BTN-14**: Model-diversity constraint (Reviewer must differ from Driver)
 - ✅ **BTN-15**: CLI setup command for LLM configuration and validation
+- ✅ **BTN-16**: Per-call LLM cost capture and per-phase reporting
 
 ## Architecture
 
@@ -68,6 +69,7 @@ The versioned state contract includes:
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
+- `execution_record`: Durable node evidence, including per-call token and cost data
 
 ### Interrupt Taxonomy (v1)
 
@@ -146,8 +148,14 @@ only when intentionally skipping live provider connectivity checks.
 ```bash
 python -m battalion run BTN-16 --spec path/to/spec.md
 python -m battalion status run-BTN-16 --human
+python -m battalion status run-BTN-16 --costs --human
 python -m battalion resume run-BTN-16
 ```
+
+`status --costs` projects persisted LiteLLM input/output tokens and US-dollar
+cost by concrete graph phase. Without `--human`, it emits the cost summary as
+JSON. Cost reporting does not change the run-level turn budget used by
+interrupt trigger #3.
 
 Run `python -m battalion <command> --help` for the authoritative options while
 the CLI is evolving.

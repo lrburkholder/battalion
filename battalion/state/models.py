@@ -89,6 +89,16 @@ class ReviewResult(BaseModel):
     cause: str | None = Field(default=None, max_length=2000)
 
 
+class LLMCallCost(BaseModel):
+    """Provider-reported usage and dollar cost for one successful LLM call."""
+
+    call_id: str = Field(min_length=1, max_length=200)
+    model: str = Field(min_length=1, max_length=500)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    cost_usd: float = Field(ge=0, allow_inf_nan=False)
+
+
 class NodeExecution(BaseModel):
     """Durable evidence for one attempt to execute one graph role node."""
 
@@ -107,12 +117,13 @@ class NodeExecution(BaseModel):
     review_result: ReviewResult | None = None
     artifact_provenance: list[ArtifactProvenance] = Field(default_factory=list, max_length=100)
     interrupt_ids: list[int] = Field(default_factory=list, max_length=20)
+    llm_calls: list[LLMCallCost] = Field(default_factory=list, max_length=20)
 
 
 class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 
