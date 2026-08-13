@@ -15,8 +15,11 @@ analyze the completed execution graph
 identify recurring or noteworthy engineering lessons
 produce zero or more Instinct documents
 attach evidence supporting each Instinct
-assign an initial confidence level
 identify the execution context in which the Instinct applies
+
+Recon SHALL NOT assign confidence at creation. Operational confidence is
+derived only from later retrieval and operator-feedback evidence, as proposed
+by ADR-0012.
 
 Recon SHALL NOT:
 

@@ -35,6 +35,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 |-----------|---------|--------|
 | `battalion.state.models` | Versioned state contract (Pydantic models) | ✅ Complete |
 | `battalion.state.persistence` | Local JSON load/save | ✅ Complete |
+| `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
 | `battalion.nodes.architect` | Architecture planning node | ✅ Complete |
