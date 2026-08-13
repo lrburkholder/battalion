@@ -49,6 +49,12 @@ Rejected instincts SHALL NOT become part of Battalion knowledge.
 
 Accepted instincts become available to future executions.
 
+BTN-23 implements this as a post-completion operator workflow outside
+`RunState`. Each candidate receives one append-only accept, edit-and-accept, or
+reject decision. Acceptance writes a new immutable accepted Instinct; editing
+preserves the original candidate and its Recon creation provenance; rejection
+does not write to the Intel repository.
+
 Success Criteria
 
 A successful Recon execution:

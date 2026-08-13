@@ -1,7 +1,7 @@
 ## Engineering Knowledge System
 
-**Status:** Draft, except for the BTN-20 Instinct data contract and BTN-21 local
-repository behavior described below.
+**Status:** Draft, except for the BTN-20 Instinct data contract, BTN-21 local
+repository behavior, and BTN-23 promotion behavior described below.
 
 ### Purpose
 
@@ -70,6 +70,12 @@ records remain directly retrievable for provenance and are omitted from active
 listing. Semantic indexes, remote stores, and cross-project sharing are not
 part of this repository slice.
 
+BTN-23 is the explicit candidate-to-repository authority boundary. An operator
+accepts, edits then accepts, or rejects each candidate independently. Accepted
+content is validated and written through BTN-21; rejected candidates are never
+written. Every action has an immutable decision record identifying the
+operator, timestamp, candidate, and accepted result when one exists.
+
 ---
 
 ## Intel
@@ -137,6 +143,7 @@ Operator Feedback
 
 Updated Retrieval Confidence
 
-Recon, promotion, retrieval integration, and feedback remain future-facing.
-BTN-20 defines the validated records, and BTN-21 provides immutable local
-persistence for accepted records without adding either feature to the graph.
+Retrieval integration and feedback remain future-facing. BTN-20 defines the
+validated records, BTN-21 provides immutable local persistence, BTN-22
+generates candidates, and BTN-23 supplies audited human promotion without
+adding any of these features to the execution graph.

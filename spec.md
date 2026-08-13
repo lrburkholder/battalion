@@ -115,6 +115,22 @@ Recon has no write tools or Intel repository access. It cannot change the
 completed execution, publish knowledge, modify standards or architecture, or
 bypass the separate human review and promotion workflow tracked by BTN-23.
 
+### Operator review and Instinct promotion
+
+BTN-23 provides the only candidate-to-knowledge transition. For each Recon
+candidate, the operator explicitly accepts, edits then accepts, or rejects it.
+Acceptance creates a separately validated `AcceptedInstinct` with human
+acceptance provenance and persists it through the immutable Intel repository.
+Editing may change only knowledge-content fields; it neither mutates the input
+candidate nor replaces its Recon creation provenance. Rejection performs no
+Intel repository write.
+
+Each candidate receives at most one append-only decision record. The record
+contains the operator action, decision timestamp, operator identity, candidate
+identifier, and the resulting accepted identifier for either acceptance path.
+Decision records remain outside `RunState`; the completed execution and Recon
+retain no promotion authority.
+
 ### Immutable Intel repository
 
 BTN-21 persists each `AcceptedInstinct` as local JSON under its stable
