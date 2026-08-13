@@ -98,6 +98,23 @@ metadata. Operational confidence remains deferred until retrieval usage and
 operator-feedback evidence exist. This contract does not add Recon to the
 graph or implement retrieval.
 
+### Recon candidate generation
+
+Recon is a post-completion role, not part of the execution graph that produces
+the completed run. It accepts only a terminal `RunState` containing the BTN-19
+durable execution record plus accepted Instincts explicitly supplied for
+duplicate comparison. Conversation history is not an input.
+
+Recon returns zero or more `CandidateInstinct` values separately from
+`RunState`. Every candidate validates against the BTN-20 contract and cites a
+run ID, node execution ID, and canonical record reference that resolve to the
+supplied completed execution. Candidates duplicating a supplied accepted
+Instinct are excluded.
+
+Recon has no write tools or Intel repository access. It cannot change the
+completed execution, publish knowledge, modify standards or architecture, or
+bypass the separate human review and promotion workflow tracked by BTN-23.
+
 ### Immutable Intel repository
 
 BTN-21 persists each `AcceptedInstinct` as local JSON under its stable

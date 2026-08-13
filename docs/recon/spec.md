@@ -29,15 +29,11 @@ rewrite specifications
 automatically promote Instincts to standards
 affect the current execution
 Inputs
-Final Battalion state
-Conversation history
-Node outputs
-Review findings
-Test results
-Human feedback supplied during the execution
+Completed Battalion state containing the durable execution record
+Accepted Instincts explicitly supplied for duplicate comparison
 Outputs
 
-Zero or more Instinct markdown files.
+Zero or more CandidateInstinct records returned separately from RunState.
 
 Each Instinct SHALL be independently reviewable.
 

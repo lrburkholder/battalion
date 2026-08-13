@@ -59,3 +59,12 @@ def test_refactorer_prompt_preserves_behavior_and_architecture():
     assert "without changing observable\nbehavior" in prompt
     assert "Skip changes that require an Architect" in prompt
     assert "Do not claim that tests were executed" in prompt
+
+
+def test_recon_prompt_preserves_post_completion_human_authority():
+    prompt = load_system_prompt("recon")
+
+    assert '"candidates"' in prompt
+    assert "no authority to publish knowledge" in prompt
+    assert "independent human review" in prompt
+    assert "Do not assign confidence" in prompt
