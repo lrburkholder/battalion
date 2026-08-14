@@ -690,6 +690,34 @@
       "assignee_role": "architect",
       "source": "2026-08-11 dogfooding reconciliation; docs/adrs/adr0002.md; battalion/scope/tool_binding.py; battalion/nodes/driver.py",
       "notes": "Completed 2026-08-13. ADR-0013 adds explicit driver_red, driver_green, and refactorer phase scopes with legacy driver fallback, preserving the default src/ layout. Each phase builds only its selected bound tools; multi-root output requires a declared root prefix and batches are fully validated before writes. Reviewer now verifies a clean copy of the configured project root while excluding local runtime metadata. Battalion's tests/ plus battalion/ layout is covered without repository-wide write authority, and context/prompt contracts follow the configured roots. Focused scope/node suite: 86 passed. Reviewer suite: 29 passed. Prompt/graph contracts: 37 passed. Full suite: 273 passed."
+    },
+    {
+      "id": "BTN-29",
+      "phase": "architecture",
+      "title": "Desktop operator interface architecture RFC",
+      "status": "in-progress",
+      "priority": "P1",
+      "description": "Define Battalion's desktop-first operator experience and the application boundaries needed to execute, inspect, search, and intervene in human-directed runs without coupling the product to an IDE, a hosted observability service, or a parallel graph-control path.",
+      "acceptance_criteria": [
+        "RFC-0004 defines the product information hierarchy for projects, tickets, runs, node executions, artifacts, interrupts, operator decisions, and Instincts using the implemented Battalion contracts",
+        "The primary desktop workflows cover starting and observing work, inspecting execution evidence and provenance, safely intervening, resolving interrupts, reviewing Recon candidates, and navigating history",
+        "The design identifies which views can be derived from RunState, ExecutionRecord, cost observations, Intel repositories, and operator decision records, and explicitly identifies evidence the current contracts do not yet capture",
+        "CLI and graphical clients share reusable application commands for run, resume, inspection, and human-authorized actions; the UI does not invoke LangGraph or mutate persisted state directly",
+        "Functionally equivalent, disposable Tauri, PySide6, and Electron prototypes exercise the same bounded fake-data workflow and record comparable packaging, process, resource, accessibility, testability, failure-recovery, permission-surface, and implementation-complexity evidence before framework selection",
+        "Search, model-effectiveness analytics, optional mobile history access, privacy and retention, crash recovery, and future persistence/indexing needs are scoped with explicit decisions or open questions rather than presented as shipped behavior",
+        "The older draft UI documents and cancelled BTN-17 web UI scope are reconciled so they cannot be mistaken for the current interface contract",
+        "No production UI implementation, mobile execution control, semantic index, model router, or replacement persistence authority is introduced by this ticket; the three framework prototypes remain architecture spikes and may be discarded"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-23",
+        "BTN-24",
+        "BTN-26"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "2026-08-11 through 2026-08-13 UI design discussion; docs/ui/; ADR-0014; ADR-0016; ADR-0017; ADR-0018",
+      "notes": "Architecture-spike successor to cancelled BTN-17. Desktop is the primary operator surface; a mobile client remains a possible future read-mostly history and notification companion. Framework selection is intentionally deferred until equivalent minimal prototypes in Tauri, PySide6, and Electron provide comparable evidence."
     }
   ]
 }

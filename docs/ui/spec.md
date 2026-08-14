@@ -2,6 +2,10 @@
 Version: 0.1
 Status: Draft
 
+> Historical design exploration. RFC-0004 under `docs/rfcs/` supersedes this
+> document as the current desktop operator-interface proposal. This document
+> does not describe shipped behavior.
+
 ---
 
 # Purpose

@@ -1,6 +1,10 @@
 # Battalion UI Workflows
 Version: 0.1
 
+> Historical workflow exploration. RFC-0004 under `docs/rfcs/` is the current
+> desktop operator-interface proposal. This document does not describe shipped
+> behavior.
+
 ---
 
 # Philosophy
