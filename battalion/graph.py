@@ -598,6 +598,7 @@ def build_graph(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     intel_repository: IntelRepository | None = None,
+    on_state_checkpoint: Callable[[RunState], None] | None = None,
 ) -> StateGraph:
     """Build the Battalion StateGraph with all nodes and edges.
     
@@ -618,6 +619,8 @@ def build_graph(
                   provider streams.
         intel_repository: Optional accepted-Instinct repository. Defaults to
                           ``<base_dir>/.battalion/intel``.
+        on_state_checkpoint: Optional durable-state callback invoked after each
+                             graph node has completed.
     
     Returns:
         Configured StateGraph ready to run
@@ -649,6 +652,29 @@ def build_graph(
     )
     done_node = _make_done_node()
     pause_node = _make_pause_node()
+
+    def checkpointed(
+        node: Callable[[RunState], RunState],
+    ) -> Callable[[RunState], RunState]:
+        if on_state_checkpoint is None:
+            return node
+
+        def wrapped(state: RunState) -> RunState:
+            result = RunState.model_validate(node(state))
+            on_state_checkpoint(result)
+            return result
+
+        return wrapped
+
+    architect_node = checkpointed(architect_node)
+    driver_red_node = checkpointed(driver_red_node)
+    driver_green_node = checkpointed(driver_green_node)
+    reviewer_red_node = checkpointed(reviewer_red_node)
+    reviewer_green_node = checkpointed(reviewer_green_node)
+    refactorer_node = checkpointed(refactorer_node)
+    reviewer_refactor_node = checkpointed(reviewer_refactor_node)
+    done_node = checkpointed(done_node)
+    pause_node = checkpointed(pause_node)
     
     # --- Register nodes ---
     graph.add_node(NODE_ARCHITECT, architect_node)
@@ -832,6 +858,7 @@ def resume_ticket(
     max_turns: int = 50,
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
+    on_state_checkpoint: Callable[[RunState], None] | None = None,
 ) -> RunState:
     """Resume a paused ticket from its saved state.
     
@@ -848,6 +875,7 @@ def resume_ticket(
         max_turns: Maximum number of graph iterations (safety limit)
         on_node_event: Optional callback for node lifecycle events
         on_token: Optional callback for streamed LLM token events
+        on_state_checkpoint: Optional durable-state callback after each node
     
     Returns:
         Final RunState after graph completes or interrupts again
@@ -868,6 +896,7 @@ def resume_ticket(
     graph = build_graph(
         llm_configs, base_dir, prompts_dir,
         on_node_event=on_node_event, on_token=on_token,
+        on_state_checkpoint=on_state_checkpoint,
     )
     app = graph.compile()
     
@@ -893,6 +922,7 @@ def run_ticket(
     max_turns: int = 50,
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
+    on_state_checkpoint: Callable[[RunState], None] | None = None,
 ) -> RunState:
     """Run a caller-created state through the graph until done or interrupted.
     
@@ -908,6 +938,7 @@ def run_ticket(
         max_turns: Maximum number of graph iterations (safety limit)
         on_node_event: Optional callback for node lifecycle events
         on_token: Optional callback for streamed LLM token events
+        on_state_checkpoint: Optional durable-state callback after each node
     
     Returns:
         Final RunState after graph completes or interrupts
@@ -918,6 +949,7 @@ def run_ticket(
     graph = build_graph(
         llm_configs, base_dir, prompts_dir,
         on_node_event=on_node_event, on_token=on_token,
+        on_state_checkpoint=on_state_checkpoint,
     )
     
     # Compile graph

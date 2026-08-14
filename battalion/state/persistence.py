@@ -3,6 +3,8 @@ schema_version convention (spec.md, findings.md)."""
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from battalion.state.models import RunState
@@ -11,7 +13,19 @@ from battalion.state.models import RunState
 def save_state(state: RunState, path: str | Path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(state.model_dump_json(indent=2), encoding="utf-8")
+    # A supervised worker can be cancelled or crash at any point.  Replace a
+    # fully written sibling file so the previous durable state is never left
+    # truncated by process termination.
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(state.model_dump_json(indent=2))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def load_state(path: str | Path) -> RunState:
