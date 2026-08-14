@@ -1,6 +1,10 @@
 # Runs Hub Screen
 Version: 0.1
 
+> Historical screen exploration. RFC-0004 under `docs/rfcs/` supersedes the
+> Runs Hub as the current product direction. This document does not describe
+> shipped behavior.
+
 ---
 
 # Purpose

@@ -690,6 +690,398 @@
       "assignee_role": "architect",
       "source": "2026-08-11 dogfooding reconciliation; docs/adrs/adr0002.md; battalion/scope/tool_binding.py; battalion/nodes/driver.py",
       "notes": "Completed 2026-08-13. ADR-0013 adds explicit driver_red, driver_green, and refactorer phase scopes with legacy driver fallback, preserving the default src/ layout. Each phase builds only its selected bound tools; multi-root output requires a declared root prefix and batches are fully validated before writes. Reviewer now verifies a clean copy of the configured project root while excluding local runtime metadata. Battalion's tests/ plus battalion/ layout is covered without repository-wide write authority, and context/prompt contracts follow the configured roots. Focused scope/node suite: 86 passed. Reviewer suite: 29 passed. Prompt/graph contracts: 37 passed. Full suite: 273 passed."
+    },
+    {
+      "id": "BTN-29",
+      "phase": "architecture",
+      "title": "Desktop operator interface architecture RFC",
+      "status": "done",
+      "priority": "P1",
+      "description": "Define Battalion's desktop-first operator experience and the application boundaries needed to execute, inspect, search, and intervene in human-directed runs without coupling the product to an IDE, a hosted observability service, or a parallel graph-control path.",
+      "acceptance_criteria": [
+        "RFC-0004 defines the product information hierarchy for projects, tickets, runs, node executions, artifacts, interrupts, operator decisions, and Instincts using the implemented Battalion contracts",
+        "The primary desktop workflows cover starting and observing work, inspecting execution evidence and provenance, safely intervening, resolving interrupts, reviewing Recon candidates, and navigating history",
+        "The design identifies which views can be derived from RunState, ExecutionRecord, cost observations, Intel repositories, and operator decision records, and explicitly identifies evidence the current contracts do not yet capture",
+        "CLI and graphical clients share reusable application commands for run, resume, inspection, and human-authorized actions; the UI does not invoke LangGraph or mutate persisted state directly",
+        "The RFC defines functionally equivalent, disposable Tauri, PySide6, and Electron follow-up spikes that exercise the same bounded fake-data workflow and record comparable packaging, process, resource, accessibility, testability, failure-recovery, permission-surface, learning, and implementation-complexity evidence before framework selection",
+        "The RFC decomposes expected follow-up work including the shared application boundary, run identity, operator summaries, Recon candidate persistence, usage semantics, live observation, a common benchmark fixture, three framework spikes, the framework-selection ADR, and production UI vertical slices without reserving ticket identifiers prematurely",
+        "Search, model-effectiveness analytics, optional mobile history access, privacy and retention, crash recovery, and future persistence/indexing needs are scoped with explicit decisions or open questions rather than presented as shipped behavior",
+        "The older draft UI documents and cancelled BTN-17 web UI scope are reconciled so they cannot be mistaken for the current interface contract",
+        "No production UI implementation, framework spike implementation, mobile execution control, semantic index, model router, or replacement persistence authority is introduced by this ticket"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-23",
+        "BTN-24",
+        "BTN-26"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "2026-08-11 through 2026-08-13 UI design discussion; docs/ui/; ADR-0014; ADR-0016; ADR-0017; ADR-0018",
+      "notes": "Accepted by the human operator on 2026-08-14. RFC-0004 establishes the desktop-first product direction, shared application boundary, one-worker-per-active-run model, UUID run identity direction, bounded revision and prompt provenance, persisted Markdown Recon candidates, typed next-attempt interventions, cost semantics, and equivalent Tauri/PySide6/Electron follow-up spikes. The six remaining open questions are intentionally deferred to implementation and operational evidence. No production UI or framework spike was implemented by BTN-29."
+    },
+    {
+      "id": "BTN-30",
+      "phase": "implementation",
+      "title": "Application command and query boundary",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Extract a reusable Python application boundary for run, resume, inspection, and human-authorized operations so the CLI and future graphical clients share policy and persistence behavior.",
+      "acceptance_criteria": [
+        "Reusable application commands and queries cover the first desktop vertical slice without importing a UI or transport framework",
+        "The CLI delegates applicable run, resume, inspection, and human-authorized operations to the shared boundary instead of maintaining a parallel implementation",
+        "Application operations return typed results and documented domain failures suitable for both CLI rendering and graphical clients",
+        "The boundary preserves RunState, graph, interrupt, write-scope, and persistence authority rather than allowing clients to mutate state directly",
+        "Focused tests prove equivalent behavior through the shared boundary and existing CLI entry points"
+      ],
+      "dependencies": [
+        "BTN-29"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Application command and query boundary",
+      "notes": "The precise smallest command/query surface is intentionally expected to emerge from the first vertical slice. Keep it framework- and transport-neutral."
+    },
+    {
+      "id": "BTN-31",
+      "phase": "implementation",
+      "title": "Active-run worker supervision",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Supervise one isolated Python worker process per active run, with explicit lifecycle, failure, reconnect, and recovery behavior for desktop clients.",
+      "acceptance_criteria": [
+        "Each active run executes in its own supervised Python process and has a stable association with its canonical run identity",
+        "Starting, observing, cancelling, and reconnecting to workers occur through the application boundary",
+        "Worker crashes and client disconnections preserve the durable execution record and surface an explicit recoverable or terminal state",
+        "A desktop-client crash does not silently terminate or corrupt unrelated active runs",
+        "Tests cover concurrent workers, abnormal termination, restart or reconnect behavior, and cleanup without making provider calls"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-30"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Active-run worker supervision",
+      "notes": "RFC-0004 selects one process per active run; implementation details and recovery policy remain bounded discoveries for this ticket."
+    },
+    {
+      "id": "BTN-32",
+      "phase": "implementation",
+      "title": "Run and project identity",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Introduce generated UUID run identifiers, separate display aliases, and durable project identity semantics that tolerate repository moves and existing human-readable run IDs.",
+      "acceptance_criteria": [
+        "New runs receive collision-resistant UUID canonical identifiers independently of their human-readable display aliases",
+        "Persisted references use canonical identifiers while user-facing views can retain meaningful ticket and run labels",
+        "A documented migration or compatibility path preserves access to existing runs with human-readable identifiers",
+        "Project identity and catalog behavior recognize or explicitly reconcile a repository that moves on disk without silently merging distinct projects",
+        "Tests cover duplicate display aliases, moved repositories, legacy records, malformed identities, and cross-project isolation"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-29"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Run and project identity",
+      "notes": "The moved-repository identity rule and exact legacy migration are intentionally resolved through implementation evidence and recorded durably if architectural."
+    },
+    {
+      "id": "BTN-33",
+      "phase": "implementation",
+      "title": "Operator summaries and revision evidence",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Persist bounded handoff-style operator summaries and enough model, prompt, revision, context, artifact, and verification metadata to inspect what happened without retaining source code or prompt contents by default.",
+      "acceptance_criteria": [
+        "Each relevant node attempt can record what it did, what should happen next, open questions, and the last role or node that worked",
+        "Evidence records model and configuration identity, role, phase, prompt contract version, prompt template hash and algorithm, and Battalion revision",
+        "Code provenance records base commit object ID and algorithm, branch or detached state, start and end dirty state, bounded input hashes, and output artifact hashes",
+        "Context provenance records bounded references, hashes, inclusion reasons, and truncation metadata without retaining source code, prompt templates, or rendered prompts by default",
+        "The record clearly labels when a dirty workspace cannot be reconstructed exactly because no patch content was retained",
+        "Schema validation, compatibility behavior, and serialization round trips are covered by tests"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-26",
+        "BTN-29",
+        "BTN-32"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Operator-summary and revision evidence",
+      "notes": "Implements the accepted provenance decision: durable identities, versions, and hashes rather than code or prompt content retention by default."
+    },
+    {
+      "id": "BTN-34",
+      "phase": "implementation",
+      "title": "Recon candidate persistence",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Persist Recon output as immutable, create-only Markdown candidates with validated metadata and deterministic inbox discovery before human review and Instinct promotion.",
+      "acceptance_criteria": [
+        "Recon candidates are persisted as human-readable Markdown with a strict validated metadata contract",
+        "Candidate creation is create-only and collision-safe; existing candidate contents cannot be overwritten through the persistence API",
+        "The review inbox discovers candidates deterministically and distinguishes pending, promoted, and rejected disposition without mutating candidate evidence",
+        "Malformed metadata, path traversal, duplicate creation, and partial-write behavior fail safely and are tested",
+        "Creation-time confidence is not introduced, preserving ADR-0012 and BTN-20 semantics",
+        "The repository path and rejected-candidate retention policy are documented from implementation and usage evidence"
+      ],
+      "dependencies": [
+        "BTN-22",
+        "BTN-23",
+        "BTN-29"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Recon candidate persistence",
+      "notes": "The exact metadata format, path, and rejected-candidate retention policy are intentionally resolved while implementing and dogfooding this ticket."
+    },
+    {
+      "id": "BTN-35",
+      "phase": "implementation",
+      "title": "Usage evidence revision",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Revise usage evidence to represent provider-reported or calculated cost with nullable decimal amount, currency, source, and explicit unknown semantics.",
+      "acceptance_criteria": [
+        "Usage evidence stores cost as a nullable decimal amount rather than binary floating point",
+        "Cost currency and cost source are stored separately and validated when a cost amount is present",
+        "Unknown, unavailable, provider-reported, and locally calculated cost states remain distinguishable",
+        "Existing token usage remains inspectable when monetary cost is unknown",
+        "Serialization, aggregation, compatibility, and malformed-value behavior are covered by tests"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-29"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Usage evidence revision",
+      "notes": "Cost is evidence, not an estimate presented as fact. The source field must make provenance explicit."
+    },
+    {
+      "id": "BTN-36",
+      "phase": "implementation",
+      "title": "Live observation contract",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Define and implement the framework-neutral observation contract for active runs, including durable and transient event categories and reload-after-disconnect behavior.",
+      "acceptance_criteria": [
+        "The contract distinguishes durable evidence that can be reconstructed after reload from transient progress signals that may be lost",
+        "Events have stable run, node or attempt, ordering, and timestamp semantics sufficient for multiple concurrent active runs",
+        "A reconnecting client rebuilds authoritative state from persistence before consuming newer live events",
+        "The observation path cannot mutate graph state or bypass canonical interrupt and resume operations",
+        "Tests cover ordering, duplicate delivery, missed transient events, disconnect and reconnect, and malformed event handling"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-30",
+        "BTN-31"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Live observation contract",
+      "notes": "The minimum durable granularity beyond existing node-execution boundaries should be derived from recovery tests and recorded as part of this contract."
+    },
+    {
+      "id": "BTN-37",
+      "phase": "testing",
+      "title": "Desktop framework benchmark fixture",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Build the shared fake project, run history, simulated transitions, operator actions, and measurement procedure used unchanged by all three desktop framework spikes.",
+      "acceptance_criteria": [
+        "The fixture provides deterministic fake projects, tickets, runs, node attempts, artifacts, interrupts, Recon candidates, usage, and provenance evidence",
+        "The scenario exercises Work, History, execution inspection, cost and provenance display, live transitions, reconnect, interrupt resolution, candidate review, Correction, and Design decision actions",
+        "No fixture path invokes a real model provider or depends on developer credentials",
+        "The measurement procedure defines comparable packaging, process, resource, accessibility, testability, failure-recovery, permission-surface, learning, and implementation-complexity observations",
+        "Tauri, PySide6, and Electron spikes can consume the same scenario and acceptance script without framework-specific changes"
+      ],
+      "dependencies": [
+        "BTN-30",
+        "BTN-32",
+        "BTN-33",
+        "BTN-34",
+        "BTN-35",
+        "BTN-36"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Framework benchmark fixture",
+      "notes": "This fixture is the control for the three disposable architecture spikes; framework-specific conveniences must not change the tested workflow."
+    },
+    {
+      "id": "BTN-38",
+      "phase": "implementation",
+      "title": "Tauri desktop architecture spike",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement the common desktop benchmark fixture as a disposable Tauri prototype and record the evidence needed for framework selection.",
+      "acceptance_criteria": [
+        "The prototype completes the shared benchmark scenario without changing its application contract or measurement procedure",
+        "Packaging, startup, idle and active resource use, accessibility, automated testing, worker failure and reconnect behavior, and permission surface are measured",
+        "The implementation records Rust and Tauri learning demands, boundary complexity, platform constraints, and significant framework-specific code",
+        "The spike is clearly isolated from production code and can be discarded after the framework decision",
+        "Findings use the common evidence template and include reproducible build and benchmark instructions"
+      ],
+      "dependencies": [
+        "BTN-37"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Tauri architecture spike",
+      "notes": "Rust unfamiliarity is learning evidence, not an automatic negative; the spike should measure whether the resulting boundary and product are worth that investment."
+    },
+    {
+      "id": "BTN-39",
+      "phase": "implementation",
+      "title": "PySide6 desktop architecture spike",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement the common desktop benchmark fixture as a disposable PySide6 prototype and record the evidence needed for framework selection.",
+      "acceptance_criteria": [
+        "The prototype completes the shared benchmark scenario without changing its application contract or measurement procedure",
+        "Packaging, startup, idle and active resource use, accessibility, automated testing, worker failure and reconnect behavior, and permission surface are measured",
+        "The implementation records Python and Qt learning demands, boundary complexity, platform constraints, and significant framework-specific code",
+        "The spike is clearly isolated from production code and can be discarded after the framework decision",
+        "Findings use the common evidence template and include reproducible build and benchmark instructions"
+      ],
+      "dependencies": [
+        "BTN-37"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: PySide6 architecture spike",
+      "notes": "The spike must exercise the same workflow as Tauri and Electron rather than optimizing for Python-specific convenience."
+    },
+    {
+      "id": "BTN-40",
+      "phase": "implementation",
+      "title": "Electron desktop architecture spike",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement the common desktop benchmark fixture as a disposable Electron prototype and record the evidence needed for framework selection.",
+      "acceptance_criteria": [
+        "The prototype completes the shared benchmark scenario without changing its application contract or measurement procedure",
+        "Packaging, startup, idle and active resource use, accessibility, automated testing, worker failure and reconnect behavior, and permission surface are measured",
+        "The implementation records TypeScript and Electron learning demands, boundary complexity, platform constraints, and significant framework-specific code",
+        "The spike is clearly isolated from production code and can be discarded after the framework decision",
+        "Findings use the common evidence template and include reproducible build and benchmark instructions"
+      ],
+      "dependencies": [
+        "BTN-37"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Electron architecture spike",
+      "notes": "The spike must measure Electron as a desktop shell for Battalion, not assume web familiarity outweighs process, packaging, or resource evidence."
+    },
+    {
+      "id": "BTN-41",
+      "phase": "architecture",
+      "title": "Desktop framework selection ADR",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Compare the three framework spikes using their common evidence and record the selected production desktop framework in an accepted ADR.",
+      "acceptance_criteria": [
+        "The ADR compares Tauri, PySide6, and Electron against every measurement category defined by the shared fixture",
+        "Claims are traceable to reproducible spike evidence and distinguish measurements from judgment",
+        "The decision considers human and machine learning, maintainability, application-boundary integrity, packaging, platform support, accessibility, testing, recovery, security, and resource cost",
+        "The ADR selects one production framework or explicitly records why more bounded evidence is required",
+        "Disposable spike code is not silently promoted into production without reconciliation against Battalion architecture and repository standards"
+      ],
+      "dependencies": [
+        "BTN-38",
+        "BTN-39",
+        "BTN-40"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Desktop framework ADR",
+      "notes": "Framework choice follows the three equivalent spikes; no candidate is preferred solely because of current language familiarity."
+    },
+    {
+      "id": "BTN-42",
+      "phase": "implementation",
+      "title": "Read-only desktop operator console",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Deliver the first production desktop vertical slice for browsing Work, History, execution evidence, provenance, token and cost usage, and the Intel library without state-changing controls.",
+      "acceptance_criteria": [
+        "The selected desktop framework presents project and ticket Work views, run History, and detailed node-attempt inspection through the shared application boundary",
+        "Execution detail displays model, role, phase, prompt version and hash, Git revision and dirty-state limitations, bounded context provenance, artifacts, verification, tokens, and cost source semantics",
+        "The Intel library and persisted Recon candidates are discoverable without allowing the read-only slice to promote, reject, resume, or mutate them",
+        "Active runs update through the live observation contract and recover authoritative state after client restart or disconnect",
+        "Empty, loading, malformed, legacy, unknown-cost, crashed-worker, and inaccessible-project states are explicitly represented and tested",
+        "The UI never invokes LangGraph or edits persisted RunState directly"
+      ],
+      "dependencies": [
+        "BTN-33",
+        "BTN-34",
+        "BTN-35",
+        "BTN-36",
+        "BTN-41"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Read-only operator console",
+      "notes": "This is the first production UI slice after framework selection. It deliberately establishes trustworthy visibility before state-changing controls."
+    },
+    {
+      "id": "BTN-43",
+      "phase": "implementation",
+      "title": "Desktop human-action surfaces",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Add canonical interrupt resolution and Recon candidate review to the desktop client, followed by typed next-attempt Correction and Design decision context.",
+      "acceptance_criteria": [
+        "Interrupt resolution and resume use the same application operations and graph-control path as the CLI",
+        "Recon candidates can be reviewed, promoted, or rejected through canonical Intel workflows without mutating immutable candidate evidence",
+        "Correction targets Driver RED, Driver GREEN, or Refactorer, while Design decision targets Architect",
+        "Interventions are queued as bounded context for the next attempt and do not steer an in-flight model generation",
+        "Reviewer-targeted intervention, Reviewer verdict override, and manual checkpoint override are not introduced",
+        "Every human action records actor, time, target, disposition, and resulting durable state and is covered by authorization and failure-path tests"
+      ],
+      "dependencies": [
+        "BTN-31",
+        "BTN-34",
+        "BTN-36",
+        "BTN-42"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Human-action surfaces",
+      "notes": "Any change to role authority, interrupt semantics, or graph transitions discovered here requires specification and ADR reconciliation before implementation."
+    },
+    {
+      "id": "BTN-44",
+      "phase": "implementation",
+      "title": "History search and model-role analytics projections",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Build rebuildable projections for run-history search and descriptive model-by-role evidence without turning correlation into automated model selection claims.",
+      "acceptance_criteria": [
+        "Operators can search run history across tickets, summaries, roles, models, phases, outcomes, interrupts, verification, artifacts, and Intel references using rebuildable derived indexes",
+        "Search indexes can be deleted and reconstructed from canonical persisted evidence without data loss",
+        "Analytics compare model-role observations using transparent measures such as attempts, outcomes, review results, tokens, cost, duration, and available ticket characteristics",
+        "Unknown and incomparable evidence is displayed explicitly; small samples and confounding ticket characteristics are not presented as effectiveness conclusions",
+        "No automatic model router, hidden score, or replacement source of truth is introduced",
+        "Projection versioning, migration, filtering, and representative search and aggregation behavior are tested"
+      ],
+      "dependencies": [
+        "BTN-24",
+        "BTN-32",
+        "BTN-33",
+        "BTN-35",
+        "BTN-42"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "RFC-0004 Expected Follow-Up Tickets: Search and analytics projections",
+      "notes": "Objective ticket characteristics and any later semantic-search approach should emerge from accumulated usage evidence. This ticket begins with descriptive, rebuildable projections."
     }
   ]
 }
