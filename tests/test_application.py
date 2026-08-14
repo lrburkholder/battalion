@@ -147,3 +147,23 @@ def test_queries_expose_documented_domain_failures(tmp_path):
 
     with pytest.raises(InvalidRunId):
         state_path("../outside", tmp_path)
+
+
+def test_node_checkpoint_preserves_progress_if_worker_crashes(tmp_path):
+    initial = make_state()
+    progressed = initial.model_copy(
+        update={"status": RunStatus.IN_PROGRESS, "phase": "driver_red"}
+    )
+
+    def crash_after_checkpoint(**kwargs):
+        kwargs["on_state_checkpoint"](progressed)
+        raise RuntimeError("simulated worker crash")
+
+    with pytest.raises(RuntimeError, match="simulated worker crash"):
+        start_run(
+            StartRun(initial_state=initial, config=BattalionConfig()),
+            state_dir=tmp_path,
+            _execute=crash_after_checkpoint,
+        )
+
+    assert inspect_run(InspectRun(initial.run_id), state_dir=tmp_path).state == progressed

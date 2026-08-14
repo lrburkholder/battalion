@@ -21,6 +21,17 @@ from battalion.execution import summarize_costs
 from battalion.graph import resume_ticket, run_ticket
 from battalion.state.models import RunState, RunStatus
 from battalion.state.persistence import load_state, save_state
+from battalion.workers import (
+    DEFAULT_WORKER_DIR,
+    WorkerRecord,
+    WorkerAlreadyActive as _WorkerAlreadyActive,
+    WorkerLaunchFailed as _WorkerLaunchFailed,
+    WorkerNotFound as _WorkerNotFound,
+    cancel_worker as _cancel_worker,
+    launch_worker,
+    observe_worker as _observe_worker,
+    reconnect_worker as _reconnect_worker,
+)
 
 
 DEFAULT_STATE_DIR = Path(".battalion/state")
@@ -65,6 +76,29 @@ class StateReadFailed(ApplicationError):
         super().__init__(f"Could not read state for {run_id} at {path}: {cause}")
 
 
+class WorkerApplicationError(ApplicationError):
+    """Base class for expected supervision failures at the application boundary."""
+
+
+class WorkerNotFound(WorkerApplicationError):
+    pass
+
+
+class WorkerAlreadyActive(WorkerApplicationError):
+    pass
+
+
+class WorkerLaunchFailed(WorkerApplicationError):
+    pass
+
+
+class WorkerRecordReadFailed(WorkerApplicationError):
+    def __init__(self, run_id: str, cause: Exception) -> None:
+        self.run_id = run_id
+        self.cause = cause
+        super().__init__(f"Could not read worker record for {run_id}: {cause}")
+
+
 @dataclass(frozen=True)
 class StartRun:
     """Request execution and persistence of one caller-supplied initial state."""
@@ -85,6 +119,34 @@ class ResumeRun:
 @dataclass(frozen=True)
 class InspectRun:
     """Read-only request for current durable run evidence."""
+
+    run_id: str
+
+
+@dataclass(frozen=True)
+class StartWorker:
+    """Launch a supervised process for a start or resume command."""
+
+    command: StartRun | ResumeRun
+
+
+@dataclass(frozen=True)
+class ObserveWorker:
+    """Query one worker's durable lifecycle record."""
+
+    run_id: str
+
+
+@dataclass(frozen=True)
+class CancelWorker:
+    """Request cancellation of the worker associated with one run."""
+
+    run_id: str
+
+
+@dataclass(frozen=True)
+class ReconnectWorker:
+    """Reload a worker association after a presentation client restart."""
 
     run_id: str
 
@@ -141,6 +203,9 @@ def start_run(
             prompts_dir=command.config.prompts_dir,
             on_node_event=on_node_event,
             on_token=on_token,
+            on_state_checkpoint=lambda checkpoint: save_state(
+                RunState.model_validate(checkpoint), path
+            ),
         )
     )
     save_state(final_state, path)
@@ -169,6 +234,7 @@ def resume_run(
         )
 
     execute = _execute or resume_ticket
+    path = state_path(command.run_id, state_dir)
     final_state = RunState.model_validate(
         execute(
             state=state,
@@ -177,9 +243,11 @@ def resume_run(
             prompts_dir=command.config.prompts_dir,
             on_node_event=on_node_event,
             on_token=on_token,
+            on_state_checkpoint=lambda checkpoint: save_state(
+                RunState.model_validate(checkpoint), path
+            ),
         )
     )
-    path = state_path(command.run_id, state_dir)
     save_state(final_state, path)
     return RunOperationResult(
         run_id=final_state.run_id,
@@ -202,6 +270,92 @@ def inspect_run(
         state=state,
         costs=summarize_costs(state.execution_record),
     )
+
+
+def start_worker(
+    command: StartWorker,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    worker_dir: str | Path = DEFAULT_WORKER_DIR,
+) -> WorkerRecord:
+    """Start one isolated process without exposing process handles to clients."""
+    operation = command.command
+    if isinstance(operation, StartRun):
+        run_id = operation.initial_state.run_id
+        path = state_path(run_id, state_dir)
+        if path.exists() and not operation.overwrite:
+            raise RunAlreadyExists(run_id, path)
+        try:
+            return launch_worker(
+                operation="start",
+                run_id=run_id,
+                state=operation.initial_state,
+                state_version=operation.initial_state.schema_version,
+                config=operation.config,
+                state_dir=state_dir,
+                worker_dir=worker_dir,
+            )
+        except _WorkerAlreadyActive as exc:
+            raise WorkerAlreadyActive(str(exc)) from exc
+        except _WorkerLaunchFailed as exc:
+            raise WorkerLaunchFailed(str(exc)) from exc
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise WorkerRecordReadFailed(run_id, exc) from exc
+
+    state_path(operation.run_id, state_dir)  # validate before using it as a filename
+    state = _load_run(operation.run_id, state_dir)
+    try:
+        return launch_worker(
+            operation="resume",
+            run_id=operation.run_id,
+            state=None,
+            state_version=state.schema_version,
+            config=operation.config,
+            state_dir=state_dir,
+            worker_dir=worker_dir,
+        )
+    except _WorkerAlreadyActive as exc:
+        raise WorkerAlreadyActive(str(exc)) from exc
+    except _WorkerLaunchFailed as exc:
+        raise WorkerLaunchFailed(str(exc)) from exc
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise WorkerRecordReadFailed(operation.run_id, exc) from exc
+
+
+def observe_worker(
+    query: ObserveWorker, *, worker_dir: str | Path = DEFAULT_WORKER_DIR
+) -> WorkerRecord:
+    state_path(query.run_id)  # identifier validation is shared by all clients
+    try:
+        return _observe_worker(query.run_id, worker_dir=worker_dir)
+    except _WorkerNotFound as exc:
+        raise WorkerNotFound(str(exc)) from exc
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise WorkerRecordReadFailed(query.run_id, exc) from exc
+
+
+def cancel_worker(
+    command: CancelWorker, *, worker_dir: str | Path = DEFAULT_WORKER_DIR
+) -> WorkerRecord:
+    state_path(command.run_id)
+    try:
+        return _cancel_worker(command.run_id, worker_dir=worker_dir)
+    except _WorkerNotFound as exc:
+        raise WorkerNotFound(str(exc)) from exc
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise WorkerRecordReadFailed(command.run_id, exc) from exc
+
+
+def reconnect_worker(
+    command: ReconnectWorker, *, worker_dir: str | Path = DEFAULT_WORKER_DIR
+) -> WorkerRecord:
+    state_path(command.run_id)
+    try:
+        return _reconnect_worker(command.run_id, worker_dir=worker_dir)
+    except _WorkerNotFound as exc:
+        raise WorkerNotFound(str(exc)) from exc
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise WorkerRecordReadFailed(command.run_id, exc) from exc
 
 
 def _load_run(run_id: str, state_dir: str | Path) -> RunState:

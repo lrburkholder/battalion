@@ -353,6 +353,29 @@ class TestInterruptsActuallyHaltExecution:
         assert final["status"] == RunStatus.AWAITING_HUMAN
         assert final["interrupt_log"][0].trigger == "manual-checkpoint"
 
+    def test_completed_nodes_emit_durable_state_checkpoints(self, tmp_path):
+        checkpoints = []
+
+        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            return state.model_copy(update={"phase": "driver"})
+
+        with patch(
+            "battalion.nodes.architect.run_architect", side_effect=fake_architect
+        ):
+            app = build_graph(
+                make_llm_configs(),
+                base_dir=tmp_path,
+                on_state_checkpoint=checkpoints.append,
+            ).compile()
+            app.invoke(
+                _make_initial_state(manual_checkpoints=["driver"]),
+                {"recursion_limit": 5},
+            )
+
+        assert checkpoints
+        assert checkpoints[0].execution_record.node_executions[0].role == "architect"
+        assert checkpoints[-1].status == RunStatus.AWAITING_HUMAN
+
 
 class TestRedCheckRoutingIsUnambiguous:
     """Regression tests for bug #2: RED_CHECK accept and reject used to both

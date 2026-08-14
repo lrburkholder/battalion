@@ -724,7 +724,7 @@
       "id": "BTN-30",
       "phase": "implementation",
       "title": "Application command and query boundary",
-      "status": "in-progress",
+      "status": "done",
       "priority": "P0",
       "description": "Extract a reusable Python application boundary for run, resume, inspection, and human-authorized operations so the CLI and future graphical clients share policy and persistence behavior.",
       "acceptance_criteria": [
@@ -746,7 +746,7 @@
       "id": "BTN-31",
       "phase": "implementation",
       "title": "Active-run worker supervision",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Supervise one isolated Python worker process per active run, with explicit lifecycle, failure, reconnect, and recovery behavior for desktop clients.",
       "acceptance_criteria": [
@@ -763,7 +763,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: Active-run worker supervision",
-      "notes": "RFC-0004 selects one process per active run; implementation details and recovery policy remain bounded discoveries for this ticket."
+      "notes": "Implemented on 2026-08-14. ADR-0019 records detached one-process-per-run supervision, project-local lifecycle records, application-boundary start/observe/cancel/reconnect operations, atomic RunState persistence, and per-node durable checkpoints. Focused tests cover concurrent associations, duplicate launch prevention, abnormal exit recovery, reconnect, cancellation isolation, detached client lifetime, entrypoint completion, and malformed metadata without provider calls; the full suite passes."
     },
     {
       "id": "BTN-32",
