@@ -703,10 +703,11 @@
         "The primary desktop workflows cover starting and observing work, inspecting execution evidence and provenance, safely intervening, resolving interrupts, reviewing Recon candidates, and navigating history",
         "The design identifies which views can be derived from RunState, ExecutionRecord, cost observations, Intel repositories, and operator decision records, and explicitly identifies evidence the current contracts do not yet capture",
         "CLI and graphical clients share reusable application commands for run, resume, inspection, and human-authorized actions; the UI does not invoke LangGraph or mutate persisted state directly",
-        "Functionally equivalent, disposable Tauri, PySide6, and Electron prototypes exercise the same bounded fake-data workflow and record comparable packaging, process, resource, accessibility, testability, failure-recovery, permission-surface, and implementation-complexity evidence before framework selection",
+        "The RFC defines functionally equivalent, disposable Tauri, PySide6, and Electron follow-up spikes that exercise the same bounded fake-data workflow and record comparable packaging, process, resource, accessibility, testability, failure-recovery, permission-surface, learning, and implementation-complexity evidence before framework selection",
+        "The RFC decomposes expected follow-up work including the shared application boundary, run identity, operator summaries, Recon candidate persistence, usage semantics, live observation, a common benchmark fixture, three framework spikes, the framework-selection ADR, and production UI vertical slices without reserving ticket identifiers prematurely",
         "Search, model-effectiveness analytics, optional mobile history access, privacy and retention, crash recovery, and future persistence/indexing needs are scoped with explicit decisions or open questions rather than presented as shipped behavior",
         "The older draft UI documents and cancelled BTN-17 web UI scope are reconciled so they cannot be mistaken for the current interface contract",
-        "No production UI implementation, mobile execution control, semantic index, model router, or replacement persistence authority is introduced by this ticket; the three framework prototypes remain architecture spikes and may be discarded"
+        "No production UI implementation, framework spike implementation, mobile execution control, semantic index, model router, or replacement persistence authority is introduced by this ticket"
       ],
       "dependencies": [
         "BTN-19",
@@ -717,7 +718,7 @@
       "blocks": [],
       "assignee_role": "architect",
       "source": "2026-08-11 through 2026-08-13 UI design discussion; docs/ui/; ADR-0014; ADR-0016; ADR-0017; ADR-0018",
-      "notes": "Architecture-spike successor to cancelled BTN-17. Desktop is the primary operator surface; a mobile client remains a possible future read-mostly history and notification companion. Framework selection is intentionally deferred until equivalent minimal prototypes in Tauri, PySide6, and Electron provide comparable evidence."
+      "notes": "Design-only successor to cancelled BTN-17. Desktop is the primary operator surface; a mobile client remains a possible future read-mostly history and notification companion. This RFC is expected to spawn separate persistence, application-boundary, evidence-contract, and equivalent Tauri/PySide6/Electron spike tickets before production UI work."
     }
   ]
 }
