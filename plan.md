@@ -2,9 +2,13 @@
 
 ## Status
 
-The v1 architecture described here is implemented through BTN-15 and validated
-by BTN-10. Future Recon and Intel work remains draft design under `docs/` and is
-not part of the shipped v1 graph.
+The v1 execution architecture is complete and validated. BTN-16 and BTN-19
+through BTN-28 add durable cost and execution evidence, the human-audited Recon
+and Intel lifecycle, deterministic context assembly, caller-owned run
+configuration, and project-layout-aware scope enforcement. RFC-0004 (BTN-29)
+defines the accepted desktop operator direction. BTN-30 is implementing the
+shared application command/query boundary; later desktop tickets remain
+unshipped backlog work.
 
 ## Architecture overview
 
@@ -34,11 +38,19 @@ resume through the same graph path.
 
 ```text
 battalion/
+  application.py          # shared typed commands, queries, and domain failures
   cli.py                  # Typer adapter: run, resume, status, setup
   config.py               # YAML, environment, and CLI configuration merge
+  context.py              # bounded role context and Instinct assembly
+  execution.py            # durable node evidence, provenance, and cost views
   setup.py                # provider discovery and connectivity setup (BTN-15)
   graph.py                # graph construction, routing, pause, and resume
   progress.py             # CLI progress projection
+  intel/
+    models.py             # candidate and accepted Instinct contracts
+    repository.py         # immutable accepted-Instinct storage
+    retrieval.py          # deterministic active-Instinct selection
+    review.py              # audited operator review and promotion
   state/
     models.py             # versioned Pydantic state contract
     persistence.py        # local JSON state load/save
@@ -62,9 +74,11 @@ prompts/                  # externalized role prompts
 tests/                    # unit and end-to-end acceptance tests
 ```
 
-Dependencies point toward application policy. The CLI, filesystem, network,
-LiteLLM, and LangGraph wiring are boundary concerns; role intent and state
-invariants should not depend on their concrete transport or persistence shapes.
+Dependencies point toward application policy. The CLI delegates run, resume,
+inspection, costs, and persistence to `battalion.application`; future graphical
+clients must use the same boundary. Filesystem, network, LiteLLM, and LangGraph
+wiring remain boundary concerns, while role intent and state invariants do not
+depend on a presentation transport.
 
 ## ADR log
 
@@ -121,6 +135,13 @@ The v1 implementation landed in this dependency order:
 7. CLI and end-to-end acceptance validation (BTN-9 and BTN-10).
 8. Driver/Reviewer model diversity (BTN-14).
 9. Guided provider and model setup (BTN-15).
+10. Durable cost, execution, and artifact provenance (BTN-16 and BTN-19).
+11. Recon and Intel contracts, persistence, generation, promotion, and
+    deterministic retrieval (BTN-20 through BTN-24).
+12. Role prompts, bounded execution context, caller-owned run configuration,
+    and project-layout-aware scopes (BTN-25 through BTN-28).
+13. Desktop operator architecture and follow-up decomposition (BTN-29).
+14. Shared application commands and queries (BTN-30, in progress).
 
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.
@@ -130,8 +151,8 @@ run, resume, persistence, or review paths.
 - Rejection-cause comparison depends on consistent, specific Reviewer output.
 - Tool construction is a security boundary; tests should assert each node's
   exact authority.
-- A single node can consume most of a run-level budget. Per-call reporting is
-  future work, but must not change the v1 budget interrupt semantics.
+- A single node can consume most of a run-level budget. Per-call cost evidence
+  is now durable, but it intentionally does not change v1 budget interrupts.
 - Role prompts evolve faster than node code. Prompt changes can still change
   behavior materially and should be reviewed as role-definition changes.
 - BTN-26 persists the supplied specification in `RunState` and assembles
@@ -141,6 +162,9 @@ run, resume, persistence, or review paths.
   applicability, and tag rules, then injects whole identified entries through
   that same bounded context path for every execution role.
 - Recon is the canonical name for Battalion's knowledge-capture role; Learner
-  refers only to its historical Regiment predecessor. Draft Recon and Intel
-  ticket proposals must still be reconciled with `backlog.json` before
-  implementation begins.
+  refers only to its historical Regiment predecessor. Candidate generation and
+  operator promotion are shipped, while persistent pre-review candidate inboxes
+  remain future work under BTN-34.
+- RFC-0004 requires every desktop client to remain disposable presentation:
+  clients may not invoke LangGraph, mutate RunState, or create a second
+  persistence authority. BTN-30 establishes that shared boundary.

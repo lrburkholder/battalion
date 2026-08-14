@@ -35,7 +35,10 @@ conflicts instead of silently choosing one source.
   tracking.
 - `battalion/graph.py` wires nodes and transitions; keep role policy out of the
   CLI.
-- `battalion/cli.py` is a thin adapter over reusable runtime functions.
+- `battalion/application.py` owns transport-neutral run, resume, inspection,
+  and human-authorized application operations shared by presentation clients.
+- `battalion/cli.py` is a thin presentation adapter over the application
+  boundary; it must not invoke LangGraph or mutate persisted state directly.
 
 Apply IO-distance when introducing dependencies: keep application policy free
 of filesystem, network, UI, framework, and transport details. Before adding an
@@ -83,10 +86,28 @@ make network calls and require provider credentials; unit tests must not.
 
 ## Documentation hygiene
 
-- Update `README.md` for user-visible commands, configuration, or status.
+- Reconcile documentation as part of the ticket, not as deferred cleanup.
+  Before handoff, compare `README.md`, `plan.md`, and relevant docs with the
+  ticket status, implemented behavior, and test evidence.
+- Update `README.md` for user-visible commands, configuration, architecture
+  components, milestone status, or roadmap progress. Remove or correct stale
+  status claims in the same change.
+- Update the status and module/delivery descriptions in `plan.md` when shipped
+  architecture or implementation progress changes.
 - Update `spec.md` when the product contract changes.
 - Record durable architecture decisions in an ADR; do not leave them only in a
   chat or implementation comment.
+- Keep `backlog.json` synchronized with actual work: mark a ticket in progress
+  when implementation begins, and mark it done only when every acceptance
+  criterion has matching implementation and validation evidence.
+- When accepted public documentation is added or newly referenced, update the
+  explicit publication set in `scripts/build_pages.py` and its tests so GitHub
+  Pages does not contain dead links. Validate the staged Pages output before
+  handoff.
+- Distinguish branch progress from shipped behavior. Documentation on a feature
+  branch may describe work as in progress; only describe it as shipped after
+  the backlog, tests, and merge state support that claim. GitHub Pages deploys
+  from `main`, so do not claim the live site is updated before merge.
 - Keep ticket IDs unique across `backlog.json` and proposals.
 - Mark future-looking documents as Draft and avoid presenting them as current
   behavior.

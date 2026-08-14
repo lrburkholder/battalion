@@ -39,7 +39,7 @@ def make_paused_state(run_id: str, phase: str = "driver_red") -> RunState:
 def test_run_creates_state_file(tmp_path, monkeypatch):
     """Test that `battalion run` creates a state file."""
     # Mock the graph execution to avoid actual LLM calls
-    import battalion.cli as cli_module
+    import battalion.application as application_module
     
     def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         return RunState(
@@ -56,7 +56,7 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
             manual_checkpoints=[],
         )
     
-    monkeypatch.setattr(cli_module, "run_ticket", mock_run_ticket)
+    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
     
     # Create a spec file
     spec_file = tmp_path / "spec.md"
@@ -82,7 +82,7 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
 
 def test_run_force_overwrites_existing(tmp_path, monkeypatch):
     """Test that --force overwrites existing state file."""
-    import battalion.cli as cli_module
+    import battalion.application as application_module
     
     def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
         return RunState(
@@ -99,7 +99,7 @@ def test_run_force_overwrites_existing(tmp_path, monkeypatch):
             manual_checkpoints=[],
         )
     
-    monkeypatch.setattr(cli_module, "run_ticket", mock_run_ticket)
+    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
     
     spec_file = tmp_path / "spec.md"
     spec_file.write_text("# Test Spec")
@@ -119,7 +119,7 @@ def test_run_force_overwrites_existing(tmp_path, monkeypatch):
 
 def test_resume_loads_and_continues(tmp_path, monkeypatch):
     """Test that `battalion resume` loads state and continues."""
-    import battalion.cli as cli_module
+    import battalion.application as application_module
     from battalion.state.persistence import load_state
     
     def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
@@ -129,7 +129,7 @@ def test_resume_loads_and_continues(tmp_path, monkeypatch):
             "budget": Budget(limit=100, used=15),
         })
     
-    monkeypatch.setattr(cli_module, "resume_ticket", mock_resume_ticket)
+    monkeypatch.setattr(application_module, "resume_ticket", mock_resume_ticket)
     
     # Create a paused state file
     state_dir = tmp_path / ".battalion" / "state"
@@ -242,7 +242,7 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
     """When a run pauses on an interrupt, the CLI must tell the human WHY —
     e.g. the provider error from an infra failure — not just say
     'awaiting-human'."""
-    import battalion.cli as cli_module
+    import battalion.application as application_module
     from battalion.state.models import InterruptLogEntry
     from datetime import datetime, timezone
     from battalion.interrupts.triggers import TRIGGER_INFRA_FAILURE
@@ -269,7 +269,7 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
             ],
         )
 
-    monkeypatch.setattr(cli_module, "run_ticket", mock_run_ticket)
+    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
 
     spec_file = tmp_path / "spec.md"
     spec_file.write_text("# Test Spec")
@@ -286,7 +286,7 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
 
 def test_run_with_config_file(tmp_path, monkeypatch):
     """Test that run command loads config from YAML file."""
-    import battalion.cli as cli_module
+    import battalion.application as application_module
     
     captured_config = {}
     
@@ -308,7 +308,7 @@ def test_run_with_config_file(tmp_path, monkeypatch):
             manual_checkpoints=[],
         )
     
-    monkeypatch.setattr(cli_module, "run_ticket", mock_run_ticket)
+    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
     
     # Create config file
     config_file = tmp_path / "battalion.config.yaml"
@@ -339,7 +339,7 @@ manual_checkpoints: ["reviewer"]
 
 def test_run_passes_configured_initial_state_to_graph_unchanged(tmp_path, monkeypatch):
     """BTN-27: the CLI-created RunState is the runtime's source of truth."""
-    import battalion.cli as cli_module
+    import battalion.application as application_module
 
     captured = {}
 
@@ -347,7 +347,7 @@ def test_run_passes_configured_initial_state_to_graph_unchanged(tmp_path, monkey
         captured["state"] = initial_state
         return initial_state.model_copy(update={"status": RunStatus.DONE, "phase": "done"})
 
-    monkeypatch.setattr(cli_module, "run_ticket", mock_run_ticket)
+    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
 
     config_file = tmp_path / "battalion.config.yaml"
     config_file.write_text(
@@ -388,7 +388,7 @@ write_scope:
 
 def test_run_with_model_overrides(tmp_path, monkeypatch):
     """Test that CLI model flags override config file."""
-    import battalion.cli as cli_module
+    import battalion.application as application_module
     
     captured_config = {}
     
@@ -408,7 +408,7 @@ def test_run_with_model_overrides(tmp_path, monkeypatch):
             manual_checkpoints=[],
         )
     
-    monkeypatch.setattr(cli_module, "run_ticket", mock_run_ticket)
+    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
     
     config_file = tmp_path / "battalion.config.yaml"
     config_file.write_text("""
@@ -437,7 +437,7 @@ models:
 
 def test_resume_infers_target_from_interrupt(tmp_path, monkeypatch):
     """Test that resume infers target from interrupt context."""
-    import battalion.cli as cli_module
+    import battalion.application as application_module
     from battalion.graph import _infer_resume_target
     
     captured_state = {}
@@ -448,7 +448,7 @@ def test_resume_infers_target_from_interrupt(tmp_path, monkeypatch):
         captured_state["phase"] = state.phase
         return state.model_copy(update={"status": RunStatus.DONE, "phase": "done"})
     
-    monkeypatch.setattr(cli_module, "resume_ticket", mock_resume_ticket)
+    monkeypatch.setattr(application_module, "resume_ticket", mock_resume_ticket)
     
     # Create state with interrupt context pointing to driver_green
     from battalion.state.models import InterruptLogEntry
@@ -478,7 +478,7 @@ def test_resume_infers_target_from_interrupt(tmp_path, monkeypatch):
 
 def test_resume_infers_target_from_rejection(tmp_path, monkeypatch):
     """Test that resume infers target from last rejection checkpoint."""
-    import battalion.cli as cli_module
+    import battalion.application as application_module
     from battalion.graph import _infer_resume_target
     
     captured_state = {}
@@ -489,7 +489,7 @@ def test_resume_infers_target_from_rejection(tmp_path, monkeypatch):
         captured_state["phase"] = state.phase
         return state.model_copy(update={"status": RunStatus.DONE, "phase": "done"})
     
-    monkeypatch.setattr(cli_module, "resume_ticket", mock_resume_ticket)
+    monkeypatch.setattr(application_module, "resume_ticket", mock_resume_ticket)
     
     from battalion.state.models import RejectionRecord, CheckpointType
     

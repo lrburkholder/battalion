@@ -10,7 +10,13 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 ## Status
 
-**Current Milestone**: v1 core complete; onboarding and observability next
+**Current Milestone**: desktop operator foundations
+
+The v1 execution graph is complete. Durable execution evidence, the Recon and
+Intel knowledge lifecycle, deterministic context assembly, and the desktop
+operator architecture are also implemented. Work is now underway on the shared
+application boundary required by both the CLI and future desktop clients.
+
 - ✅ **BTN-1**: State models + persistence layer
 - ✅ **BTN-2**: Per-node write-scope tool binding
 - ✅ **BTN-3**: LiteLLM client wrapper
@@ -27,7 +33,14 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 - ✅ **BTN-14**: Model-diversity constraint (Reviewer must differ from Driver)
 - ✅ **BTN-15**: CLI setup command for LLM configuration and validation
 - ✅ **BTN-16**: Per-call LLM cost capture and per-phase reporting
+- ❌ **BTN-17**: Narrow interrupt/checkpoint web UI (cancelled and superseded by [RFC-0004](docs/rfcs/rfc0004.md))
+- ✅ **BTN-18**: Public GitHub Pages documentation
+- ✅ **BTN-19**: Durable execution records and artifact provenance
+- ✅ **BTN-20–23**: Instinct contracts, immutable persistence, Recon generation, and audited operator promotion
 - ✅ **BTN-24**: Deterministic, role-specific Instinct retrieval and injection
+- ✅ **BTN-25–28**: Role contracts, bounded context assembly, caller-owned run configuration, and layout-aware write scopes
+- ✅ **BTN-29**: Desktop operator interface architecture ([RFC-0004](docs/rfcs/rfc0004.md))
+- 🚧 **BTN-30**: Shared application command and query boundary
 
 ## Architecture
 
@@ -39,8 +52,11 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 | `battalion.state.persistence` | Local JSON load/save | ✅ Complete |
 | `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
 | `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
-| `battalion.intel.review` | Audited operator review and promotion boundary | 🚧 In progress (BTN-23) |
+| `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
 | `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
+| `battalion.application` | Typed run, resume, inspection, and cost boundary shared by presentation clients | 🚧 In progress (BTN-30) |
+| `battalion.execution` | Durable node execution, artifact provenance, and cost evidence | ✅ Complete (BTN-19, BTN-16) |
+| `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
 | `battalion.nodes.architect` | Architecture planning node | ✅ Complete |
@@ -179,14 +195,18 @@ python -m pytest --cov=battalion --cov-report=term-missing
 battalion/
 ├── __init__.py
 ├── __main__.py                 # `python -m battalion`
-├── cli.py                      # Typer commands: run/resume/status/setup
+├── application.py              # Shared typed command/query boundary (BTN-30)
+├── cli.py                      # Thin Typer presentation adapter
 ├── config.py                   # Configuration loading and validation
+├── context.py                  # Bounded node context assembly (BTN-26)
+├── execution.py                # Durable execution evidence and cost projection
 ├── graph.py                    # StateGraph wiring, edges, interrupt points (BTN-7)
 ├── progress.py                 # CLI progress display
 ├── setup.py                    # Guided model/provider setup (BTN-15)
 ├── intel/
 │   ├── models.py               # Candidate and accepted Instinct contracts (BTN-20)
 │   ├── repository.py           # Immutable accepted-Instinct storage (BTN-21)
+│   ├── retrieval.py            # Deterministic Instinct selection (BTN-24)
 │   └── review.py               # Operator decisions and promotion workflow (BTN-23)
 ├── llm/
 │   ├── __init__.py
@@ -221,6 +241,7 @@ prompts/                        # Node system prompts, overridable per node
 
 tests/
 ├── test_acceptance.py         # End-to-end v1 acceptance criteria
+├── test_application.py        # Shared application-boundary tests (BTN-30)
 ├── test_architect_node.py     # Architect node tests
 ├── test_driver_node.py        # Driver node tests
 ├── test_reviewer_node.py      # Reviewer node tests
@@ -263,15 +284,16 @@ All nodes share a single, versioned state contract rather than maintaining separ
 Nodes only receive tools bound to their declared write paths. This provides defense-in-depth: out-of-scope writes are prevented structurally (missing tool) rather than via runtime permission checks.
 
 ### [ADR-0003: CLI Design](docs/adrs/adr0003.md)
-The CLI is deliberately the thinnest layer, wrapping already-working internals. This ensures the core functionality is testable and reusable without the CLI.
+The CLI is deliberately a presentation adapter over transport-neutral
+application commands and queries. This keeps graph policy, persistence, and
+human-authorized operations reusable by future graphical clients without
+creating parallel run or resume implementations.
 
-The reusable `run_ticket(initial_state, llm_configs, ...)` API takes one
-complete, caller-created `RunState`. That state is the sole source of truth for
-the run identifier, ticket identifier, specification, budget, manual
-checkpoints, write scope, and retry bound. These values are not also accepted as
-separate arguments, so callers cannot provide conflicting duplicate
-configuration. `resume_ticket` likewise continues from the persisted
-`RunState`, changing only the execution bookkeeping required to resume.
+The BTN-30 application boundary accepts one complete, caller-created
+`RunState`, returns typed results and documented domain failures, and owns calls
+to the canonical graph and persistence functions. The state remains the sole
+source of truth for run configuration. Clients cannot provide conflicting
+duplicate configuration or mutate persisted state directly.
 
 See the [complete ADR index](docs/adrs/README.md) for all accepted architecture
 decisions and their implementation status.
@@ -307,11 +329,11 @@ See [LICENSE](LICENSE) for full license text.
 
 ### Active Work
 
-- ✅ Guided LLM configuration and connectivity validation (BTN-15)
-- ✅ Role prompts aligned with node authority and output contracts (BTN-25)
-- ✅ Persist and assemble role-appropriate node context (BTN-26)
-- ⏳ Per-call and per-node cost reporting (BTN-16)
-- ⏳ Interrupt/checkpoint web UI (BTN-17)
+- 🚧 Shared application command and query boundary (BTN-30)
+- ⏳ Active-run worker supervision and durable run/project identity (BTN-31–32)
+- ⏳ Operator summaries, provenance, candidate persistence, usage evidence, and live observation contracts (BTN-33–36)
+- ⏳ Equivalent Tauri, PySide6, and Electron benchmark spikes followed by a framework ADR (BTN-37–41)
+- ⏳ Read-only operator console, human-action surfaces, and history analytics (BTN-42–44)
 
 ### Future Enhancements
 - Researcher, Specifier, Teacher nodes (post-v1)

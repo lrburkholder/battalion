@@ -8,8 +8,17 @@ from pathlib import Path
 
 import typer
 
-from battalion.graph import run_ticket, resume_ticket
-from battalion.execution import summarize_costs
+from battalion.application import (
+    ApplicationError,
+    InspectRun,
+    ResumeRun,
+    RunAlreadyExists,
+    StartRun,
+    inspect_run,
+    resume_run,
+    start_run,
+    state_path,
+)
 from battalion.interrupts.triggers import (
     TRIGGER_BUDGET_EXCEEDED,
     TRIGGER_INFRA_FAILURE,
@@ -20,9 +29,8 @@ from battalion.interrupts.triggers import (
     get_trigger_name,
 )
 from battalion.progress import ProgressDisplay
-from battalion.state.persistence import save_state, load_state
 from battalion.state.models import RunState, RunStatus, Budget
-from battalion.config import load_config, BattalionConfig, DEFAULT_CONFIG_PATH
+from battalion.config import load_config, DEFAULT_CONFIG_PATH
 from battalion.llm.litellm_client import ModelDiversityError
 from battalion.setup import (
     ConnectivityCheckFailed,
@@ -42,10 +50,15 @@ STATE_DIR = Path(".battalion/state")
 
 def _state_path(run_id: str) -> Path:
     """Get the state file path for a run ID."""
-    return STATE_DIR / f"{run_id}.json"
+    return state_path(run_id, STATE_DIR)
 
 
-def _print_status(state: RunState, human: bool = False, costs: bool = False) -> None:
+def _print_status(
+    state: RunState,
+    human: bool = False,
+    costs: bool = False,
+    cost_summary: dict[str, object] | None = None,
+) -> None:
     """Print run status as JSON or human-readable."""
     if human:
         # Human-readable summary
@@ -63,7 +76,7 @@ def _print_status(state: RunState, human: bool = False, costs: bool = False) -> 
                 if entry.resolution:
                     typer.echo(f"     Resolution: {entry.resolution}")
         if costs:
-            summary = summarize_costs(state.execution_record)
+            summary = cost_summary or {}
             typer.echo("\nLLM costs:")
             for phase in summary["phases"]:
                 typer.echo(
@@ -78,7 +91,7 @@ def _print_status(state: RunState, human: bool = False, costs: bool = False) -> 
             )
     else:
         if costs:
-            typer.echo(json.dumps(summarize_costs(state.execution_record), indent=2))
+            typer.echo(json.dumps(cost_summary or {}, indent=2))
         else:
             typer.echo(state.model_dump_json(indent=2))
 
@@ -172,16 +185,8 @@ def run(
     # Load spec text
     spec_text = _load_spec_text(spec)
     
-    # Prepare run ID and state path
+    # Construct the caller-supplied state consumed by the application boundary.
     run_id = f"run-{ticket_id}"
-    state_file = _state_path(run_id)
-    
-    # Check for existing state
-    if state_file.exists() and not force:
-        typer.echo(f"Error: State file already exists at {state_file}. Use --force to overwrite.", err=True)
-        raise typer.Exit(1)
-    
-    # Create initial state
     initial_state = RunState(
         schema_version="1.0",
         run_id=run_id,
@@ -197,26 +202,29 @@ def run(
         manual_checkpoints=cfg.manual_checkpoints,
     )
     
-    # Run the graph
     typer.echo(f"Starting run: {run_id}")
     display = ProgressDisplay()
-    with display:
-        final_state = RunState.model_validate(run_ticket(
-            initial_state=initial_state,
-            llm_configs=cfg.models,
-            base_dir=cfg.base_dir,
-            prompts_dir=cfg.prompts_dir,
-            on_node_event=display.handle_event,
-            on_token=display.handle_token,
-        ))
+    try:
+        with display:
+            result = start_run(
+                StartRun(initial_state=initial_state, config=cfg, overwrite=force),
+                state_dir=STATE_DIR,
+                on_node_event=display.handle_event,
+                on_token=display.handle_token,
+            )
+    except RunAlreadyExists as exc:
+        typer.echo(
+            f"Error: State file already exists at {exc.path}. Use --force to overwrite.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    except ApplicationError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     
-    # Save final state
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    save_state(final_state, state_file)
-    
-    typer.echo(f"Run complete: {run_id} → {final_state.status.value}")
-    typer.echo(f"State saved to: {state_file}")
-    _print_pause_reason(final_state, run_id)
+    typer.echo(f"Run complete: {result.run_id} → {result.state.status.value}")
+    typer.echo(f"State saved to: {result.state_path}")
+    _print_pause_reason(result.state, result.run_id)
 
 
 @app.command()
@@ -227,40 +235,26 @@ def resume(
     prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
 ):
     """Resume a paused/interrupted run from saved state."""
-    state_file = _state_path(run_id)
-    
-    if not state_file.exists():
-        typer.echo(f"Error: No state file found at {state_file}", err=True)
-        raise typer.Exit(1)
-    
-    # Load state
-    state = load_state(state_file)
-    
-    if state.status != RunStatus.AWAITING_HUMAN:
-        typer.echo(f"Warning: Run status is '{state.status.value}', not 'awaiting-human'. Resuming anyway.")
-    
-    # Load config
     cfg = load_config(config, {"base_dir": base_dir, "prompts_dir": prompts_dir})
-    
-    # Resume the run
     typer.echo(f"Resuming run: {run_id}")
     display = ProgressDisplay()
-    with display:
-        final_state = RunState.model_validate(resume_ticket(
-            state=state,
-            llm_configs=cfg.models,
-            base_dir=cfg.base_dir,
-            prompts_dir=cfg.prompts_dir,
-            on_node_event=display.handle_event,
-            on_token=display.handle_token,
-        ))
+    try:
+        with display:
+            result = resume_run(
+                ResumeRun(run_id=run_id, config=cfg),
+                state_dir=STATE_DIR,
+                on_node_event=display.handle_event,
+                on_token=display.handle_token,
+            )
+    except ApplicationError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     
-    # Save updated state
-    save_state(final_state, state_file)
-    
-    typer.echo(f"Resumed: {run_id} → {final_state.status.value}")
-    typer.echo(f"State saved to: {state_file}")
-    _print_pause_reason(final_state, run_id)
+    if result.warning:
+        typer.echo(f"Warning: {result.warning}")
+    typer.echo(f"Resumed: {result.run_id} → {result.state.status.value}")
+    typer.echo(f"State saved to: {result.state_path}")
+    _print_pause_reason(result.state, result.run_id)
 
 
 @app.command()
@@ -270,14 +264,17 @@ def status(
     costs: bool = typer.Option(False, "--costs", help="Include per-phase LLM token and dollar costs"),
 ):
     """Show run status and interrupt history."""
-    state_file = _state_path(run_id)
-    
-    if not state_file.exists():
-        typer.echo(f"Error: No state file found at {state_file}", err=True)
+    try:
+        result = inspect_run(InspectRun(run_id=run_id), state_dir=STATE_DIR)
+    except ApplicationError as exc:
+        typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
-    
-    state = load_state(state_file)
-    _print_status(state, human=human, costs=costs)
+    _print_status(
+        result.state,
+        human=human,
+        costs=costs,
+        cost_summary=result.costs,
+    )
 
 
 def _prompt_value(message: str, default: str) -> str:
