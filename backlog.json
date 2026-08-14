@@ -724,7 +724,7 @@
       "id": "BTN-30",
       "phase": "implementation",
       "title": "Application command and query boundary",
-      "status": "not-started",
+      "status": "in-progress",
       "priority": "P0",
       "description": "Extract a reusable Python application boundary for run, resume, inspection, and human-authorized operations so the CLI and future graphical clients share policy and persistence behavior.",
       "acceptance_criteria": [
