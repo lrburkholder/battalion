@@ -368,16 +368,19 @@ persistence, scope, or interrupt authority into the presentation client.
 The desktop framework is intentionally undecided until the benchmark evidence
 and BTN-41 ADR exist.
 
-### Unscheduled Directions
+### Future Architecture Planning
 
-These ideas are not committed backlog work until they receive BTN tickets and
-acceptance criteria:
+These directions now have bounded architecture tickets and draft planning
+briefs under `docs/future/`. They are not implementation commitments, and none
+changes Battalion's current roles or authority until its RFC is accepted:
 
-- Add a Specifier role to Battalion.
-- Design a Battalion plugin architecture and integration lifecycle.
-- Consider a Guardian role for severity-based review triggers.
-- Explore carefully bounded self-modification of Battalion's graph and role
-  definitions while preserving explicit human architectural authority.
+- **BTN-45:** Decide whether and where a human-reviewed Specifier role belongs.
+- **BTN-46:** Specify a permissioned plugin architecture and integration
+  lifecycle without creating a second policy or persistence authority.
+- **BTN-47:** Decide whether severity-based review needs a Guardian role or a
+  narrower extension of existing Reviewer and interrupt policy.
+- **BTN-48:** Define safety invariants and staged evidence for bounded,
+  human-authorized self-modification proposals.
 
 The former Teacher concept is no longer planned as a Battalion role. It is
 expected to evolve into **Dojo**, a separate future application. Researcher

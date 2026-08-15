@@ -151,6 +151,19 @@ The v1 implementation landed in this dependency order:
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.
 
+## Future architecture planning
+
+BTN-45 through BTN-48 turn the README's post-v2 directions into bounded
+architecture work for a possible Specifier role, a permissioned plugin model,
+severity-based review and a possible Guardian role, and carefully constrained
+self-modification research. Their planning briefs live under `docs/future/`.
+
+These tickets produce decision-ready RFCs and follow-up decomposition only.
+They do not authorize new roles, graph transitions, interrupt behavior,
+permissions, integrations, or self-editing. Any accepted change to those
+surfaces must reconcile `spec.md`, record durable decisions in ADRs, preserve
+human approval boundaries, and receive separate implementation tickets.
+
 ## Risks and watch items
 
 - Rejection-cause comparison depends on consistent, specific Reviewer output.
