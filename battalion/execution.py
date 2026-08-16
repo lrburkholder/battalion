@@ -2,24 +2,35 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
+from battalion.prompts.loader import DEFAULT_PROMPTS_DIR, prompt_contract_version
 from battalion.state.models import (
     ArtifactProvenance,
     CheckpointType,
+    CodeProvenance,
     EvidenceReference,
     ExecutionRecord,
     LLMCallCost,
     NodeExecution,
+    OperatorSummary,
+    PromptProvenance,
     ReviewResult,
     RunState,
     TestOutcome,
     ToolActivity,
 )
+
+_BATTALION_ROOT = Path(__file__).resolve().parents[1]
+_MAX_CONTEXT_BYTES = 1_048_576
+_MAX_CONTEXT_FILES = 200
 
 _ACTIVE_CAPTURE: ContextVar["ExecutionCapture | None"] = ContextVar(
     "battalion_execution_capture", default=None
@@ -38,25 +49,25 @@ def _role(node_name: str) -> str:
     return node_name
 
 
-def _input_references(node_name: str) -> list[EvidenceReference]:
+def _declared_input_references(node_name: str) -> list[tuple[str, str, str]]:
     if node_name == "architect":
-        return [EvidenceReference(kind="state", reference="RunState.spec")]
+        return [("state", "RunState.spec", "ticket objective supplied to Architect")]
     if node_name == "driver_red":
         return [
-            EvidenceReference(kind="artifact", reference="plan.md"),
-            EvidenceReference(kind="workspace", reference="implementation roots"),
+            ("artifact", "plan.md", "accepted implementation plan"),
+            ("workspace", "implementation roots", "code surface available to RED Driver"),
         ]
     if node_name == "driver_green":
         return [
-            EvidenceReference(kind="artifact", reference="plan.md"),
-            EvidenceReference(kind="workspace", reference="test roots"),
+            ("artifact", "plan.md", "accepted implementation plan"),
+            ("workspace", "test roots", "failing tests available to GREEN Driver"),
         ]
     if node_name == "refactorer":
         return [
-            EvidenceReference(kind="artifact", reference="plan.md"),
-            EvidenceReference(kind="workspace", reference="test and implementation roots"),
+            ("artifact", "plan.md", "accepted implementation plan"),
+            ("workspace", "test and implementation roots", "behavior-preserving refactor context"),
         ]
-    return [EvidenceReference(kind="workspace", reference="clean project snapshot")]
+    return [("workspace", "clean project snapshot", "Reviewer verification snapshot")]
 
 
 def _scope_entries(state: RunState, node_name: str) -> list[str]:
@@ -79,6 +90,160 @@ def _snapshot(base_dir: Path, entries: list[str]) -> dict[str, str]:
     return snapshot
 
 
+def _bounded_digest(data: bytes) -> tuple[str, bool, int, int]:
+    observed = len(data)
+    bounded = data[:_MAX_CONTEXT_BYTES]
+    return hashlib.sha256(bounded).hexdigest(), observed > len(bounded), observed, len(bounded)
+
+
+def _workspace_context_digest(
+    base_dir: Path, entries: list[str]
+) -> tuple[str, bool, int, int]:
+    candidates: list[Path] = []
+    roots = [base_dir / item.rstrip("/") for item in entries] if entries else [base_dir]
+    for root in roots:
+        paths = root.rglob("*") if root.is_dir() else [root]
+        candidates.extend(path for path in paths if path.is_file())
+    resolved_root = base_dir.resolve()
+    unique = sorted(
+        {
+            path.resolve()
+            for path in candidates
+            if ".git" not in path.parts
+            and ".battalion" not in path.parts
+            and path.resolve().is_relative_to(resolved_root)
+        },
+        key=lambda path: path.as_posix(),
+    )
+    truncated = len(unique) > _MAX_CONTEXT_FILES
+    manifest: list[dict[str, object]] = []
+    observed_bytes = sum(path.stat().st_size for path in unique)
+    hashed_bytes = 0
+    for path in unique[:_MAX_CONTEXT_FILES]:
+        size = path.stat().st_size
+        remaining = _MAX_CONTEXT_BYTES - hashed_bytes
+        if remaining <= 0:
+            truncated = True
+            break
+        with path.open("rb") as handle:
+            bounded = handle.read(remaining)
+        hashed_bytes += len(bounded)
+        truncated = truncated or size > len(bounded)
+        try:
+            reference = path.relative_to(base_dir).as_posix()
+        except ValueError:
+            reference = path.name
+        manifest.append({
+            "path": reference,
+            "sha256": hashlib.sha256(bounded).hexdigest(),
+            "observed_bytes": size,
+            "hashed_bytes": len(bounded),
+        })
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest(), truncated, observed_bytes, hashed_bytes
+
+
+def _input_references(
+    state: RunState, node_name: str, base_dir: Path
+) -> list[EvidenceReference]:
+    references: list[EvidenceReference] = []
+    for kind, reference, reason in _declared_input_references(node_name):
+        if kind == "state":
+            digest, truncated, observed, hashed = _bounded_digest(state.spec.encode())
+        elif kind == "artifact":
+            path = base_dir / reference
+            data = path.read_bytes() if path.is_file() else b""
+            digest, truncated, observed, hashed = _bounded_digest(data)
+        else:
+            digest, truncated, observed, hashed = _workspace_context_digest(
+                base_dir, _scope_entries(state, node_name)
+            )
+        references.append(EvidenceReference(
+            kind=kind,
+            reference=reference,
+            sha256=digest,
+            hash_algorithm="sha256",
+            inclusion_reason=reason,
+            truncated=truncated,
+            observed_bytes=observed,
+            hashed_bytes=hashed,
+        ))
+    return references
+
+
+def _git(root: Path, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args], cwd=root, capture_output=True, text=True,
+            check=False, timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _git_start(root: Path) -> dict[str, object]:
+    commit = _git(root, "rev-parse", "HEAD")
+    if commit is None:
+        return {"repository_available": False}
+    branch = _git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    status = _git(root, "status", "--porcelain=v1")
+    dirty = True if status is None else bool(status)
+    return {
+        "repository_available": True,
+        "base_commit_object_id": commit,
+        "object_id_algorithm": "sha256" if len(commit) == 64 else "sha1",
+        "branch": branch,
+        "detached": branch is None,
+        "dirty_at_start": dirty,
+    }
+
+
+def _configuration_identity(configuration: Any, model_identity: str) -> str:
+    if configuration is None:
+        value: Any = {"model": model_identity}
+    elif is_dataclass(configuration):
+        value = asdict(configuration)
+    else:
+        value = configuration
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=repr).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _prompt_name(node_name: str) -> str:
+    if node_name.startswith("reviewer_"):
+        return "reviewer"
+    return node_name.replace("_", "-")
+
+
+def _prompt_provenance(
+    node_name: str,
+    prompts_dir: str | Path | None,
+    model_configuration: Any,
+    model_identity: str,
+) -> PromptProvenance | None:
+    name = _prompt_name(node_name)
+    path = (Path(prompts_dir) if prompts_dir is not None else DEFAULT_PROMPTS_DIR) / f"{name}.md"
+    if not path.is_file():
+        return None
+    revision = _git(_BATTALION_ROOT, "rev-parse", "HEAD")
+    resolved_path = path.resolve()
+    try:
+        template_path = resolved_path.relative_to(_BATTALION_ROOT).as_posix()
+    except ValueError:
+        template_path = resolved_path.as_posix()
+    return PromptProvenance(
+        template_identity=name,
+        template_path=template_path,
+        contract_version=prompt_contract_version(name),
+        template_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
+        battalion_revision=revision,
+        model_configuration_identity=_configuration_identity(
+            model_configuration, model_identity
+        ),
+    )
+
+
 @dataclass
 class ExecutionCapture:
     execution_id: str
@@ -89,10 +254,20 @@ class ExecutionCapture:
     base_dir: Path
     written_paths: set[str]
     llm_calls: list[LLMCallCost]
+    input_references: list[EvidenceReference]
+    prompt_provenance: PromptProvenance | None
+    code_start: dict[str, object]
 
     @classmethod
     def start(
-        cls, state: RunState, node_name: str, model_identity: str, base_dir: str | Path
+        cls,
+        state: RunState,
+        node_name: str,
+        model_identity: str,
+        base_dir: str | Path,
+        *,
+        prompts_dir: str | Path | None = None,
+        model_configuration: Any = None,
     ) -> "ExecutionCapture":
         root = Path(base_dir).resolve()
         capture = cls(
@@ -104,6 +279,11 @@ class ExecutionCapture:
             base_dir=root,
             written_paths=set(),
             llm_calls=[],
+            input_references=_input_references(state, node_name, root),
+            prompt_provenance=_prompt_provenance(
+                node_name, prompts_dir, model_configuration, model_identity
+            ),
+            code_start=_git_start(root),
         )
         _ACTIVE_CAPTURE.set(capture)
         return capture
@@ -196,12 +376,50 @@ class ExecutionCapture:
         else:
             output_reference = f"state:phase={new_state.phase}"
 
+        code_data = dict(self.code_start)
+        if code_data["repository_available"]:
+            end_status = _git(self.base_dir, "status", "--porcelain=v1")
+            dirty_end = True if end_status is None else bool(end_status)
+            dirty = bool(code_data["dirty_at_start"]) or dirty_end
+            code_data.update({
+                "dirty_at_end": dirty_end,
+                "exact_workspace_reconstructable": not dirty,
+                "reconstruction_limitation": (
+                    "dirty-workspace-patch-not-retained" if dirty else None
+                ),
+            })
+        code_provenance = CodeProvenance.model_validate(code_data)
+        verification = []
+        if test is not None:
+            verification.append(
+                f"{test.checkpoint.value}: {'passed' if test.passed else 'failed'}; "
+                f"{'accepted' if test.accepted else 'not accepted'}"
+            )
+        open_questions = []
+        if interrupted:
+            open_questions.append(
+                f"Resolve interrupt: {new_state.interrupt_log[-1].trigger}"
+            )
+        summary = OperatorSummary(
+            what_i_did=(
+                f"{self.node_name} finished with outcome {outcome}; "
+                f"recorded {len(artifacts)} changed artifact(s)."
+            ),
+            what_should_happen_next=f"Continue at phase {new_state.phase}.",
+            open_questions=open_questions,
+            verification_performed=verification,
+            artifact_paths=[item.path for item in artifacts],
+            last_role=_role(self.node_name),
+            last_node=self.node_name,
+            last_phase=self.node_name,
+        )
+
         execution = NodeExecution(
             execution_id=self.execution_id,
             role=_role(self.node_name),
             phase=self.node_name,
             model_identity=self.model_identity,
-            input_references=_input_references(self.node_name),
+            input_references=self.input_references,
             output_reference=output_reference,
             verdict=verdict,
             started_at=self.started_at,
@@ -213,10 +431,13 @@ class ExecutionCapture:
             artifact_provenance=artifacts,
             interrupt_ids=new_interrupt_indexes,
             llm_calls=list(self.llm_calls),
+            operator_summary=summary,
+            prompt_provenance=self.prompt_provenance,
+            code_provenance=code_provenance,
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.1",
+                "schema_version": "1.2",
                 "node_executions": new_state.execution_record.node_executions
                 + [execution]
             }

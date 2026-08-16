@@ -80,8 +80,8 @@ under their original IDs without rewriting historical provenance (ADR-0020).
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.1` (BTN-16); persisted `1.0` records
-remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.2` (BTN-33); persisted `1.0` and `1.1`
+records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
@@ -100,6 +100,15 @@ contents into `RunState`. Input references are likewise bounded pointers to
 persisted state or workspace artifacts. The record is part of `RunState`, so
 normal JSON save/load and graph pause/resume preserve the same evidence without
 a second persistence or resumption path.
+
+Version `1.2` adds bounded operator handoffs; explicit role prompt contract,
+template hash, model-configuration identity, and Battalion revision evidence;
+Git base commit, object algorithm, branch/detached state, and start/end dirty
+state; and SHA-256 context references with inclusion and truncation metadata.
+It retains no prompt/template contents, source contents, configuration values,
+or dirty-worktree patch. A dirty endpoint therefore carries an explicit
+`dirty-workspace-patch-not-retained` limitation and cannot claim exact
+reconstructability.
 
 ### Instinct data contract
 

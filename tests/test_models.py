@@ -2,7 +2,14 @@
 import pytest
 from pydantic import ValidationError
 
-from battalion.state.models import RunState, RunStatus, RejectionRecord, InterruptLogEntry, CheckpointType
+from battalion.state.models import (
+    Budget,
+    CheckpointType,
+    InterruptLogEntry,
+    RejectionRecord,
+    RunState,
+    RunStatus,
+)
 
 
 def make_valid_state(**overrides):
@@ -71,21 +78,12 @@ def test_write_scope_is_per_node_mapping():
     assert state.write_scope["reviewer"] == []
 
 
-def test_budget_exceeded_true_when_used_reaches_limit():
-    from battalion.state.models import Budget
-
-    assert Budget(limit=10, used=10).exceeded() is True
-
-
-def test_budget_exceeded_false_when_under_limit():
-    from battalion.state.models import Budget
-
-    assert Budget(limit=10, used=5).exceeded() is False
+@pytest.mark.parametrize(("used", "expected"), [(10, True), (5, False)])
+def test_budget_exceeded_reflects_limit_boundary(used, expected):
+    assert Budget(limit=10, used=used).exceeded() is expected
 
 
 def test_rejection_record_requires_checkpoint():
-    from battalion.state.models import CheckpointType
-
     record = RejectionRecord(cause="x", cycle_number=1, checkpoint=CheckpointType.RED_CHECK)
     assert record.checkpoint == CheckpointType.RED_CHECK
 
@@ -99,8 +97,8 @@ def test_rejection_record_checkpoint_must_be_valid_enum_value():
 
 
 def test_checkpoint_type_has_three_values():
-    from battalion.state.models import CheckpointType
-
-    assert CheckpointType.RED_CHECK == "red-check"
-    assert CheckpointType.GREEN_CHECK == "green-check"
-    assert CheckpointType.REFACTOR_CHECK == "refactor-check"
+    assert [checkpoint.value for checkpoint in CheckpointType] == [
+        "red-check",
+        "green-check",
+        "refactor-check",
+    ]

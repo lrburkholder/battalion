@@ -129,7 +129,7 @@ def test_streaming_requests_and_records_final_usage_frame(tmp_path):
     finished = capture.finish(state, state)
     call = finished.execution_record.node_executions[0].llm_calls[0]
     assert (call.input_tokens, call.output_tokens, call.cost_usd) == (11, 3, 0.0015)
-    assert finished.execution_record.schema_version == "1.1"
+    assert finished.execution_record.schema_version == "1.2"
 
 
 def test_summary_is_broken_down_by_phase_with_stable_order():

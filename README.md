@@ -15,8 +15,8 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 The v1 execution graph is complete. Durable execution evidence, the Recon and
 Intel knowledge lifecycle, deterministic context assembly, and the desktop
 operator architecture, shared application boundary, isolated active-run worker
-supervision, and durable run/project identity are also implemented. Operator
-summary and revision evidence is the next queued desktop foundation.
+supervision, durable run/project identity, and bounded operator summary and
+revision evidence are also implemented.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -47,6 +47,7 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-30**: Shared application command and query boundary
 - ✅ **BTN-31**: Active-run worker supervision
 - ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
+- ✅ **BTN-33**: Operator summaries and revision evidence
 
 ## Architecture
 
@@ -63,7 +64,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.application` | Typed run, resume, inspection, cost, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-30–32) |
 | `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
-| `battalion.execution` | Durable node execution, artifact provenance, and cost evidence | ✅ Complete (BTN-19, BTN-16) |
+| `battalion.execution` | Durable node execution, artifact/cost provenance, and bounded operator/revision evidence | ✅ Complete (BTN-16, BTN-19, BTN-33) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
@@ -97,7 +98,7 @@ The versioned state contract includes:
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
-- `execution_record`: Durable node evidence, including per-call token and cost data
+- `execution_record`: Durable node evidence, including per-call token/cost data and versioned bounded provenance
 
 ### Interrupt Taxonomy (v1)
 
