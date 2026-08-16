@@ -19,7 +19,13 @@ from typing import Any
 from battalion.config import BattalionConfig
 from battalion.execution import summarize_costs
 from battalion.graph import resume_ticket, run_ticket
-from battalion.state.models import RunState, RunStatus
+from battalion.identity import (
+    IdentityError,
+    generate_run_identity,
+    load_project_identity,
+    register_run,
+)
+from battalion.state.models import Budget, RunState, RunStatus
 from battalion.state.persistence import load_state, save_state
 from battalion.workers import (
     DEFAULT_WORKER_DIR,
@@ -74,6 +80,14 @@ class StateReadFailed(ApplicationError):
         self.path = path
         self.cause = cause
         super().__init__(f"Could not read state for {run_id} at {path}: {cause}")
+
+
+class IdentityApplicationError(ApplicationError):
+    """Raised when run/project identity evidence cannot be reconciled."""
+
+
+class RunIdentityChanged(IdentityApplicationError):
+    """Raised when graph execution attempts to replace canonical identity."""
 
 
 class WorkerApplicationError(ApplicationError):
@@ -156,6 +170,7 @@ class RunOperationResult:
     """Typed result returned by state-changing run operations."""
 
     run_id: str
+    run_alias: str | None
     state_version: str
     state_path: Path
     state: RunState
@@ -167,6 +182,7 @@ class RunInspection:
     """Typed read model derived entirely from authoritative saved state."""
 
     run_id: str
+    run_alias: str | None
     state_version: str
     state_path: Path
     state: RunState
@@ -178,6 +194,33 @@ def state_path(run_id: str, state_dir: str | Path = DEFAULT_STATE_DIR) -> Path:
     if not run_id or Path(run_id).name != run_id or "/" in run_id or "\\" in run_id:
         raise InvalidRunId(f"Invalid run ID: {run_id!r}")
     return Path(state_dir) / f"{run_id}.json"
+
+
+def create_initial_state(
+    ticket_id: str, spec: str, config: BattalionConfig
+) -> RunState:
+    """Create one canonical new-run state through the application boundary."""
+    try:
+        project = load_project_identity(config.base_dir, create=True)
+    except (IdentityError, OSError) as exc:
+        raise IdentityApplicationError(str(exc)) from exc
+    identity = generate_run_identity(ticket_id)
+    return RunState(
+        schema_version="1.0",
+        run_id=identity.run_id,
+        run_alias=identity.display_alias,
+        project_id=str(project.project_id),
+        ticket_id=ticket_id,
+        spec=spec,
+        status=RunStatus.NOT_STARTED,
+        phase="architect",
+        write_scope=config.write_scope,
+        retry_bound=2,
+        budget=Budget(limit=config.budget_limit, used=0),
+        reviewer_rejection_history=[],
+        interrupt_log=[],
+        manual_checkpoints=config.manual_checkpoints,
+    )
 
 
 def start_run(
@@ -194,6 +237,8 @@ def start_run(
     if path.exists() and not command.overwrite:
         raise RunAlreadyExists(initial_state.run_id, path)
 
+    _register_canonical_run(initial_state, command.config, path)
+
     execute = _execute or run_ticket
     final_state = RunState.model_validate(
         execute(
@@ -208,9 +253,14 @@ def start_run(
             ),
         )
     )
+    if final_state.run_id != initial_state.run_id:
+        raise RunIdentityChanged(
+            f"Run identity changed from {initial_state.run_id} to {final_state.run_id}."
+        )
     save_state(final_state, path)
     return RunOperationResult(
         run_id=final_state.run_id,
+        run_alias=final_state.run_alias,
         state_version=final_state.schema_version,
         state_path=path,
         state=final_state,
@@ -248,9 +298,14 @@ def resume_run(
             ),
         )
     )
+    if final_state.run_id != state.run_id:
+        raise RunIdentityChanged(
+            f"Run identity changed from {state.run_id} to {final_state.run_id}."
+        )
     save_state(final_state, path)
     return RunOperationResult(
         run_id=final_state.run_id,
+        run_alias=final_state.run_alias,
         state_version=final_state.schema_version,
         state_path=path,
         state=final_state,
@@ -265,6 +320,7 @@ def inspect_run(
     state = _load_run(query.run_id, state_dir)
     return RunInspection(
         run_id=state.run_id,
+        run_alias=state.run_alias,
         state_version=state.schema_version,
         state_path=state_path(query.run_id, state_dir),
         state=state,
@@ -285,6 +341,7 @@ def start_worker(
         path = state_path(run_id, state_dir)
         if path.exists() and not operation.overwrite:
             raise RunAlreadyExists(run_id, path)
+        _register_canonical_run(operation.initial_state, operation.config, path)
         try:
             return launch_worker(
                 operation="start",
@@ -366,3 +423,15 @@ def _load_run(run_id: str, state_dir: str | Path) -> RunState:
         return load_state(path)
     except (OSError, ValueError) as exc:
         raise StateReadFailed(run_id, path, exc) from exc
+
+
+def _register_canonical_run(
+    state: RunState, config: BattalionConfig, path: Path
+) -> None:
+    """Catalog BTN-32 states while leaving pre-BTN-32 starts compatible."""
+    if state.project_id is None:
+        return
+    try:
+        register_run(state, config.base_dir, state_path=path)
+    except (IdentityError, OSError) as exc:
+        raise IdentityApplicationError(str(exc)) from exc

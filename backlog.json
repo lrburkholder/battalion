@@ -769,7 +769,7 @@
       "id": "BTN-32",
       "phase": "implementation",
       "title": "Run and project identity",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Introduce generated UUID run identifiers, separate display aliases, and durable project identity semantics that tolerate repository moves and existing human-readable run IDs.",
       "acceptance_criteria": [
@@ -786,7 +786,7 @@
       "blocks": [],
       "assignee_role": "architect",
       "source": "RFC-0004 Expected Follow-Up Tickets: Run and project identity",
-      "notes": "The moved-repository identity rule and exact legacy migration are intentionally resolved through implementation evidence and recorded durably if architectural."
+      "notes": "Implemented 2026-08-16. ADR-0020 records UUIDv4 canonical run IDs, separate display aliases, project-local UUID markers and rebuildable run catalogs, duplicate-copy reconciliation, and a non-destructive legacy compatibility projection. New identity creation is owned by the shared application boundary; graph execution cannot replace canonical identity. Focused tests cover duplicate aliases, moved repositories and catalogs, duplicate live copies, legacy records, malformed project markers and references, and cross-project isolation. Full suite: 346 tests passing."
     },
     {
       "id": "BTN-33",
