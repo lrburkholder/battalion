@@ -1082,6 +1082,106 @@
       "assignee_role": "architect",
       "source": "RFC-0004 Expected Follow-Up Tickets: Search and analytics projections",
       "notes": "Objective ticket characteristics and any later semantic-search approach should emerge from accumulated usage evidence. This ticket begins with descriptive, rebuildable projections."
+    },
+    {
+      "id": "BTN-45",
+      "phase": "architecture",
+      "title": "Specifier role architecture RFC",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Decide whether Battalion should add a Specifier role and define the human-reviewed specification artifact, authority boundary, lifecycle, and graph relationship before any implementation.",
+      "acceptance_criteria": [
+        "The RFC compares keeping specification authoring outside Battalion, running a separate pre-run workflow, and adding a graph phase without assuming that a new role is required",
+        "The proposed specification artifact, provenance, persistence owner, versioning, and relationship to canonical ticket identity are explicit",
+        "Human review, edit, acceptance, rejection, cancellation, ambiguity, and conflicting-source behavior are defined without allowing generated product decisions to become authoritative silently",
+        "Any proposed role has exact inputs, outputs, write scope, tools, prompt contract, model policy, context budget, execution evidence, cost semantics, and failure behavior",
+        "Graph placement, run identity, Architect handoff, checkpoints, interrupts, resume behavior, and application operations are reconciled with existing contracts",
+        "Representative workflow evidence and operator-correction measures support the decision, and accepted implementation work is split into separate tickets with required specification and ADR updates"
+      ],
+      "dependencies": [
+        "BTN-25",
+        "BTN-26",
+        "BTN-29"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "README Future Architecture Planning; docs/future/specifier-role.md",
+      "notes": "Planning only. The ticket may reject a Specifier role or keep it outside the execution graph; no role, prompt, state, or graph implementation is authorized."
+    },
+    {
+      "id": "BTN-46",
+      "phase": "architecture",
+      "title": "Plugin architecture and integration lifecycle RFC",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Specify permissioned extension points and a complete plugin lifecycle without weakening write scopes, application policy, secret handling, offline operation, or repository sources of truth.",
+      "acceptance_criteria": [
+        "The RFC defines a minimal extension-point taxonomy and explicitly identifies graph, state, interrupt, scope, and human-decision boundaries that plugins cannot replace",
+        "Manifest identity, provenance, versioning, compatibility, dependencies, discovery, installation, enablement, configuration, update, disablement, removal, and retained-data behavior are specified",
+        "Filesystem, process, network, credential, model, ticket, and application-operation capabilities require explicit least-authority grants with inspectable defaults",
+        "Secret ownership, redaction, context exclusion, audit evidence, isolation, timeout, cancellation, crash recovery, and offline degradation semantics are defined",
+        "The threat model covers malicious, stale, compromised, over-privileged, incompatible, and unavailable plugins plus source-of-truth conflicts and duplicate remote mutation",
+        "A disposable integration scenario validates the proposed boundary, and accepted runtime, SDK, packaging, marketplace, and example integration work is split into separate tickets and ADRs"
+      ],
+      "dependencies": [
+        "BTN-28",
+        "BTN-30",
+        "BTN-31"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "README Future Architecture Planning; docs/future/plugin-architecture.md",
+      "notes": "Planning only. Live JIRA, MCP, repository, model-provider, or other integrations remain examples rather than accepted implementation scope."
+    },
+    {
+      "id": "BTN-47",
+      "phase": "architecture",
+      "title": "Severity-based review and Guardian role RFC",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Determine whether severity-based review belongs in existing Reviewer and interrupt policy or warrants a distinct Guardian role with a separate evidence and authority boundary.",
+      "acceptance_criteria": [
+        "The RFC compares no new behavior, focused mechanical tooling, Reviewer policy specialization, and a distinct Guardian role without assuming that another graph node is beneficial",
+        "Objective trigger inputs, severity taxonomy, classification ownership, uncertainty, false positives, and human correction behavior are defined",
+        "Any proposed role has distinct responsibilities, inputs, outputs, prompt contract, model policy, write scope, durable evidence, and pass, finding, retry, failure, and cancellation semantics",
+        "Graph placement and every transition are reconciled with RED, GREEN, refactor, Reviewer, interrupt, manual-checkpoint, human-resolution, and resume contracts",
+        "Representative low- and high-impact cases compare finding quality, duplicate feedback, operator burden, explainability, latency, cost, and failure modes",
+        "The RFC records a no-role, policy-only, or bounded-role decision and splits accepted graph, state, prompt, interrupt, UI, test, specification, and ADR work into separate tickets"
+      ],
+      "dependencies": [
+        "BTN-8",
+        "BTN-12",
+        "BTN-29"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "README Future Architecture Planning; docs/future/guardian-role.md",
+      "notes": "Planning only. Model-assigned severity is not authoritative, and no Guardian node or new checkpoint is accepted by this ticket's creation."
+    },
+    {
+      "id": "BTN-48",
+      "phase": "architecture",
+      "title": "Bounded self-modification safety and evidence RFC",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Define whether and how Battalion may propose changes to its own graph and role definitions through isolated, reviewable, human-authorized engineering workflows without runtime self-editing or self-approval.",
+      "acceptance_criteria": [
+        "The RFC defines self-modification as version-controlled change proposals and explicitly forbids same-run mutation, automatic approval, merge, deployment, permission expansion, or protection bypass",
+        "A threat model covers authority escalation, prompt or review tampering, compromised state, recursive execution, stale bases, malicious changes, validation evasion, secret exposure, and rollback failure",
+        "Human checkpoints for objective, architecture, scope, validation, acceptance, merge, rollout, rollback, and mechanical stop are explicit and cannot be satisfied solely by the proposing execution",
+        "Isolation between the running trusted Battalion instance and candidate worktree or environment is defined together with provenance for objectives, plans, prompts, models, tools, diffs, tests, reviews, decisions, and revisions",
+        "A staged evidence plan begins with read-only analysis and disposable patch proposals and includes rejection, failed validation, protected-surface edits, independent review, recovery, budget, recursion, and stop conditions",
+        "The RFC makes explicit go, no-go, and stop decisions for each stage, may reject the capability entirely, and requires separate human-approved tickets for every experiment or implementation"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-28",
+        "BTN-30"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "README Future Architecture Planning; docs/future/self-modification.md",
+      "notes": "Long-term research planning only. Dogfooding does not authorize autonomous self-editing, and this ticket must not change runtime graph, role, scope, interrupt, merge, or deployment authority."
     }
   ]
 }

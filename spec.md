@@ -25,13 +25,18 @@ run automatically.
 - CLI entry point, local machine execution
 
 ## Out of Scope (v1 — explicitly deferred)
-- Researcher, Specifier, Teacher nodes (planned next, not this milestone)
-- Guardian and any severity-based review triggers
-- Live JIRA/MCP ticket integration (local JSON is the v1 default; plugin
-  architecture is a named future extension point, not built now)
-- Battalion self-modifying its own graph/node definitions at runtime — the
+- A Specifier role. Post-v2 architecture work may evaluate one, but no role or
+  graph placement is accepted yet.
+- Researcher and Teacher nodes. Teacher is no longer planned as a Battalion
+  role, and the Researcher product boundary remains unresolved.
+- Guardian and any severity-based review triggers. Future architecture work
+  must first determine whether a distinct role is warranted.
+- Live JIRA/MCP ticket integration. Local JSON is the v1 default; a plugin
+  architecture is planned for specification, not built or accepted yet.
+- Battalion self-modifying its own graph/node definitions at runtime. Future
+  research is limited to carefully bounded, human-authorized proposals; the
   dogfooding model is "used to build Battalion's next work," not autonomous
-  self-editing
+  self-editing.
 
 ## State Schema (v1, draft)
 Follows `regiment-backlog.json` conventions: explicit `schema_version`,
@@ -188,8 +193,9 @@ receives the passing file set.
 | 5 | Infra failure | Node crash, malformed state, or LiteLLM call fails after retries | Separate handling path — not folded into triggers 1 or 3; surfaces as a distinct failure state, not a judgment escalation |
 | 6 | Manual checkpoint | User declares a checkpoint on the ticket/run config (e.g. "pause after Architect") independent of any system-detected condition | Graph pauses unconditionally at the declared point, regardless of whether any other trigger fired |
 
-Deliberately deferred: severity-based ("critical finding") triggers. Reused
-once Guardian joins the graph.
+Deliberately deferred: severity-based ("critical finding") triggers. BTN-47
+must determine whether this belongs in existing Reviewer and interrupt policy
+or warrants a distinct Guardian role; no graph addition is accepted yet.
 
 Trigger #6 added after reviewing github.com/Sdraugel/albert's `stop_after`
 config pattern: the first 5 triggers are all system-detected conditions: this
