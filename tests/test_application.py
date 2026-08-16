@@ -1,5 +1,7 @@
 """Focused tests for the BTN-30 application command/query boundary."""
 
+from uuid import UUID
+
 import pytest
 
 from battalion.application import (
@@ -7,9 +9,11 @@ from battalion.application import (
     InvalidRunId,
     ResumeRun,
     RunAlreadyExists,
+    RunIdentityChanged,
     RunNotFound,
     StartRun,
     StateReadFailed,
+    create_initial_state,
     inspect_run,
     resume_run,
     start_run,
@@ -36,6 +40,17 @@ def make_state(
     )
 
 
+def test_application_creates_canonical_new_run_identity(tmp_path):
+    state = create_initial_state(
+        "BTN-32", "Identity contract", BattalionConfig(base_dir=str(tmp_path))
+    )
+
+    assert UUID(state.run_id).version == 4
+    assert state.run_alias.startswith("BTN-32-")
+    assert UUID(state.project_id)
+    assert (tmp_path / ".battalion" / "project.json").exists()
+
+
 def test_start_run_returns_typed_identity_and_persists_graph_result(tmp_path):
     initial = make_state()
     captured = {}
@@ -59,6 +74,19 @@ def test_start_run_returns_typed_identity_and_persists_graph_result(tmp_path):
     assert result.state_path.exists()
     assert captured["initial_state"] is initial
     assert captured["llm_configs"] == BattalionConfig().models
+
+
+def test_graph_execution_cannot_replace_canonical_run_identity(tmp_path):
+    initial = make_state()
+
+    with pytest.raises(RunIdentityChanged):
+        start_run(
+            StartRun(initial_state=initial, config=BattalionConfig()),
+            state_dir=tmp_path,
+            _execute=lambda **kwargs: kwargs["initial_state"].model_copy(
+                update={"run_id": "different-run"}
+            ),
+        )
 
 
 def test_start_run_requires_explicit_overwrite_authorization(tmp_path):
@@ -167,3 +195,4 @@ def test_node_checkpoint_preserves_progress_if_worker_crashes(tmp_path):
         )
 
     assert inspect_run(InspectRun(initial.run_id), state_dir=tmp_path).state == progressed
+    create_initial_state,

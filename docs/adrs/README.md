@@ -25,6 +25,7 @@ status states whether it is part of the shipped system.
 | [ADR-0017](adr0017.md) | Attribute LLM costs to durable node executions | Accepted | BTN-16 |
 | [ADR-0018](adr0018.md) | Use literal, inspectable Instinct retrieval | Accepted | BTN-24 |
 | [ADR-0019](adr0019.md) | Supervise active runs with detached per-run workers | Accepted | BTN-31 |
+| [ADR-0020](adr0020.md) | Separate canonical run and project identity from display names | Accepted | BTN-32 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique

@@ -14,9 +14,9 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 The v1 execution graph is complete. Durable execution evidence, the Recon and
 Intel knowledge lifecycle, deterministic context assembly, and the desktop
-operator architecture, shared application boundary, and isolated active-run
-worker supervision are also implemented. Durable run/project identity is the
-next queued desktop foundation.
+operator architecture, shared application boundary, isolated active-run worker
+supervision, and durable run/project identity are also implemented. Operator
+summary and revision evidence is the next queued desktop foundation.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -46,6 +46,7 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-29**: Desktop operator interface architecture ([RFC-0004](docs/rfcs/rfc0004.md))
 - ✅ **BTN-30**: Shared application command and query boundary
 - ✅ **BTN-31**: Active-run worker supervision
+- ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
 
 ## Architecture
 
@@ -59,7 +60,8 @@ dependencies, acceptance criteria, and current status.
 | `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
 | `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
 | `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
-| `battalion.application` | Typed run, resume, inspection, cost, and worker boundary shared by presentation clients | ✅ Complete (BTN-30–31) |
+| `battalion.application` | Typed run, resume, inspection, cost, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-30–32) |
+| `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
 | `battalion.execution` | Durable node execution, artifact provenance, and cost evidence | ✅ Complete (BTN-19, BTN-16) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
@@ -82,7 +84,9 @@ dependencies, acceptance criteria, and current status.
 
 The versioned state contract includes:
 - `schema_version`: Schema version identifier
-- `run_id`: Unique run identifier
+- `run_id`: UUID canonical identifier for new runs; legacy IDs remain readable
+- `run_alias`: Optional human-readable display label
+- `project_id`: Durable project UUID; optional on legacy state
 - `ticket_id`: Current ticket being processed
 - `spec`: Supplied ticket specification retained across pause and resume
 - `status`: Current run status (not-started, in-progress, blocked, awaiting-human, done, failed-infra)
@@ -358,7 +362,7 @@ persistence, scope, or interrupt authority into the presentation client.
 - **UI foundations (BTN-29–36):** accepted operator architecture, shared
   application commands, isolated workers, durable run/project identity,
   operator evidence, candidate persistence, usage semantics, and a live
-  observation contract. BTN-29–31 are complete; BTN-32–36 remain.
+  observation contract. BTN-29–32 are complete; BTN-33–36 remain.
 - **Framework selection (BTN-37–41):** benchmark equivalent Tauri, PySide6,
   and Electron prototypes, then select the production framework through an ADR.
 - **Production UI (BTN-42–44):** ship the read-only operator console, add

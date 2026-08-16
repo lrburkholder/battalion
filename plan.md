@@ -7,8 +7,9 @@ through BTN-28 add durable cost and execution evidence, the human-audited Recon
 and Intel lifecycle, deterministic context assembly, caller-owned run
 configuration, and project-layout-aware scope enforcement. RFC-0004 (BTN-29)
 defines the accepted desktop operator direction. BTN-30 implements the shared
-application command/query boundary, and BTN-31 adds detached per-run worker
-supervision with durable reconnect and recovery evidence. Later desktop tickets
+application command/query boundary, BTN-31 adds detached per-run worker
+supervision, and BTN-32 separates generated canonical run/project identity from
+display aliases with a compatible project-local catalog. Later desktop tickets
 remain unshipped backlog work.
 
 ## Architecture overview
@@ -40,6 +41,7 @@ resume through the same graph path.
 ```text
 battalion/
   application.py          # shared typed commands, queries, and domain failures
+  identity.py             # canonical UUIDs, project markers, and run catalogs
   workers.py              # detached per-run process supervision and recovery
   cli.py                  # Typer adapter: run, resume, status, setup
   config.py               # YAML, environment, and CLI configuration merge
@@ -104,6 +106,7 @@ The decisions implemented by the v1 architecture are:
 | [ADR-0016](docs/adrs/adr0016.md) | Make Instinct promotion an audited human boundary |
 | [ADR-0018](docs/adrs/adr0018.md) | Use literal, inspectable Instinct retrieval |
 | [ADR-0019](docs/adrs/adr0019.md) | Supervise active runs with detached per-run workers |
+| [ADR-0020](docs/adrs/adr0020.md) | Separate canonical run and project identity from display names |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human
@@ -147,6 +150,8 @@ The v1 implementation landed in this dependency order:
 14. Shared application commands and queries (BTN-30).
 15. Detached active-run worker supervision and durable recovery evidence
     (BTN-31).
+16. Canonical UUID run identity, project markers, display aliases, and legacy
+    catalog compatibility (BTN-32).
 
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.

@@ -3,6 +3,7 @@
 import json
 import tempfile
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from typer.testing import CliRunner
@@ -42,18 +43,8 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     import battalion.application as application_module
     
     def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
-        return RunState(
-            schema_version="1.0",
-            run_id="run-BTN-9-test",
-            ticket_id="BTN-9-test",
-            status=RunStatus.DONE,
-            phase="done",
-            write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-            retry_bound=2,
-            budget=Budget(limit=100, used=5),
-            reviewer_rejection_history=[],
-            interrupt_log=[],
-            manual_checkpoints=[],
+        return initial_state.model_copy(
+            update={"status": RunStatus.DONE, "phase": "done"}
         )
     
     monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
@@ -71,32 +62,24 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     assert "Run complete" in result.output
     
     # Check state file was created
-    state_file = tmp_path / ".battalion" / "state" / "run-BTN-9-test.json"
-    assert state_file.exists()
+    state_files = list((tmp_path / ".battalion" / "state").glob("*.json"))
+    assert len(state_files) == 1
     
     # Verify state content
-    loaded = RunState.model_validate_json(state_file.read_text())
-    assert loaded.run_id == "run-BTN-9-test"
+    loaded = RunState.model_validate_json(state_files[0].read_text())
+    assert UUID(loaded.run_id).version == 4
+    assert loaded.run_alias.startswith("BTN-9-test-")
+    assert loaded.project_id is not None
     assert loaded.status == RunStatus.DONE
 
 
-def test_run_force_overwrites_existing(tmp_path, monkeypatch):
-    """Test that --force overwrites existing state file."""
+def test_repeated_ticket_runs_get_distinct_canonical_ids(tmp_path, monkeypatch):
+    """Aliases may repeat in meaning without overwriting prior ticket runs."""
     import battalion.application as application_module
     
     def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
-        return RunState(
-            schema_version="1.0",
-            run_id="run-BTN-9-test",
-            ticket_id="BTN-9-test",
-            status=RunStatus.DONE,
-            phase="done",
-            write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-            retry_bound=2,
-            budget=Budget(limit=100, used=5),
-            reviewer_rejection_history=[],
-            interrupt_log=[],
-            manual_checkpoints=[],
+        return initial_state.model_copy(
+            update={"status": RunStatus.DONE, "phase": "done"}
         )
     
     monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
@@ -108,13 +91,12 @@ def test_run_force_overwrites_existing(tmp_path, monkeypatch):
         m.chdir(tmp_path)
         # First run
         runner.invoke(app, ["run", "BTN-9-test", "--spec", str(spec_file)])
-        # Second run without --force should fail
+        # A second run is a different canonical run, even for the same ticket.
         result = runner.invoke(app, ["run", "BTN-9-test", "--spec", str(spec_file)])
-        assert result.exit_code != 0
-        assert "already exists" in result.output
-        # With --force should succeed
-        result = runner.invoke(app, ["run", "BTN-9-test", "--spec", str(spec_file), "--force"])
         assert result.exit_code == 0
+        state_files = list((tmp_path / ".battalion" / "state").glob("*.json"))
+        assert len(state_files) == 2
+        assert state_files[0].stem != state_files[1].stem
 
 
 def test_resume_loads_and_continues(tmp_path, monkeypatch):
@@ -248,25 +230,20 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
     from battalion.interrupts.triggers import TRIGGER_INFRA_FAILURE
 
     def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
-        return RunState(
-            schema_version="1.0",
-            run_id="run-BTN-9-test",
-            ticket_id="BTN-9-test",
-            status=RunStatus.AWAITING_HUMAN,
-            phase="awaiting_human",
-            write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-            retry_bound=2,
-            budget=Budget(limit=100, used=1),
-            reviewer_rejection_history=[],
-            manual_checkpoints=[],
-            interrupt_log=[
+        return initial_state.model_copy(
+            update={
+                "status": RunStatus.AWAITING_HUMAN,
+                "phase": "awaiting_human",
+                "budget": Budget(limit=100, used=1),
+                "interrupt_log": [
                 InterruptLogEntry(
                     trigger=TRIGGER_INFRA_FAILURE,
                     timestamp=datetime.now(timezone.utc),
                     resolution=None,
                     context={"error": "LLM call for node 'architect' failed after 3 attempts: AuthenticationError: Invalid API Key"},
                 )
-            ],
+                ],
+            }
         )
 
     monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
@@ -281,7 +258,7 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Run paused" in result.output
     assert "Invalid API Key" in result.output
-    assert "resume run-BTN-9-test" in result.output
+    assert "Resume when ready: battalion resume " in result.output
 
 
 def test_run_with_config_file(tmp_path, monkeypatch):
@@ -373,7 +350,9 @@ write_scope:
 
     assert result.exit_code == 0
     state = captured["state"]
-    assert state.run_id == "run-BTN-27-test"
+    assert UUID(state.run_id).version == 4
+    assert state.run_alias.startswith("BTN-27-test-")
+    assert state.project_id is not None
     assert state.ticket_id == "BTN-27-test"
     assert state.spec == "Caller supplied specification"
     assert state.budget == Budget(limit=13, used=0)

@@ -46,7 +46,11 @@ it rather than maintaining separate sub-schemas.
 
 Fields per ticket/run (draft — to be refined during Architect phase):
 - `schema_version`
-- `run_id`
+- `run_id` (UUIDv4 canonical identifier for new runs; pre-BTN-32
+  human-readable identifiers remain valid for compatibility)
+- `run_alias` (optional human-readable display label; never a persistence key)
+- `project_id` (project-local UUID from `.battalion/project.json`; optional on
+  legacy state)
 - `ticket_id`
 - `spec` (the supplied ticket specification, persisted for every role and resume)
 - `status` (enum: not-started, in-progress, blocked, awaiting-human,
@@ -66,6 +70,13 @@ Fields per ticket/run (draft — to be refined during Architect phase):
   pause after — supports interrupt trigger #6)
 - `execution_record` (a separately versioned, validated history of node
   attempts; see ADR-0014)
+
+New-run construction belongs to the shared application boundary. It generates
+the canonical run UUID and project marker before execution; graph nodes cannot
+replace that identity. `.battalion/runs.json` is a project-scoped, rebuildable
+catalog whose references use canonical run IDs. Moving a repository with its
+`.battalion` directory preserves project identity. Legacy files are discovered
+under their original IDs without rewriting historical provenance (ADR-0020).
 
 ### Durable execution record
 

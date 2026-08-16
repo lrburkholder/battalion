@@ -14,6 +14,7 @@ from battalion.application import (
     ResumeRun,
     RunAlreadyExists,
     StartRun,
+    create_initial_state,
     inspect_run,
     resume_run,
     start_run,
@@ -29,7 +30,7 @@ from battalion.interrupts.triggers import (
     get_trigger_name,
 )
 from battalion.progress import ProgressDisplay
-from battalion.state.models import RunState, RunStatus, Budget
+from battalion.state.models import RunState, RunStatus
 from battalion.config import load_config, DEFAULT_CONFIG_PATH
 from battalion.llm.litellm_client import ModelDiversityError
 from battalion.setup import (
@@ -62,6 +63,8 @@ def _print_status(
     """Print run status as JSON or human-readable."""
     if human:
         # Human-readable summary
+        if state.run_alias:
+            typer.echo(f"Run:         {state.run_alias}")
         typer.echo(f"Run ID:      {state.run_id}")
         typer.echo(f"Ticket:      {state.ticket_id}")
         typer.echo(f"Status:      {state.status.value}")
@@ -163,7 +166,7 @@ def run(
     manual_checkpoint: list[str] | None = typer.Option(None, "--checkpoint", help="Manual checkpoint phase(s)"),
     base_dir: str = typer.Option(".", "--base-dir", help="Base directory for file operations"),
     prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing state file"),
+    force: bool = typer.Option(False, "--force", "-f", help="Authorize overwrite if a canonical ID already exists"),
 ):
     """Start a new ticket run through the Battalion graph."""
     # Load configuration with CLI overrides
@@ -185,24 +188,10 @@ def run(
     # Load spec text
     spec_text = _load_spec_text(spec)
     
-    # Construct the caller-supplied state consumed by the application boundary.
-    run_id = f"run-{ticket_id}"
-    initial_state = RunState(
-        schema_version="1.0",
-        run_id=run_id,
-        ticket_id=ticket_id,
-        spec=spec_text,
-        status=RunStatus.NOT_STARTED,
-        phase="architect",
-        write_scope=cfg.write_scope,
-        retry_bound=2,
-        budget=Budget(limit=cfg.budget_limit, used=0),
-        reviewer_rejection_history=[],
-        interrupt_log=[],
-        manual_checkpoints=cfg.manual_checkpoints,
-    )
+    initial_state = create_initial_state(ticket_id, spec_text, cfg)
+    run_id = initial_state.run_id
     
-    typer.echo(f"Starting run: {run_id}")
+    typer.echo(f"Starting run: {initial_state.run_alias} ({run_id})")
     display = ProgressDisplay()
     try:
         with display:
@@ -229,7 +218,7 @@ def run(
 
 @app.command()
 def resume(
-    run_id: str = typer.Argument(..., help="Run ID (e.g., run-BTN-123)"),
+    run_id: str = typer.Argument(..., help="Canonical UUID or legacy run ID"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to battalion.config.yaml"),
     base_dir: str = typer.Option(".", "--base-dir", help="Base directory for file operations"),
     prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
@@ -259,7 +248,7 @@ def resume(
 
 @app.command()
 def status(
-    run_id: str = typer.Argument(..., help="Run ID (e.g., run-BTN-123)"),
+    run_id: str = typer.Argument(..., help="Canonical UUID or legacy run ID"),
     human: bool = typer.Option(False, "--human", "-h", help="Human-readable output (default: JSON)"),
     costs: bool = typer.Option(False, "--costs", help="Include per-phase LLM token and dollar costs"),
 ):

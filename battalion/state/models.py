@@ -8,8 +8,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class RunStatus(str, Enum):
@@ -143,6 +144,8 @@ class RunState(BaseModel):
 
     schema_version: str
     run_id: str
+    run_alias: str | None = None
+    project_id: str | None = None
     ticket_id: str
     spec: str = ""
     status: RunStatus
@@ -155,3 +158,10 @@ class RunState(BaseModel):
     manual_checkpoints: list[str] = Field(default_factory=list)
     resume_target: str | None = None
     execution_record: ExecutionRecord = Field(default_factory=ExecutionRecord)
+
+    @field_validator("project_id")
+    @classmethod
+    def validate_project_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return str(UUID(value))
