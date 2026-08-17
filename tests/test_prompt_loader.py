@@ -11,20 +11,18 @@ def test_load_system_prompt_reads_file(tmp_path):
     assert content == "You are the Architect. Be rigorous."
 
 
-def test_load_system_prompt_missing_file_raises_clear_error(tmp_path):
+@pytest.mark.parametrize(
+    ("node_name", "contents"),
+    [("nonexistent-node", None), ("driver", "   ")],
+    ids=["missing", "empty"],
+)
+def test_load_system_prompt_rejects_missing_or_empty_templates(
+    tmp_path, node_name, contents
+):
+    if contents is not None:
+        (tmp_path / f"{node_name}.md").write_text(contents)
     with pytest.raises(PromptNotFound):
-        load_system_prompt("nonexistent-node", prompts_dir=tmp_path)
-
-
-def test_load_system_prompt_empty_file_raises():
-    import tempfile
-    from pathlib import Path
-
-    with tempfile.TemporaryDirectory() as d:
-        path = Path(d) / "driver.md"
-        path.write_text("   ")
-        with pytest.raises(PromptNotFound):
-            load_system_prompt("driver", prompts_dir=d)
+        load_system_prompt(node_name, prompts_dir=tmp_path)
 
 
 def test_load_system_prompt_default_dir_finds_repo_prompts():
