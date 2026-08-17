@@ -818,7 +818,7 @@
       "id": "BTN-34",
       "phase": "implementation",
       "title": "Recon candidate persistence",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Persist Recon output as immutable, create-only Markdown candidates with validated metadata and deterministic inbox discovery before human review and Instinct promotion.",
       "acceptance_criteria": [
@@ -837,7 +837,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: Recon candidate persistence",
-      "notes": "The exact metadata format, path, and rejected-candidate retention policy are intentionally resolved while implementing and dogfooding this ticket."
+      "notes": "Implemented 2026-08-17 on the BTN-34 branch. Recon candidates use strict YAML front matter plus deterministic human-readable Markdown under .battalion/recon/candidates. Atomic create-only publication prevents overwrite and partial destination files; the deterministic inbox projects pending, promoted, or rejected from separate immutable decisions without mutating candidate evidence. Rejected candidates are retained indefinitely and no deletion API is exposed. Focused Intel/Recon/docs slice: 46 tests passing. Full suite: 352 tests passing."
     },
     {
       "id": "BTN-35",

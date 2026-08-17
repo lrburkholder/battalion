@@ -1,5 +1,15 @@
 """Engineering knowledge contracts."""
 
+from battalion.intel.candidates import (
+    CandidateDisposition,
+    CandidateInbox,
+    CandidateInboxEntry,
+    CandidateNotFoundError,
+    CandidateRepository,
+    DEFAULT_CANDIDATE_DIR,
+    ImmutableCandidateError,
+)
+
 from battalion.intel.models import (
     AcceptedInstinct,
     AcceptanceProvenance,
@@ -40,6 +50,13 @@ __all__ = [
     "InstinctCreationProvenance",
     "InstinctEvidenceReference",
     "InstinctLifecycle",
+    "CandidateDisposition",
+    "CandidateInbox",
+    "CandidateInboxEntry",
+    "CandidateNotFoundError",
+    "CandidateRepository",
+    "DEFAULT_CANDIDATE_DIR",
+    "ImmutableCandidateError",
     "ImmutableInstinctError",
     "InstinctNotFoundError",
     "IntelRepository",

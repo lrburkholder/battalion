@@ -188,8 +188,9 @@ human approval boundaries, and receive separate implementation tickets.
   that same bounded context path for every execution role.
 - Recon is the canonical name for Battalion's knowledge-capture role; Learner
   refers only to its historical Regiment predecessor. Candidate generation and
-  operator promotion are shipped, while persistent pre-review candidate inboxes
-  remain future work under BTN-34.
+  operator promotion are shipped. The BTN-34 branch implements a create-only
+  Markdown candidate repository and deterministic decision-backed review inbox
+  without granting Recon publication authority; it remains pending merge.
 - RFC-0004 requires every desktop client to remain disposable presentation:
   clients may not invoke LangGraph, mutate RunState, or create a second
   persistence authority. BTN-30 establishes that shared boundary, and BTN-31
