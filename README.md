@@ -57,6 +57,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.state.models` | Versioned state contract (Pydantic models) | ✅ Complete |
 | `battalion.state.persistence` | Local JSON load/save | ✅ Complete |
 | `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
+| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | ✅ Complete on BTN-34 branch; pending merge |
 | `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
 | `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
 | `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
@@ -215,6 +216,7 @@ battalion/
 ├── progress.py                 # CLI progress display
 ├── setup.py                    # Guided model/provider setup (BTN-15)
 ├── intel/
+│   ├── candidates.py           # Create-only Recon Markdown inbox (BTN-34)
 │   ├── models.py               # Candidate and accepted Instinct contracts (BTN-20)
 │   ├── repository.py           # Immutable accepted-Instinct storage (BTN-21)
 │   ├── retrieval.py            # Deterministic Instinct selection (BTN-24)
@@ -272,6 +274,15 @@ tests/
 ├── backlog.json              # Project backlog and ticket tracking
 └── spec.md                   # Detailed specification and ADRs
 ```
+
+Recon candidate evidence is stored at
+`<project>/.battalion/recon/candidates/INS-....md`. YAML front matter is the
+validated machine contract and the remaining Markdown is its deterministic
+operator-readable rendering. Candidate files are create-only. Promotion or
+rejection is represented by a separate append-only review decision, so the
+original candidate remains unchanged. Rejected candidates are retained
+indefinitely for audit evidence; the persistence API intentionally exposes no
+delete operation.
 
 ## Dependencies
 
