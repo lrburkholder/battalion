@@ -104,6 +104,15 @@ persisted state or workspace artifacts. The record is part of `RunState`, so
 normal JSON save/load and graph pause/resume preserve the same evidence without
 a second persistence or resumption path.
 
+Version `1.2` adds bounded operator handoffs; explicit role prompt contract,
+template hash, model-configuration identity, and Battalion revision evidence;
+Git base commit, object algorithm, branch/detached state, and start/end dirty
+state; and SHA-256 context references with inclusion and truncation metadata.
+It retains no prompt/template contents, source contents, configuration values,
+or dirty-worktree patch. A dirty endpoint therefore carries an explicit
+`dirty-workspace-patch-not-retained` limitation and cannot claim exact
+reconstructability.
+
 ### Instinct data contract
 
 BTN-20 introduces a separately versioned `1.0` contract under
@@ -141,6 +150,15 @@ Recon has no write tools or Intel repository access. It cannot change the
 completed execution, publish knowledge, modify standards or architecture, or
 bypass the separate human review and promotion workflow tracked by BTN-23.
 
+BTN-34 persists the returned values separately as create-only Markdown under
+`<project>/.battalion/recon/candidates`. Each `INS-...md` document contains the
+complete strict BTN-20 candidate contract in YAML front matter and a
+deterministic human-readable rendering. Loading validates the contract, the
+filename identifier, and the rendering; confidence remains forbidden.
+Publication uses a same-directory temporary file and an atomic create-only
+link, so a collision cannot replace evidence and an interrupted write cannot
+expose a partial candidate.
+
 ### Operator review and Instinct promotion
 
 BTN-23 provides the only candidate-to-knowledge transition. For each Recon
@@ -156,6 +174,11 @@ contains the operator action, decision timestamp, operator identity, candidate
 identifier, and the resulting accepted identifier for either acceptance path.
 Decision records remain outside `RunState`; the completed execution and Recon
 retain no promotion authority.
+
+Inbox discovery joins candidates to those separate decisions in identifier
+order and projects `pending`, `promoted`, or `rejected` without editing the
+candidate document. Rejected candidates are retained indefinitely as evidence;
+rejection adds only the append-only decision and provides no deletion path.
 
 ### Immutable Intel repository
 

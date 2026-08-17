@@ -15,8 +15,8 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 The v1 execution graph is complete. Durable execution evidence, the Recon and
 Intel knowledge lifecycle, deterministic context assembly, and the desktop
 operator architecture, shared application boundary, isolated active-run worker
-supervision, and durable run/project identity are also implemented. Operator
-summary and revision evidence is the next queued desktop foundation.
+supervision, durable run/project identity, and bounded operator summary and
+revision evidence are also implemented.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -47,6 +47,7 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-30**: Shared application command and query boundary
 - ✅ **BTN-31**: Active-run worker supervision
 - ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
+- ✅ **BTN-33**: Operator summaries and revision evidence
 - ✅ **BTN-35**: Exact, sourced, currency-aware usage evidence
 
 ## Architecture
@@ -58,6 +59,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.state.models` | Versioned state contract (Pydantic models) | ✅ Complete |
 | `battalion.state.persistence` | Local JSON load/save | ✅ Complete |
 | `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
+| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | ✅ Complete on BTN-34 branch; pending merge |
 | `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
 | `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
 | `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
@@ -218,6 +220,7 @@ battalion/
 ├── progress.py                 # CLI progress display
 ├── setup.py                    # Guided model/provider setup (BTN-15)
 ├── intel/
+│   ├── candidates.py           # Create-only Recon Markdown inbox (BTN-34)
 │   ├── models.py               # Candidate and accepted Instinct contracts (BTN-20)
 │   ├── repository.py           # Immutable accepted-Instinct storage (BTN-21)
 │   ├── retrieval.py            # Deterministic Instinct selection (BTN-24)
@@ -275,6 +278,15 @@ tests/
 ├── backlog.json              # Project backlog and ticket tracking
 └── spec.md                   # Detailed specification and ADRs
 ```
+
+Recon candidate evidence is stored at
+`<project>/.battalion/recon/candidates/INS-....md`. YAML front matter is the
+validated machine contract and the remaining Markdown is its deterministic
+operator-readable rendering. Candidate files are create-only. Promotion or
+rejection is represented by a separate append-only review decision, so the
+original candidate remains unchanged. Rejected candidates are retained
+indefinitely for audit evidence; the persistence API intentionally exposes no
+delete operation.
 
 ## Dependencies
 

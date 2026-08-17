@@ -792,7 +792,7 @@
       "id": "BTN-33",
       "phase": "implementation",
       "title": "Operator summaries and revision evidence",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Persist bounded handoff-style operator summaries and enough model, prompt, revision, context, artifact, and verification metadata to inspect what happened without retaining source code or prompt contents by default.",
       "acceptance_criteria": [
@@ -812,13 +812,13 @@
       "blocks": [],
       "assignee_role": "architect",
       "source": "RFC-0004 Expected Follow-Up Tickets: Operator-summary and revision evidence",
-      "notes": "Implements the accepted provenance decision: durable identities, versions, and hashes rather than code or prompt content retention by default."
+      "notes": "Implemented 2026-08-16. Execution record schema 1.2 adds bounded operator handoffs; prompt contract, template hash, model-configuration identity, and Battalion revision evidence; Git base/branch/dirty-state provenance; and bounded context hashes with inclusion and truncation metadata. Dirty workspaces explicitly record that exact reconstruction is unavailable because patches are not retained. Legacy 1.0 and 1.1 records remain readable, configuration values and prompt/source contents are not persisted, and save/load round trips preserve the evidence. Focused refactored unit/integration slice: 26 tests passing. Full suite: 351 tests passing."
     },
     {
       "id": "BTN-34",
       "phase": "implementation",
       "title": "Recon candidate persistence",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Persist Recon output as immutable, create-only Markdown candidates with validated metadata and deterministic inbox discovery before human review and Instinct promotion.",
       "acceptance_criteria": [
@@ -837,7 +837,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: Recon candidate persistence",
-      "notes": "The exact metadata format, path, and rejected-candidate retention policy are intentionally resolved while implementing and dogfooding this ticket."
+      "notes": "Implemented 2026-08-17 on the BTN-34 branch. Recon candidates use strict YAML front matter plus deterministic human-readable Markdown under .battalion/recon/candidates. Atomic create-only publication prevents overwrite and partial destination files; the deterministic inbox projects pending, promoted, or rejected from separate immutable decisions without mutating candidate evidence. Rejected candidates are retained indefinitely and no deletion API is exposed. Focused Intel/Recon/docs slice: 46 tests passing. Full suite: 352 tests passing."
     },
     {
       "id": "BTN-35",

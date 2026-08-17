@@ -154,6 +154,7 @@ The v1 implementation landed in this dependency order:
 16. Canonical UUID run identity, project markers, display aliases, and legacy
     catalog compatibility (BTN-32).
 17. Exact decimal, currency-aware, explicitly sourced usage evidence (BTN-35).
+18. Bounded operator summaries and revision evidence (BTN-33).
 
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.
@@ -188,8 +189,9 @@ human approval boundaries, and receive separate implementation tickets.
   that same bounded context path for every execution role.
 - Recon is the canonical name for Battalion's knowledge-capture role; Learner
   refers only to its historical Regiment predecessor. Candidate generation and
-  operator promotion are shipped, while persistent pre-review candidate inboxes
-  remain future work under BTN-34.
+  operator promotion are shipped. The BTN-34 branch implements a create-only
+  Markdown candidate repository and deterministic decision-backed review inbox
+  without granting Recon publication authority; it remains pending merge.
 - RFC-0004 requires every desktop client to remain disposable presentation:
   clients may not invoke LangGraph, mutate RunState, or create a second
   persistence authority. BTN-30 establishes that shared boundary, and BTN-31

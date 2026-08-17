@@ -1,14 +1,16 @@
 """BTN-19 durable execution record and provenance acceptance tests."""
+import subprocess
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
 
 from battalion.graph import build_graph, resume_ticket
+from battalion.execution import ExecutionCapture
 from battalion.llm.litellm_client import NodeLLMConfig
 from battalion.state.models import (
-    Budget, CheckpointType, ExecutionRecord, NodeExecution, RunState, RunStatus,
+    Budget, CheckpointType, CodeProvenance, EvidenceReference, ExecutionRecord,
+    NodeExecution, RunState, RunStatus,
 )
 from battalion.state.persistence import load_state, save_state
 
@@ -42,44 +44,52 @@ def _configs():
     }
 
 
-def test_complete_graph_run_records_every_node_and_artifact(tmp_path):
-    def architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
-        Path(base_dir, "plan.md").write_text("approved plan", encoding="utf-8")
-        return state.model_copy(update={"phase": "driver", "status": RunStatus.IN_PROGRESS})
+def _architect_stub(state, spec_text, llm_config, base_dir, prompts_dir=None):
+    Path(base_dir, "plan.md").write_text("approved plan", encoding="utf-8")
+    return state.model_copy(update={"phase": "driver", "status": RunStatus.IN_PROGRESS})
 
-    def driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
-        if mode == "red":
-            target = Path(base_dir, "tests", "test_widget.py")
-            content = "def test_widget(): assert False\n"
-        else:
-            target = Path(base_dir, "battalion", "widget.py")
-            content = "def widget(): return True\n"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-        return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
 
-    def reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
-        phase = {
-            CheckpointType.RED_CHECK: "driver_green",
-            CheckpointType.GREEN_CHECK: "refactorer",
-            CheckpointType.REFACTOR_CHECK: "done",
-        }[checkpoint]
-        status = RunStatus.DONE if phase == "done" else RunStatus.IN_PROGRESS
-        return state.model_copy(update={"phase": phase, "status": status})
+def _driver_stub(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+    if mode == "red":
+        target = Path(base_dir, "tests", "test_widget.py")
+        content = "def test_widget(): assert False\n"
+    else:
+        target = Path(base_dir, "battalion", "widget.py")
+        content = "def widget(): return True\n"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
 
-    def refactorer(state, refactor_text, llm_config, base_dir, prompts_dir=None):
-        Path(base_dir, "battalion", "widget.py").write_text(
-            "def widget() -> bool: return True\n", encoding="utf-8"
-        )
-        return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
 
-    with patch("battalion.nodes.architect.run_architect", side_effect=architect), \
-         patch("battalion.nodes.driver.run_driver", side_effect=driver), \
-         patch("battalion.nodes.reviewer.run_reviewer", side_effect=reviewer), \
-         patch("battalion.nodes.refactorer.run_refactorer", side_effect=refactorer):
-        raw = build_graph(_configs(), base_dir=tmp_path).compile().invoke(
-            _state(), {"recursion_limit": 10}
-        )
+def _reviewer_stub(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+    phase = {
+        CheckpointType.RED_CHECK: "driver_green",
+        CheckpointType.GREEN_CHECK: "refactorer",
+        CheckpointType.REFACTOR_CHECK: "done",
+    }[checkpoint]
+    status = RunStatus.DONE if phase == "done" else RunStatus.IN_PROGRESS
+    return state.model_copy(update={"phase": phase, "status": status})
+
+
+def _refactorer_stub(state, refactor_text, llm_config, base_dir, prompts_dir=None):
+    Path(base_dir, "battalion", "widget.py").write_text(
+        "def widget() -> bool: return True\n", encoding="utf-8"
+    )
+    return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
+
+
+@pytest.fixture
+def stub_graph_nodes(monkeypatch):
+    monkeypatch.setattr("battalion.nodes.architect.run_architect", _architect_stub)
+    monkeypatch.setattr("battalion.nodes.driver.run_driver", _driver_stub)
+    monkeypatch.setattr("battalion.nodes.reviewer.run_reviewer", _reviewer_stub)
+    monkeypatch.setattr("battalion.nodes.refactorer.run_refactorer", _refactorer_stub)
+
+
+def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph_nodes):
+    raw = build_graph(_configs(), base_dir=tmp_path).compile().invoke(
+        _state(), {"recursion_limit": 10}
+    )
 
     final = RunState.model_validate(raw)
     executions = final.execution_record.node_executions
@@ -122,38 +132,103 @@ def test_execution_record_format_is_versioned_and_validated():
         ExecutionRecord(schema_version="2.0")
 
 
-def test_execution_record_survives_pause_save_load_and_resume(tmp_path):
-    def architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
-        return state.model_copy(update={"phase": "driver", "status": RunStatus.IN_PROGRESS})
+def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(tmp_path):
+    legacy = NodeExecution.model_validate({
+        "execution_id": "node-legacy",
+        "role": "architect",
+        "phase": "architect",
+        "model_identity": "model",
+        "input_references": [{"kind": "state", "reference": "RunState.spec"}],
+        "started_at": "2026-08-13T00:00:00Z",
+        "ended_at": "2026-08-13T00:00:01Z",
+        "outcome": "succeeded",
+    })
+    assert legacy.operator_summary is None
+    assert legacy.prompt_provenance is None
+    assert legacy.code_provenance is None
 
-    def driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
-        return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
-
-    def reviewer(state, base_dir, llm_config, checkpoint, prompts_dir=None):
-        phase = {
-            CheckpointType.RED_CHECK: "driver_green",
-            CheckpointType.GREEN_CHECK: "refactorer",
-            CheckpointType.REFACTOR_CHECK: "done",
-        }[checkpoint]
-        return state.model_copy(update={
-            "phase": phase,
-            "status": RunStatus.DONE if phase == "done" else RunStatus.IN_PROGRESS,
-        })
-
-    def refactorer(state, refactor_text, llm_config, base_dir, prompts_dir=None):
-        return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
-
-    initial = _state().model_copy(update={"manual_checkpoints": ["driver"]})
-    patches = (
-        patch("battalion.nodes.architect.run_architect", side_effect=architect),
-        patch("battalion.nodes.driver.run_driver", side_effect=driver),
-        patch("battalion.nodes.reviewer.run_reviewer", side_effect=reviewer),
-        patch("battalion.nodes.refactorer.run_refactorer", side_effect=refactorer),
+    state = _state().model_copy(update={"spec": "x" * 1_100_000})
+    config = NodeLLMConfig(
+        model="architect-model", extra_params={"api_key": "must-not-be-retained"}
     )
-    with patches[0], patches[1], patches[2], patches[3]:
-        paused = RunState.model_validate(
-            build_graph(_configs(), base_dir=tmp_path).compile().invoke(initial)
+    capture = ExecutionCapture.start(
+        state, "architect", config.model, tmp_path, model_configuration=config
+    )
+    completed = capture.finish(
+        state,
+        state.model_copy(update={"phase": "driver", "status": RunStatus.IN_PROGRESS}),
+    )
+    execution = completed.execution_record.node_executions[-1]
+    reference = execution.input_references[0]
+    assert reference.sha256 is not None
+    assert reference.hash_algorithm == "sha256"
+    assert reference.inclusion_reason
+    assert reference.truncated is True
+    assert reference.observed_bytes == 1_100_000
+    assert reference.hashed_bytes < reference.observed_bytes
+    assert execution.operator_summary.last_node == "architect"
+    assert execution.operator_summary.what_should_happen_next == "Continue at phase driver."
+    assert execution.prompt_provenance.contract_version == "architect/v1"
+    assert execution.prompt_provenance.template_path == "prompts/architect.md"
+    assert len(execution.prompt_provenance.template_hash) == 64
+    assert len(execution.prompt_provenance.model_configuration_identity) == 64
+    assert "must-not-be-retained" not in execution.model_dump_json()
+    assert execution.code_provenance.repository_available is False
+
+    with pytest.raises(ValidationError, match="context digest metadata must be complete"):
+        EvidenceReference(
+            kind="state", reference="RunState.spec", sha256="0" * 64
         )
+    with pytest.raises(ValidationError, match="complete repository evidence"):
+        CodeProvenance(repository_available=True)
+
+
+def test_dirty_git_workspace_is_explicitly_not_exactly_reconstructable(tmp_path):
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-b", "btn-33-test")
+    git("config", "user.email", "battalion-tests@example.invalid")
+    git("config", "user.name", "Battalion Tests")
+    plan = tmp_path / "plan.md"
+    plan.write_text("initial plan", encoding="utf-8")
+    git("add", "plan.md")
+    git("commit", "-m", "initial")
+    base_commit = git("rev-parse", "HEAD")
+
+    state = _state()
+    capture = ExecutionCapture.start(
+        state,
+        "architect",
+        "architect-model",
+        tmp_path,
+        model_configuration=NodeLLMConfig(model="architect-model"),
+    )
+    plan.write_text("changed plan", encoding="utf-8")
+    completed = capture.finish(
+        state,
+        state.model_copy(update={"phase": "driver", "status": RunStatus.IN_PROGRESS}),
+    )
+    provenance = completed.execution_record.node_executions[-1].code_provenance
+    assert provenance.base_commit_object_id == base_commit
+    assert provenance.object_id_algorithm in {"sha1", "sha256"}
+    assert provenance.branch == "btn-33-test"
+    assert provenance.detached is False
+    assert provenance.dirty_at_start is False
+    assert provenance.dirty_at_end is True
+    assert provenance.exact_workspace_reconstructable is False
+    assert provenance.reconstruction_limitation == "dirty-workspace-patch-not-retained"
+
+
+def test_execution_record_survives_pause_save_load_and_resume(
+    tmp_path, stub_graph_nodes
+):
+    initial = _state().model_copy(update={"manual_checkpoints": ["driver"]})
+    paused = RunState.model_validate(
+        build_graph(_configs(), base_dir=tmp_path).compile().invoke(initial)
+    )
 
     assert paused.status == RunStatus.AWAITING_HUMAN
     assert len(paused.execution_record.node_executions) == 1
@@ -164,16 +239,9 @@ def test_execution_record_survives_pause_save_load_and_resume(tmp_path):
     path = tmp_path / "paused.json"
     save_state(paused, path)
     loaded = load_state(path).model_copy(update={"manual_checkpoints": []})
-    patches = (
-        patch("battalion.nodes.architect.run_architect", side_effect=architect),
-        patch("battalion.nodes.driver.run_driver", side_effect=driver),
-        patch("battalion.nodes.reviewer.run_reviewer", side_effect=reviewer),
-        patch("battalion.nodes.refactorer.run_refactorer", side_effect=refactorer),
+    resumed = RunState.model_validate(
+        resume_ticket(loaded, _configs(), base_dir=tmp_path)
     )
-    with patches[0], patches[1], patches[2], patches[3]:
-        resumed = RunState.model_validate(
-            resume_ticket(loaded, _configs(), base_dir=tmp_path)
-        )
 
     assert resumed.status == RunStatus.DONE
     assert len(resumed.execution_record.node_executions) == 7
