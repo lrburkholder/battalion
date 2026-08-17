@@ -1,0 +1,21 @@
+{
+  "name": "battalion-electron-benchmark",
+  "version": "0.1.0",
+  "description": "Disposable BTN-40 Electron desktop framework benchmark",
+  "main": "src/main.cjs",
+  "author": "Battalion benchmark",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node tests/run-contract.mjs",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-zip": "7.11.2",
+    "electron": "43.4.0"
+  }
+}
+
