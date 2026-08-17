@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "BTN-37-desktop-v1",
+  "framework": "tauri",
+  "entries": [
+    {"step_id": "work", "observed": {"project_id": "30000000-0000-4000-8000-000000000037", "ticket_id": "BTN-102"}},
+    {"step_id": "history", "observed": {"run_ids": ["20000000-0000-4000-8000-000000000037", "10000000-0000-4000-8000-000000000037"]}},
+    {"step_id": "execution", "observed": {"execution_id": "node-driver-green-1", "artifact": "src/widget.py"}},
+    {"step_id": "cost", "observed": {"known_cost": "0.0123", "currency": "USD", "unknown_cost_calls": 1}},
+    {"step_id": "provenance", "observed": {"revision": "dddddddddddddddddddddddddddddddddddddddd", "context_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "exact_workspace_reconstructable": true}},
+    {"step_id": "live", "observed": {"sequences": [1, 2, 3], "kinds": ["node-started", "interrupt", "state-checkpoint"], "node": "driver_green"}},
+    {"step_id": "reconnect", "observed": {"durable_first": true, "phase": "driver_green", "barrier_sequence": 3}},
+    {"step_id": "interrupt", "observed": {"action_id": "resolve-interrupt", "result": "in-progress"}},
+    {"step_id": "candidate", "observed": {"candidate_id": "INS-BENCHMARK-SCOPE", "disposition": "promoted"}},
+    {"step_id": "correction", "observed": {"action_id": "queue-correction", "target": "driver_green", "timing": "next-attempt"}},
+    {"step_id": "design", "observed": {"action_id": "queue-design-decision", "target": "architect", "timing": "next-attempt"}},
+    {"step_id": "provider-guard", "observed": {"provider_mode": "disabled", "provider_calls": 0}}
+  ]
+}
