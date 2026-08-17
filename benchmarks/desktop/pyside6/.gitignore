@@ -1,0 +1,6 @@
+benchmark-input/
+build/
+dist/
+deployment/
+!pysidedeploy.spec
+nuitka-crash-report.xml

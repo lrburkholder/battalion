@@ -939,7 +939,7 @@
       "id": "BTN-39",
       "phase": "implementation",
       "title": "PySide6 desktop architecture spike",
-      "status": "not-started",
+      "status": "in-progress",
       "priority": "P1",
       "description": "Implement the common desktop benchmark fixture as a disposable PySide6 prototype and record the evidence needed for framework selection.",
       "acceptance_criteria": [
