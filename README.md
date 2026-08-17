@@ -15,8 +15,9 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 The v1 execution graph is complete. Durable execution evidence, the Recon and
 Intel knowledge lifecycle, deterministic context assembly, and the desktop
 operator architecture, shared application boundary, isolated active-run worker
-supervision, durable run/project identity, and bounded operator summary and
-revision evidence are also implemented.
+supervision, and durable run/project identity are also implemented. Operator
+summary and revision evidence remains queued; the typed live-observation and
+durable-first reconnect contract is implemented for future presentation clients.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -49,6 +50,7 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
 - ✅ **BTN-33**: Operator summaries and revision evidence
 - ✅ **BTN-35**: Exact, sourced, currency-aware usage evidence
+- ✅ **BTN-36**: Typed live observation and durable-first reconnect contract
 
 ## Architecture
 
@@ -66,6 +68,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.application` | Typed run, resume, inspection, cost, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-30–32) |
 | `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
+| `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | ✅ Complete (BTN-36) |
 | `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | ✅ Complete (BTN-16, BTN-19, BTN-35) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
@@ -212,6 +215,7 @@ battalion/
 ├── __main__.py                 # `python -m battalion`
 ├── application.py              # Shared typed command/query boundary (BTN-30)
 ├── workers.py                  # Per-run worker supervision and recovery (BTN-31)
+├── observation.py              # Typed live observation contract (BTN-36)
 ├── cli.py                      # Thin Typer presentation adapter
 ├── config.py                   # Configuration loading and validation
 ├── context.py                  # Bounded node context assembly (BTN-26)
