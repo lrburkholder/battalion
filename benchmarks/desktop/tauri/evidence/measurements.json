@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "BTN-37-desktop-v1",
+  "framework": "tauri",
+  "collected_at": "2026-08-17",
+  "environment": {
+    "os": "Microsoft Windows 11 Home 10.0.26200 build 26200",
+    "cpu": "AMD Ryzen 7 7745HX with Radeon Graphics",
+    "logical_processors": 16,
+    "memory_bytes": 16308531200,
+    "powershell": "7.6.5",
+    "node": "24.2.0",
+    "rustc": "1.97.1",
+    "cargo": "1.97.1",
+    "tauri_cli": "2.11.4",
+    "tauri": "2.11.5",
+    "webview2": "151.0.4129.86"
+  },
+  "measurements": [
+    {
+      "category": "packaging",
+      "observations": {
+        "installed_application_payload_bytes": 8697344,
+        "release_artifact_count": 3,
+        "clean_machine_launch": "not available on the benchmark workstation",
+        "artifacts": [
+          {
+            "name": "battalion-tauri-spike.exe",
+            "bytes": 8697344,
+            "sha256": "1346DA64AB9FB260D15F2855B1F2F6F0C89EAD4DDDAF73BA9A6AE64744AAEB69"
+          },
+          {
+            "name": "Battalion Tauri Benchmark_0.1.0_x64_en-US.msi",
+            "bytes": 2895872,
+            "sha256": "B93B9A379EE31AD78343C7E084CC91488D456C43C9374A4289F095F3E0147D6F"
+          },
+          {
+            "name": "Battalion Tauri Benchmark_0.1.0_x64-setup.exe",
+            "bytes": 1901684,
+            "sha256": "D5CF24E2A886AB90408E25B807BFDD85D9834600CE053A2C1814A9E743FA2104"
+          }
+        ]
+      }
+    },
+    {
+      "category": "process",
+      "observations": {
+        "idle_process_count": 7,
+        "idle_processes": {
+          "battalion-tauri-spike.exe": 1,
+          "msedgewebview2.exe": 6
+        },
+        "worker_isolation": "not implemented in this fixture-only spike",
+        "client_crash_tree_process_count": 7,
+        "orphan_processes_one_second_after_main_process_kill": 0
+      }
+    },
+    {
+      "category": "resource",
+      "observations": {
+        "cold_start_window_ready_ms": [136.57, 103.44, 106.59, 91.31, 91.24],
+        "cold_start_median_ms": 103.44,
+        "idle_samples": [
+          {"working_set_bytes": 432709632, "private_bytes": 248741888, "cpu_seconds_since_launch": 1.4219},
+          {"working_set_bytes": 423882752, "private_bytes": 248590336, "cpu_seconds_since_launch": 1.2188},
+          {"working_set_bytes": 444678144, "private_bytes": 253321216, "cpu_seconds_since_launch": 1.4844},
+          {"working_set_bytes": 423735296, "private_bytes": 244785152, "cpu_seconds_since_launch": 1.4844},
+          {"working_set_bytes": 437415936, "private_bytes": 237481984, "cpu_seconds_since_launch": 1.2344}
+        ],
+        "idle_working_set_median_bytes": 432709632,
+        "idle_private_median_bytes": 248590336,
+        "idle_cpu_seconds_since_launch_median": 1.4219,
+        "scenario_samples": [
+          {"complete_ms": 592.14, "process_count": 4, "working_set_bytes": 136921088, "private_bytes": 40353792, "cpu_seconds_since_launch": 1.2344},
+          {"complete_ms": 654.20, "process_count": 6, "working_set_bytes": 223322112, "private_bytes": 102592512, "cpu_seconds_since_launch": 1.7969},
+          {"complete_ms": 620.63, "process_count": 6, "working_set_bytes": 296214528, "private_bytes": 198471680, "cpu_seconds_since_launch": 1.5156},
+          {"complete_ms": 609.83, "process_count": 5, "working_set_bytes": 145629184, "private_bytes": 45760512, "cpu_seconds_since_launch": 1.3281},
+          {"complete_ms": 661.65, "process_count": 6, "working_set_bytes": 294678528, "private_bytes": 194760704, "cpu_seconds_since_launch": 1.7031}
+        ],
+        "scenario_median_ms": 620.63,
+        "active_working_set_median_bytes": 223322112,
+        "active_private_median_bytes": 102592512,
+        "active_cpu_seconds_since_launch_median": 1.5156,
+        "active_snapshot_note": "captured immediately after renderer completion; WebView child startup makes process count and memory intentionally variable"
+      }
+    },
+    {
+      "category": "accessibility",
+      "observations": {
+        "keyboard_completion": "all 12 steps complete without pointer input; Windows UI Automation exposes all 12 list items as keyboard focusable",
+        "focus_order": ["work", "history", "execution", "cost", "provenance", "live", "reconnect", "interrupt", "candidate", "correction", "design", "provider-guard", "acceptance-trace"],
+        "screen_reader_names": "Windows UI Automation exposed the document title, completion status, both named regions, all 12 named list items, and trace text",
+        "narrator_audio_pass": "not performed",
+        "contrast_ratios": {
+          "primary_text_on_page": 15.70,
+          "eyebrow_on_page": 10.17,
+          "completion_on_panel": 9.52,
+          "trace_on_panel": 10.84,
+          "error_on_page": 9.28,
+          "focus_outline_on_panel": 8.79
+        }
+      }
+    },
+    {
+      "category": "testability",
+      "observations": {
+        "headless_coverage": "pure ECMAScript adapter plus Rust unit tests and Python contract tests",
+        "determinism": "shared acceptance validator passed three consecutive runs",
+        "failure_diagnostics": "unsupported fixture identity and measurement write/permission failures are explicit",
+        "provider_calls": 0
+      }
+    },
+    {
+      "category": "failure-recovery",
+      "observations": {
+        "worker_crash": "unsupported: the disposable spike has no worker or sidecar supervisor; production behavior remains unverified",
+        "client_restart_scenario_ms": 753.24,
+        "client_restart_result": "reloaded packaged durable fixture and completed all 12 steps",
+        "missed_transient_event": "durable-only observation input restored phase driver_green at barrier sequence 3",
+        "malformed_fixture": "rejected explicitly as unsupported fixture: malformed",
+        "orphan_processes_after_client_crash": 0
+      }
+    },
+    {
+      "category": "permission-surface",
+      "observations": {
+        "filesystem_grants": [],
+        "process_grants": [],
+        "network_grants": [],
+        "renderer_capabilities": ["core:default"],
+        "release_probe": {
+          "undeclared_filesystem_denied": true,
+          "undeclared_shell_denied": true,
+          "outbound_network_denied": true
+        },
+        "rust_host_authority": "ambient filesystem and process authority; benchmark output path is launcher-selected and unavailable to the renderer"
+      }
+    },
+    {
+      "category": "learning",
+      "observations": {
+        "new_concepts": ["Rust ownership and typed errors", "Tauri commands and managed state", "capability manifests", "CSP", "WebView2 process accounting", "WiX and NSIS bundling"],
+        "blocked_time_minutes": null,
+        "debugging_time_minutes": null,
+        "time_note": "the original spike did not start a timestamped learning log, so retrospective minute estimates are intentionally omitted",
+        "observed_command_times": {
+          "first_release_compile_seconds": 93,
+          "initial_no_bundle_compile_seconds": 107,
+          "final_incremental_release_and_bundle_seconds": 56
+        },
+        "confidence": "high for fixture boundary, Windows release packaging, permission denial, and renderer semantics; low for production sidecar supervision and other operating systems"
+      }
+    },
+    {
+      "category": "implementation-complexity",
+      "observations": {
+        "framework_specific_files": 10,
+        "framework_specific_lines": 387,
+        "boundary_adapters": ["pure ECMAScript scenario adapter", "typed Rust benchmark and boundary commands"],
+        "configuration_files": ["Cargo.toml", "tauri.conf.json", "capabilities/main.json", "build.rs"],
+        "direct_dependencies": ["tauri", "serde", "tauri-build"],
+        "frontend_dependencies": []
+      }
+    }
+  ]
+}

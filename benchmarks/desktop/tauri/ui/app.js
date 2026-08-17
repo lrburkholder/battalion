@@ -10,6 +10,23 @@ async function loadJson(name) {
   return response.json();
 }
 
+async function permissionProbes(invoke) {
+  async function denied(operation) {
+    try {
+      await operation();
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  return {
+    filesystemDenied: await denied(() => invoke("plugin:fs|read_text_file", { path: "C:\\Windows\\win.ini" })),
+    shellDenied: await denied(() => invoke("plugin:shell|execute", { program: "cmd", args: ["/c", "exit"] })),
+    networkDenied: await denied(() => fetch("https://example.invalid/btn-38-permission-probe")),
+  };
+}
+
 async function start() {
   try {
     const [fixture, scenario] = await Promise.all([
@@ -25,6 +42,13 @@ async function start() {
     }));
     traceOutput.textContent = JSON.stringify(trace, null, 2);
     status.textContent = `${trace.entries.length} of ${scenario.length} steps complete`;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const invoke = window.__TAURI__?.core.invoke;
+    if (invoke) {
+      const boundary = await invoke("boundary_contract");
+      const probes = boundary.permission_probe ? await permissionProbes(invoke) : null;
+      await invoke("benchmark_complete", { probes });
+    }
   } catch (error) {
     status.textContent = `Benchmark failed: ${error.message}`;
     status.dataset.state = "error";

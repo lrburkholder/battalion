@@ -53,6 +53,21 @@ def test_tauri_adapter_completes_shared_acceptance_contract(tmp_path):
     assert completed.stdout.strip() == "PASS: Tauri adapter completed 12 shared steps"
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is required for Tauri adapter tests")
+def test_tauri_adapter_failure_diagnostics_and_missed_event_recovery():
+    completed = subprocess.run(
+        ["node", str(SPIKE_ROOT / "tests" / "run-failures.mjs")],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.strip() == (
+        "PASS: Tauri adapter recovered durable state and diagnosed malformed input"
+    )
+
+
 def test_tauri_renderer_has_no_privileged_plugin_or_remote_network_access():
     cargo = (SPIKE_ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
     capability = json.loads(
@@ -64,6 +79,7 @@ def test_tauri_renderer_has_no_privileged_plugin_or_remote_network_access():
 
     assert "tauri-plugin" not in cargo
     assert capability["permissions"] == ["core:default"]
+    assert config["app"]["withGlobalTauri"] is True
     assert "connect-src 'self'" in config["app"]["security"]["csp"]
     assert "http:" not in config["app"]["security"]["csp"]
     assert "https:" not in config["app"]["security"]["csp"]
@@ -75,3 +91,45 @@ def test_tauri_windows_resource_icon_is_present():
 
     assert source.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert windows_icon.read_bytes().startswith(b"\x00\x00\x01\x00")
+
+
+def test_tauri_measurement_hook_has_no_renderer_selected_path_or_extra_capability():
+    rust = (SPIKE_ROOT / "src-tauri" / "src" / "main.rs").read_text(encoding="utf-8")
+    renderer = (SPIKE_ROOT / "ui" / "app.js").read_text(encoding="utf-8")
+
+    assert '--benchmark-ready-file=' in rust
+    assert '--benchmark-permission-probe' in rust
+    assert "std::fs::write(ready_file, marker)" in rust
+    assert 'code: "benchmark-ready-write-failed"' in rust
+    assert 'code: "permission-probe-failed"' in rust
+    assert 'invoke("benchmark_complete", { probes })' in renderer
+    assert 'invoke("plugin:fs|read_text_file"' in renderer
+    assert 'invoke("plugin:shell|execute"' in renderer
+    assert 'fetch("https://example.invalid/btn-38-permission-probe")' in renderer
+    assert "ready_file" not in renderer
+
+
+def test_tauri_evidence_covers_shared_measurement_template():
+    evidence = json.loads(
+        (SPIKE_ROOT / "evidence" / "measurements.json").read_text(encoding="utf-8")
+    )
+    categories = [measurement["category"] for measurement in evidence["measurements"]]
+
+    assert categories == [
+        "packaging",
+        "process",
+        "resource",
+        "accessibility",
+        "testability",
+        "failure-recovery",
+        "permission-surface",
+        "learning",
+        "implementation-complexity",
+    ]
+    resource = evidence["measurements"][2]["observations"]
+    assert len(resource["cold_start_window_ready_ms"]) == 5
+    assert len(resource["idle_samples"]) == 5
+    assert len(resource["scenario_samples"]) == 5
+    assert evidence["measurements"][5]["observations"]["worker_crash"].startswith(
+        "unsupported:"
+    )

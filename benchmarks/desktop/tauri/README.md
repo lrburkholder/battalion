@@ -13,18 +13,20 @@ framework decision in an accepted ADR.
 ## Current state
 
 The framework-neutral scenario adapter and Tauri shell are implemented. The
-adapter completes all twelve shared scenario steps and produces an accepted
-trace. A native optimized Windows executable now builds successfully with the
-generated placeholder icon. Installer, runtime-resource, accessibility, and
-failure-recovery measurements remain, so BTN-38 is still in progress.
+release application completes all twelve shared steps, emits MSI and NSIS
+installers, and has completed the BTN-37 packaging, process, resource,
+accessibility, testability, failure, permission, learning, and complexity
+measurements. Negative results and environmental limitations remain explicit
+in `evidence/findings.md`.
 
 ## Prepare and test the shared scenario
 
 From the repository root:
 
 ```powershell
-.\.venv\Scripts\python.exe benchmarks\desktop\tauri\prepare.py
+.\.venv\Scripts\python.exe -m benchmarks.desktop.tauri.prepare
 node benchmarks\desktop\tauri\tests\run-contract.mjs
+node benchmarks\desktop\tauri\tests\run-failures.mjs
 .\.venv\Scripts\python.exe -m benchmarks.desktop.acceptance benchmarks\desktop\tauri\evidence\trace.json
 ```
 
@@ -51,12 +53,32 @@ set; regenerate it with `cargo tauri icon app-icon.png`. The spike retains the
 configured Windows, macOS, and Linux outputs and discards generated mobile and
 Store variants.
 
+## Reproduce release measurements
+
+After `cargo tauri build`, run from the spike directory:
+
+```powershell
+.\measure.ps1
+```
+
+The harness launches only the release executable. It records five native-window
+starts, five 1.5-second idle process trees, five full renderer scenarios,
+effective filesystem/shell/network denial, client crash cleanup, restart
+recovery, release sizes, and hashes. It prints JSON; the accepted run is stored
+in `evidence/measurements.json`.
+
+The release-only `--benchmark-ready-file` and
+`--benchmark-permission-probe` arguments exist solely for this disposable
+measurement harness. The output path is selected by the launcher, not the
+renderer, and normal launches do not write benchmark output.
+
 ## Security and authority boundary
 
 The renderer has no shell, filesystem, dialog, or network plugin. Its only
-capability is `core:default`; CSP disables outbound connections. The sole Rust
-command returns static boundary metadata and cannot mutate Battalion state.
-All simulated operator actions remain renderer-local fixture projections.
+capability is `core:default`; CSP disables outbound connections. Rust exposes
+typed boundary metadata plus the opt-in benchmark acknowledgement used by the
+measurement harness; neither can mutate Battalion state. All simulated
+operator actions remain renderer-local fixture projections.
 
 Do not add application policy, graph access, provider calls, credentials, or
 repository writes to this spike. A later production UI must replace the
