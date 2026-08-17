@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from battalion.config import BattalionConfig
 from battalion.execution import summarize_costs
@@ -24,6 +25,12 @@ from battalion.identity import (
     generate_run_identity,
     load_project_identity,
     register_run,
+)
+from battalion.observation import (
+    ObservationCallback,
+    ObservationCursor,
+    ObservationSource,
+    RunObservationPublisher,
 )
 from battalion.state.models import Budget, RunState, RunStatus
 from battalion.state.persistence import load_state, save_state
@@ -166,6 +173,22 @@ class ReconnectWorker:
 
 
 @dataclass(frozen=True)
+class ReconnectObservation:
+    """Request an authoritative snapshot before resuming one live stream."""
+
+    run_id: str
+    stream_id: UUID
+
+
+@dataclass(frozen=True)
+class ObservationSnapshot:
+    """Durable baseline and live cursor returned in safe consumption order."""
+
+    inspection: RunInspection
+    cursor: ObservationCursor
+
+
+@dataclass(frozen=True)
 class RunOperationResult:
     """Typed result returned by state-changing run operations."""
 
@@ -229,6 +252,7 @@ def start_run(
     state_dir: str | Path = DEFAULT_STATE_DIR,
     on_node_event: EventCallback | None = None,
     on_token: EventCallback | None = None,
+    on_observation: ObservationCallback | None = None,
     _execute: Callable[..., RunState | dict[str, Any]] | None = None,
 ) -> RunOperationResult:
     """Execute a new run through the graph and persist its resulting state."""
@@ -240,17 +264,30 @@ def start_run(
     _register_canonical_run(initial_state, command.config, path)
 
     execute = _execute or run_ticket
+    publisher = (
+        RunObservationPublisher(initial_state.run_id, on_observation)
+        if on_observation is not None
+        else None
+    )
+    node_callback, token_callback = _live_callbacks(
+        publisher, on_node_event, on_token
+    )
+
+    def checkpoint(state: RunState | dict[str, Any]) -> None:
+        validated = RunState.model_validate(state)
+        save_state(validated, path)
+        if publisher is not None:
+            publisher.handle_checkpoint(validated)
+
     final_state = RunState.model_validate(
         execute(
             initial_state=initial_state,
             llm_configs=command.config.models,
             base_dir=command.config.base_dir,
             prompts_dir=command.config.prompts_dir,
-            on_node_event=on_node_event,
-            on_token=on_token,
-            on_state_checkpoint=lambda checkpoint: save_state(
-                RunState.model_validate(checkpoint), path
-            ),
+            on_node_event=node_callback,
+            on_token=token_callback,
+            on_state_checkpoint=checkpoint,
         )
     )
     if final_state.run_id != initial_state.run_id:
@@ -273,6 +310,7 @@ def resume_run(
     state_dir: str | Path = DEFAULT_STATE_DIR,
     on_node_event: EventCallback | None = None,
     on_token: EventCallback | None = None,
+    on_observation: ObservationCallback | None = None,
     _execute: Callable[..., RunState | dict[str, Any]] | None = None,
 ) -> RunOperationResult:
     """Load, resume through the canonical graph behavior, and save one run."""
@@ -285,17 +323,30 @@ def resume_run(
 
     execute = _execute or resume_ticket
     path = state_path(command.run_id, state_dir)
+    publisher = (
+        RunObservationPublisher(state.run_id, on_observation)
+        if on_observation is not None
+        else None
+    )
+    node_callback, token_callback = _live_callbacks(
+        publisher, on_node_event, on_token
+    )
+
+    def checkpoint(checkpoint_state: RunState | dict[str, Any]) -> None:
+        validated = RunState.model_validate(checkpoint_state)
+        save_state(validated, path)
+        if publisher is not None:
+            publisher.handle_checkpoint(validated)
+
     final_state = RunState.model_validate(
         execute(
             state=state,
             llm_configs=command.config.models,
             base_dir=command.config.base_dir,
             prompts_dir=command.config.prompts_dir,
-            on_node_event=on_node_event,
-            on_token=on_token,
-            on_state_checkpoint=lambda checkpoint: save_state(
-                RunState.model_validate(checkpoint), path
-            ),
+            on_node_event=node_callback,
+            on_token=token_callback,
+            on_state_checkpoint=checkpoint,
         )
     )
     if final_state.run_id != state.run_id:
@@ -326,6 +377,24 @@ def inspect_run(
         state=state,
         costs=summarize_costs(state.execution_record),
     )
+
+
+def reconnect_observation(
+    query: ReconnectObservation,
+    source: ObservationSource,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+) -> ObservationSnapshot:
+    """Reload durable truth before a client consumes post-barrier live events.
+
+    Capturing the barrier first ensures events published while persistence is
+    being read have a sequence greater than the returned cursor.  The caller
+    must render ``inspection`` before requesting ``source.after(cursor)``.
+    """
+    state_path(query.run_id, state_dir)
+    cursor = source.barrier(query.run_id, query.stream_id)
+    inspection = inspect_run(InspectRun(query.run_id), state_dir=state_dir)
+    return ObservationSnapshot(inspection=inspection, cursor=cursor)
 
 
 def start_worker(
@@ -413,6 +482,27 @@ def reconnect_worker(
         raise WorkerNotFound(str(exc)) from exc
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise WorkerRecordReadFailed(command.run_id, exc) from exc
+
+
+def _live_callbacks(
+    publisher: RunObservationPublisher | None,
+    on_node_event: EventCallback | None,
+    on_token: EventCallback | None,
+) -> tuple[EventCallback | None, EventCallback | None]:
+    if publisher is None:
+        return on_node_event, on_token
+
+    def node_callback(event: dict[str, Any]) -> None:
+        publisher.handle_node_event(event)
+        if on_node_event is not None:
+            on_node_event(event)
+
+    def token_callback(event: dict[str, Any]) -> None:
+        publisher.handle_token(event)
+        if on_token is not None:
+            on_token(event)
+
+    return node_callback, token_callback
 
 
 def _load_run(run_id: str, state_dir: str | Path) -> RunState:

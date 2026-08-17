@@ -16,7 +16,8 @@ The v1 execution graph is complete. Durable execution evidence, the Recon and
 Intel knowledge lifecycle, deterministic context assembly, and the desktop
 operator architecture, shared application boundary, isolated active-run worker
 supervision, and durable run/project identity are also implemented. Operator
-summary and revision evidence is the next queued desktop foundation.
+summary and revision evidence remains queued; the typed live-observation and
+durable-first reconnect contract is implemented for future presentation clients.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -47,6 +48,7 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-30**: Shared application command and query boundary
 - ✅ **BTN-31**: Active-run worker supervision
 - ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
+- ✅ **BTN-36**: Typed live observation and durable-first reconnect contract
 
 ## Architecture
 
@@ -63,6 +65,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.application` | Typed run, resume, inspection, cost, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-30–32) |
 | `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
+| `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | ✅ Complete (BTN-36) |
 | `battalion.execution` | Durable node execution, artifact provenance, and cost evidence | ✅ Complete (BTN-19, BTN-16) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
@@ -207,6 +210,7 @@ battalion/
 ├── __main__.py                 # `python -m battalion`
 ├── application.py              # Shared typed command/query boundary (BTN-30)
 ├── workers.py                  # Per-run worker supervision and recovery (BTN-31)
+├── observation.py              # Typed live observation contract (BTN-36)
 ├── cli.py                      # Thin Typer presentation adapter
 ├── config.py                   # Configuration loading and validation
 ├── context.py                  # Bounded node context assembly (BTN-26)

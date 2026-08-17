@@ -866,7 +866,7 @@
       "id": "BTN-36",
       "phase": "implementation",
       "title": "Live observation contract",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Define and implement the framework-neutral observation contract for active runs, including durable and transient event categories and reload-after-disconnect behavior.",
       "acceptance_criteria": [
@@ -884,7 +884,7 @@
       "blocks": [],
       "assignee_role": "architect",
       "source": "RFC-0004 Expected Follow-Up Tickets: Live observation contract",
-      "notes": "The minimum durable granularity beyond existing node-execution boundaries should be derived from recovery tests and recorded as part of this contract."
+      "notes": "Implemented 2026-08-17. ADR-0021 records immutable versioned events ordered per canonical run and operation stream, with stable event IDs, timezone-aware timestamps, node-attempt identity, explicit durable, transient, and action-required categories, idempotent duplicate delivery, and malformed-event validation. Application callbacks publish typed observations only after durable checkpoints are saved. Reconnect captures a live barrier, reloads authoritative RunState through inspection, then permits post-barrier consumption; bounded transports may lose transient progress without becoming a state authority. Full suite: 354 tests passing."
     },
     {
       "id": "BTN-37",
