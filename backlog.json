@@ -890,7 +890,7 @@
       "id": "BTN-37",
       "phase": "testing",
       "title": "Desktop framework benchmark fixture",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Build the shared fake project, run history, simulated transitions, operator actions, and measurement procedure used unchanged by all three desktop framework spikes.",
       "acceptance_criteria": [
@@ -911,7 +911,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: Framework benchmark fixture",
-      "notes": "This fixture is the control for the three disposable architecture spikes; framework-specific conveniences must not change the tested workflow."
+      "notes": "Implemented 2026-08-17. benchmarks/desktop exports deterministic framework-neutral JSON for two fake projects, tickets, completed and interrupted runs, node attempts, artifacts, sourced and unknown usage, bounded provenance, Recon candidates, typed live transitions, and simulated operator actions. One ordered scenario and acceptance validator are shared unchanged by Tauri, PySide6, and Electron. The measurement template covers packaging, process, resources, accessibility, testability, failure recovery, permissions, learning, and implementation complexity. Fixture code imports no provider boundary, reads no credentials, and tests verify secret-independent deterministic output. Focused BTN-37 and Pages slice: 11 tests passing. Full suite: 373 tests passing."
     },
     {
       "id": "BTN-38",

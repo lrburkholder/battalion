@@ -39,6 +39,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "docs/adrs/index.md",
             *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 22)},
             "docs/rfcs/rfc0004.md",
+            "benchmarks/desktop/index.md",
         }
         assert all(
             not ({"recon", "intel", "ui"} & set(Path(path).parts))
@@ -63,6 +64,9 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         adr_index = (output / "docs" / "adrs" / "index.md").read_text(
             encoding="utf-8"
         )
+        rfc = (output / "docs" / "rfcs" / "rfc0004.md").read_text(
+            encoding="utf-8"
+        )
 
         assert index.startswith("---\nlayout: default\n---")
         assert "docs/adrs/index.html" in index
@@ -73,7 +77,9 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "adr0019.html" in adr_index
         assert "adr0020.html" in adr_index
         assert "adr0021.html" in adr_index
+        assert "../../benchmarks/desktop/index.html" in rfc
         assert (output / "docs" / "rfcs" / "rfc0004.md").exists()
+        assert (output / "benchmarks" / "desktop" / "index.md").exists()
     finally:
         if output.exists():
             shutil.rmtree(output)

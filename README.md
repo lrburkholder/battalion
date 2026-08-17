@@ -378,12 +378,15 @@ v2 is the desktop user-interface release. Its goal is to make Battalion's
 existing human-directed workflow observable and operable without moving graph,
 persistence, scope, or interrupt authority into the presentation client.
 
-- **UI foundations (BTN-29–36):** accepted operator architecture, shared
-  application commands, isolated workers, durable run/project identity,
+- **UI foundations (BTN-29–36, complete):** accepted operator architecture,
+  shared application commands, isolated workers, durable run/project identity,
   operator evidence, candidate persistence, usage semantics, and a live
-  observation contract. BTN-29–32 are complete; BTN-33–36 remain.
+  observation contract are all merged.
 - **Framework selection (BTN-37–41):** benchmark equivalent Tauri, PySide6,
   and Electron prototypes, then select the production framework through an ADR.
+  BTN-37 is complete and defines the shared fixture, scenario, acceptance
+  validator, and [measurement procedure](benchmarks/desktop/README.md); the
+  three disposable framework spikes remain.
 - **Production UI (BTN-42–44):** ship the read-only operator console, add
   human-action surfaces, and provide history search and descriptive
   model-by-role analytics.

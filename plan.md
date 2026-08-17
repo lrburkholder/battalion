@@ -5,15 +5,13 @@
 The v1 execution architecture is complete and validated. BTN-16 and BTN-19
 through BTN-28 add durable cost and execution evidence, the human-audited Recon
 and Intel lifecycle, deterministic context assembly, caller-owned run
-configuration, and project-layout-aware scope enforcement. RFC-0004 (BTN-29)
-defines the accepted desktop operator direction. BTN-30 implements the shared
-application command/query boundary, BTN-31 adds detached per-run worker
-supervision, and BTN-32 separates generated canonical run/project identity from
-display aliases with a compatible project-local catalog. BTN-35 revises usage
-evidence to preserve exact amounts, currency, provenance, and unknown cost.
-Later desktop tickets remain unshipped backlog work. BTN-36 adds typed live
-observations and durable-first reconnect semantics without creating a second
-state authority. Other desktop tickets remain unshipped backlog work.
+configuration, and project-layout-aware scope enforcement. RFC-0004 and all
+desktop foundations through BTN-36 are merged: the shared application boundary,
+detached worker supervision, canonical run/project identity, bounded operator
+and revision evidence, immutable Recon candidate persistence, exact sourced
+usage evidence, and durable-first live observation. BTN-37 adds the shared,
+provider-free framework benchmark control. The three framework spikes and later
+desktop tickets remain unshipped backlog work.
 
 ## Architecture overview
 
@@ -79,6 +77,7 @@ battalion/
     litellm_client.py     # per-node model configuration and invocation
 
 prompts/                  # externalized role prompts
+benchmarks/desktop/        # shared disposable framework-spike control case
 tests/                    # unit and end-to-end acceptance tests
 ```
 
@@ -160,6 +159,10 @@ The v1 implementation landed in this dependency order:
 17. Typed live observation and durable-first reconnect semantics (BTN-36).
 18. Exact decimal, currency-aware, explicitly sourced usage evidence (BTN-35).
 19. Bounded operator summaries and revision evidence (BTN-33).
+20. Immutable Recon candidate persistence and decision-backed inbox (BTN-34).
+
+BTN-37 defines the shared desktop fixture, scenario, acceptance validator, and
+measurement procedure used unchanged by the three framework spikes.
 
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.
@@ -193,10 +196,9 @@ human approval boundaries, and receive separate implementation tickets.
   applicability, and tag rules, then injects whole identified entries through
   that same bounded context path for every execution role.
 - Recon is the canonical name for Battalion's knowledge-capture role; Learner
-  refers only to its historical Regiment predecessor. Candidate generation and
-  operator promotion are shipped. The BTN-34 branch implements a create-only
-  Markdown candidate repository and deterministic decision-backed review inbox
-  without granting Recon publication authority; it remains pending merge.
+  refers only to its historical Regiment predecessor. Candidate generation,
+  create-only Markdown persistence, deterministic inbox discovery, and audited
+  operator promotion are shipped without granting Recon publication authority.
 - RFC-0004 requires every desktop client to remain disposable presentation:
   clients may not invoke LangGraph, mutate RunState, or create a second
   persistence authority. BTN-30 establishes that shared boundary, and BTN-31
