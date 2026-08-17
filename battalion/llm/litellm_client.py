@@ -15,7 +15,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from battalion.execution import record_llm_call
-from battalion.state.models import LLMCallCost
+from battalion.state.models import CostSource, LLMCallCost
 
 
 class InfraFailure(Exception):
@@ -147,10 +147,24 @@ def _record_response_cost(response: Any, configured_model: str) -> None:
     output_tokens = _value(
         usage, "completion_tokens", _value(usage, "output_tokens", 0)
     )
-    cost = _value(
+    provider_cost = _value(usage, "cost")
+    estimated_cost = _value(
         hidden,
         "response_cost",
-        _value(response, "response_cost", _value(usage, "cost", 0.0)),
+        _value(response, "response_cost"),
+    )
+    cost = provider_cost if provider_cost is not None else estimated_cost
+    currency = _value(
+        usage,
+        "cost_currency",
+        _value(hidden, "response_cost_currency", _value(response, "cost_currency")),
+    )
+    source = (
+        CostSource.PROVIDER_REPORTED
+        if provider_cost is not None
+        else CostSource.ESTIMATED
+        if estimated_cost is not None
+        else CostSource.UNKNOWN
     )
     record_llm_call(
         LLMCallCost(
@@ -158,7 +172,9 @@ def _record_response_cost(response: Any, configured_model: str) -> None:
             model=_value(response, "model", configured_model) or configured_model,
             input_tokens=input_tokens or 0,
             output_tokens=output_tokens or 0,
-            cost_usd=cost or 0.0,
+            cost=str(cost) if cost is not None else None,
+            cost_currency=(currency or "USD") if cost is not None else None,
+            cost_source=source,
         )
     )
 

@@ -48,6 +48,8 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-30**: Shared application command and query boundary
 - ✅ **BTN-31**: Active-run worker supervision
 - ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
+- ✅ **BTN-33**: Operator summaries and revision evidence
+- ✅ **BTN-35**: Exact, sourced, currency-aware usage evidence
 - ✅ **BTN-36**: Typed live observation and durable-first reconnect contract
 
 ## Architecture
@@ -59,6 +61,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.state.models` | Versioned state contract (Pydantic models) | ✅ Complete |
 | `battalion.state.persistence` | Local JSON load/save | ✅ Complete |
 | `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
+| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | ✅ Complete on BTN-34 branch; pending merge |
 | `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
 | `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
 | `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
@@ -66,7 +69,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
 | `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | ✅ Complete (BTN-36) |
-| `battalion.execution` | Durable node execution, artifact provenance, and cost evidence | ✅ Complete (BTN-19, BTN-16) |
+| `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | ✅ Complete (BTN-16, BTN-19, BTN-35) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
@@ -100,7 +103,8 @@ The versioned state contract includes:
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
-- `execution_record`: Durable node evidence, including per-call token and cost data
+- `execution_record`: Durable node evidence, including per-call tokens and
+  nullable decimal cost with separate currency and source
 
 ### Interrupt Taxonomy (v1)
 
@@ -183,10 +187,11 @@ python -m battalion status run-BTN-16 --costs --human
 python -m battalion resume run-BTN-16
 ```
 
-`status --costs` projects persisted LiteLLM input/output tokens and US-dollar
-cost by concrete graph phase. Without `--human`, it emits the cost summary as
-JSON. Cost reporting does not change the run-level turn budget used by
-interrupt trigger #3.
+`status --costs` projects persisted LiteLLM input/output tokens and known cost
+by concrete graph phase, currency, and source. Unknown monetary cost remains
+explicit and never becomes zero; token usage is still shown. Without `--human`,
+the command emits the cost summary as JSON. Cost reporting does not change the
+run-level turn budget used by interrupt trigger #3.
 
 Run `python -m battalion <command> --help` for the authoritative options while
 the CLI is evolving.
@@ -219,6 +224,7 @@ battalion/
 ├── progress.py                 # CLI progress display
 ├── setup.py                    # Guided model/provider setup (BTN-15)
 ├── intel/
+│   ├── candidates.py           # Create-only Recon Markdown inbox (BTN-34)
 │   ├── models.py               # Candidate and accepted Instinct contracts (BTN-20)
 │   ├── repository.py           # Immutable accepted-Instinct storage (BTN-21)
 │   ├── retrieval.py            # Deterministic Instinct selection (BTN-24)
@@ -276,6 +282,15 @@ tests/
 ├── backlog.json              # Project backlog and ticket tracking
 └── spec.md                   # Detailed specification and ADRs
 ```
+
+Recon candidate evidence is stored at
+`<project>/.battalion/recon/candidates/INS-....md`. YAML front matter is the
+validated machine contract and the remaining Markdown is its deterministic
+operator-readable rendering. Candidate files are create-only. Promotion or
+rejection is represented by a separate append-only review decision, so the
+original candidate remains unchanged. Rejected candidates are retained
+indefinitely for audit evidence; the persistence API intentionally exposes no
+delete operation.
 
 ## Dependencies
 

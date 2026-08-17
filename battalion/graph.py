@@ -187,8 +187,10 @@ def _make_architect_node(
     
     def node(state: RunState) -> RunState:
         entered_state = state
+        model_config = llm_configs.get("architect", llm_configs.get("default"))
         capture = ExecutionCapture.start(
-            state, NODE_ARCHITECT, _configured_model(llm_configs, "architect"), base_dir
+            state, NODE_ARCHITECT, _configured_model(llm_configs, "architect"), base_dir,
+            prompts_dir=prompts_dir, model_configuration=model_config,
         )
         # Increment budget for this LLM call
         state = increment_budget(state)
@@ -212,7 +214,7 @@ def _make_architect_node(
             new_state = run_architect(
                 state=state,
                 spec_text=spec_text,
-                llm_config=llm_configs.get("architect", llm_configs.get("default")),
+                llm_config=model_config,
                 base_dir=base_dir,
                 prompts_dir=prompts_dir,
                 **node_kwargs,
@@ -283,8 +285,10 @@ def _make_driver_node(
     
     def node(state: RunState) -> RunState:
         entered_state = state
+        model_config = llm_configs.get("driver", llm_configs.get("default"))
         capture = ExecutionCapture.start(
-            state, node_name, _configured_model(llm_configs, "driver"), base_dir
+            state, node_name, _configured_model(llm_configs, "driver"), base_dir,
+            prompts_dir=prompts_dir, model_configuration=model_config,
         )
         # Increment budget for this LLM call
         state = increment_budget(state)
@@ -307,7 +311,7 @@ def _make_driver_node(
             new_state = run_driver(
                 state=state,
                 ticket_text=ticket_text,
-                llm_config=llm_configs.get("driver", llm_configs.get("default")),
+                llm_config=model_config,
                 base_dir=base_dir,
                 mode=mode,
                 prompts_dir=prompts_dir,
@@ -383,8 +387,10 @@ def _make_reviewer_node(
     
     def node(state: RunState) -> RunState:
         entered_state = state
+        model_config = llm_configs.get("reviewer", llm_configs.get("default"))
         capture = ExecutionCapture.start(
-            state, node_name, _configured_model(llm_configs, "reviewer"), base_dir
+            state, node_name, _configured_model(llm_configs, "reviewer"), base_dir,
+            prompts_dir=prompts_dir, model_configuration=model_config,
         )
         # Reviewer doesn't call LLM for the actual test run, but does for
         # rejection cause articulation. Budget increment for the LLM call.
@@ -409,7 +415,7 @@ def _make_reviewer_node(
             new_state = run_reviewer(
                 state=state,
                 base_dir=base_dir,
-                llm_config=llm_configs.get("reviewer", llm_configs.get("default")),
+                llm_config=model_config,
                 checkpoint=checkpoint,
                 prompts_dir=prompts_dir,
                 **node_kwargs,
@@ -477,12 +483,15 @@ def _make_refactorer_node(
     
     def node(state: RunState) -> RunState:
         entered_state = state
+        model_config = llm_configs.get(
+            "refactorer", llm_configs.get("driver", llm_configs.get("default"))
+        )
         capture = ExecutionCapture.start(
             state, NODE_REFACTORER,
             _configured_model(llm_configs, "refactorer")
             if "refactorer" in llm_configs
             else _configured_model(llm_configs, "driver"),
-            base_dir,
+            base_dir, prompts_dir=prompts_dir, model_configuration=model_config,
         )
         # Increment budget for this LLM call
         state = increment_budget(state)
@@ -505,7 +514,7 @@ def _make_refactorer_node(
             new_state = run_refactorer(
                 state=state,
                 refactor_text=refactor_text,
-                llm_config=llm_configs.get("refactorer", llm_configs.get("driver", llm_configs.get("default"))),
+                llm_config=model_config,
                 base_dir=base_dir,
                 prompts_dir=prompts_dir,
                 **node_kwargs,

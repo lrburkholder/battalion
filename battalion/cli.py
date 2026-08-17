@@ -82,15 +82,25 @@ def _print_status(
             summary = cost_summary or {}
             typer.echo("\nLLM costs:")
             for phase in summary["phases"]:
+                known = ", ".join(
+                    f"{cost['amount']} {cost['currency']}" for cost in phase["costs"]
+                ) or "unknown"
+                if phase["unknown_cost_calls"]:
+                    known += f"; {phase['unknown_cost_calls']} unknown"
                 typer.echo(
                     f"  {phase['phase']}: {phase['calls']} call(s), "
                     f"{phase['input_tokens']} in / {phase['output_tokens']} out, "
-                    f"${phase['cost_usd']:.6f}"
+                    f"{known}"
                 )
+            known = ", ".join(
+                f"{cost['amount']} {cost['currency']}" for cost in summary["costs"]
+            ) or "unknown"
+            if summary["unknown_cost_calls"]:
+                known += f"; {summary['unknown_cost_calls']} unknown"
             typer.echo(
                 f"  Total: {summary['calls']} call(s), "
                 f"{summary['input_tokens']} in / {summary['output_tokens']} out, "
-                f"${summary['cost_usd']:.6f}"
+                f"{known}"
             )
     else:
         if costs:

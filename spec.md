@@ -80,8 +80,8 @@ under their original IDs without rewriting historical provenance (ADR-0020).
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.1` (BTN-16); persisted `1.0` records
-remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.2` (BTN-35); persisted `1.0` and `1.1`
+records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
@@ -89,10 +89,13 @@ test outcome and acceptance decision. Tool activity, interrupts, and produced
 artifact provenance carry or reference the originating node execution.
 
 Each successful LiteLLM completion also records a bounded call identifier,
-provider-reported model, input/output token counts, and US-dollar cost on its
-originating node execution. This evidence is queryable by phase and role. It is
-separate from the integer run-level `budget`, whose unchanged semantics drive
-interrupt trigger #3 (see ADR-0017).
+provider-reported model, and input/output token counts on its originating node
+execution. Monetary cost is a nullable decimal amount with separate ISO 4217
+currency and source (`provider-reported`, `estimated`, or `unknown`). Known zero
+and unavailable cost are distinct, and token usage remains inspectable when
+cost is unknown. This evidence is queryable by phase, role, currency, and
+source. It is separate from the integer run-level `budget`, whose unchanged
+semantics drive interrupt trigger #3 (see ADR-0017).
 
 Artifact provenance stores the project-relative path, SHA-256 digest,
 originating run, and originating node execution. It does not copy artifact
@@ -100,6 +103,15 @@ contents into `RunState`. Input references are likewise bounded pointers to
 persisted state or workspace artifacts. The record is part of `RunState`, so
 normal JSON save/load and graph pause/resume preserve the same evidence without
 a second persistence or resumption path.
+
+Version `1.2` adds bounded operator handoffs; explicit role prompt contract,
+template hash, model-configuration identity, and Battalion revision evidence;
+Git base commit, object algorithm, branch/detached state, and start/end dirty
+state; and SHA-256 context references with inclusion and truncation metadata.
+It retains no prompt/template contents, source contents, configuration values,
+or dirty-worktree patch. A dirty endpoint therefore carries an explicit
+`dirty-workspace-patch-not-retained` limitation and cannot claim exact
+reconstructability.
 
 ### Instinct data contract
 
@@ -138,6 +150,15 @@ Recon has no write tools or Intel repository access. It cannot change the
 completed execution, publish knowledge, modify standards or architecture, or
 bypass the separate human review and promotion workflow tracked by BTN-23.
 
+BTN-34 persists the returned values separately as create-only Markdown under
+`<project>/.battalion/recon/candidates`. Each `INS-...md` document contains the
+complete strict BTN-20 candidate contract in YAML front matter and a
+deterministic human-readable rendering. Loading validates the contract, the
+filename identifier, and the rendering; confidence remains forbidden.
+Publication uses a same-directory temporary file and an atomic create-only
+link, so a collision cannot replace evidence and an interrupted write cannot
+expose a partial candidate.
+
 ### Operator review and Instinct promotion
 
 BTN-23 provides the only candidate-to-knowledge transition. For each Recon
@@ -153,6 +174,11 @@ contains the operator action, decision timestamp, operator identity, candidate
 identifier, and the resulting accepted identifier for either acceptance path.
 Decision records remain outside `RunState`; the completed execution and Recon
 retain no promotion authority.
+
+Inbox discovery joins candidates to those separate decisions in identifier
+order and projects `pending`, `promoted`, or `rejected` without editing the
+candidate document. Rejected candidates are retained indefinitely as evidence;
+rejection adds only the append-only decision and provides no deletion path.
 
 ### Immutable Intel repository
 
