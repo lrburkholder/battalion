@@ -80,7 +80,7 @@ under their original IDs without rewriting historical provenance (ADR-0020).
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.2` (BTN-33); persisted `1.0` and `1.1`
+`execution_record.schema_version` is `1.2` (BTN-35); persisted `1.0` and `1.1`
 records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
@@ -89,10 +89,13 @@ test outcome and acceptance decision. Tool activity, interrupts, and produced
 artifact provenance carry or reference the originating node execution.
 
 Each successful LiteLLM completion also records a bounded call identifier,
-provider-reported model, input/output token counts, and US-dollar cost on its
-originating node execution. This evidence is queryable by phase and role. It is
-separate from the integer run-level `budget`, whose unchanged semantics drive
-interrupt trigger #3 (see ADR-0017).
+provider-reported model, and input/output token counts on its originating node
+execution. Monetary cost is a nullable decimal amount with separate ISO 4217
+currency and source (`provider-reported`, `estimated`, or `unknown`). Known zero
+and unavailable cost are distinct, and token usage remains inspectable when
+cost is unknown. This evidence is queryable by phase, role, currency, and
+source. It is separate from the integer run-level `budget`, whose unchanged
+semantics drive interrupt trigger #3 (see ADR-0017).
 
 Artifact provenance stores the project-relative path, SHA-256 digest,
 originating run, and originating node execution. It does not copy artifact

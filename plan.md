@@ -9,9 +9,9 @@ configuration, and project-layout-aware scope enforcement. RFC-0004 (BTN-29)
 defines the accepted desktop operator direction. BTN-30 implements the shared
 application command/query boundary, BTN-31 adds detached per-run worker
 supervision, and BTN-32 separates generated canonical run/project identity from
-display aliases with a compatible project-local catalog. BTN-33 extends the
-durable execution contract with bounded operator, prompt, revision, and context
-evidence. Later desktop tickets remain unshipped backlog work.
+display aliases with a compatible project-local catalog. BTN-35 revises usage
+evidence to preserve exact amounts, currency, provenance, and unknown cost.
+Later desktop tickets remain unshipped backlog work.
 
 ## Architecture overview
 
@@ -153,7 +153,8 @@ The v1 implementation landed in this dependency order:
     (BTN-31).
 16. Canonical UUID run identity, project markers, display aliases, and legacy
     catalog compatibility (BTN-32).
-17. Bounded operator summaries and revision evidence (BTN-33).
+17. Exact decimal, currency-aware, explicitly sourced usage evidence (BTN-35).
+18. Bounded operator summaries and revision evidence (BTN-33).
 
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.

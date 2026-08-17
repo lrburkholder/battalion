@@ -48,6 +48,7 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-31**: Active-run worker supervision
 - ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
 - ✅ **BTN-33**: Operator summaries and revision evidence
+- ✅ **BTN-35**: Exact, sourced, currency-aware usage evidence
 
 ## Architecture
 
@@ -65,7 +66,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.application` | Typed run, resume, inspection, cost, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-30–32) |
 | `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
-| `battalion.execution` | Durable node execution, artifact/cost provenance, and bounded operator/revision evidence | ✅ Complete (BTN-16, BTN-19, BTN-33) |
+| `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | ✅ Complete (BTN-16, BTN-19, BTN-35) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
@@ -99,7 +100,8 @@ The versioned state contract includes:
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
-- `execution_record`: Durable node evidence, including per-call token/cost data and versioned bounded provenance
+- `execution_record`: Durable node evidence, including per-call tokens and
+  nullable decimal cost with separate currency and source
 
 ### Interrupt Taxonomy (v1)
 
@@ -182,10 +184,11 @@ python -m battalion status run-BTN-16 --costs --human
 python -m battalion resume run-BTN-16
 ```
 
-`status --costs` projects persisted LiteLLM input/output tokens and US-dollar
-cost by concrete graph phase. Without `--human`, it emits the cost summary as
-JSON. Cost reporting does not change the run-level turn budget used by
-interrupt trigger #3.
+`status --costs` projects persisted LiteLLM input/output tokens and known cost
+by concrete graph phase, currency, and source. Unknown monetary cost remains
+explicit and never becomes zero; token usage is still shown. Without `--human`,
+the command emits the cost summary as JSON. Cost reporting does not change the
+run-level turn budget used by interrupt trigger #3.
 
 Run `python -m battalion <command> --help` for the authoritative options while
 the CLI is evolving.

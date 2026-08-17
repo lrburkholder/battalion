@@ -124,13 +124,10 @@ def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph
     assert load_state(path) == final
 
 
-@pytest.mark.parametrize("version", ["1.0", "1.1", "1.2"])
-def test_execution_record_accepts_supported_schema_versions(version):
-    assert ExecutionRecord(schema_version=version).schema_version == version
-
-
-def test_execution_record_defaults_to_latest_version_and_rejects_unknown_versions():
+def test_execution_record_format_is_versioned_and_validated():
     assert ExecutionRecord().schema_version == "1.2"
+    assert ExecutionRecord(schema_version="1.0").schema_version == "1.0"
+    assert ExecutionRecord(schema_version="1.1").schema_version == "1.1"
     with pytest.raises(ValidationError):
         ExecutionRecord(schema_version="2.0")
 

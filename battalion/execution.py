@@ -7,6 +7,7 @@ import subprocess
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -480,23 +481,59 @@ def summarize_costs(record: ExecutionRecord) -> dict[str, object]:
                     "calls": 0,
                     "input_tokens": 0,
                     "output_tokens": 0,
-                    "cost_usd": 0.0,
+                    "known_costs": {},
+                    "cost_sources": {},
+                    "unknown_cost_calls": 0,
                 },
             )
             phase["calls"] += 1
             phase["input_tokens"] += call.input_tokens
             phase["output_tokens"] += call.output_tokens
-            phase["cost_usd"] += call.cost_usd
+            if call.cost is None:
+                phase["unknown_cost_calls"] += 1
+                continue
+            currency = call.cost_currency
+            known_costs = phase["known_costs"]
+            known_costs[currency] = known_costs.get(currency, Decimal("0")) + call.cost
+            sources = phase["cost_sources"].setdefault(currency, set())
+            sources.add(call.cost_source.value)
 
     ordered = []
     for phase_name in sorted(phases):
         phase = phases[phase_name]
-        phase["cost_usd"] = round(phase["cost_usd"], 12)
+        phase["costs"] = [
+            {
+                "amount": str(phase["known_costs"][currency]),
+                "currency": currency,
+                "sources": sorted(phase["cost_sources"][currency]),
+            }
+            for currency in sorted(phase["known_costs"])
+        ]
+        del phase["known_costs"]
+        del phase["cost_sources"]
         ordered.append(phase)
+
+    total_costs: dict[str, Decimal] = {}
+    total_sources: dict[str, set[str]] = {}
+    for execution in record.node_executions:
+        for call in execution.llm_calls:
+            if call.cost is None:
+                continue
+            currency = call.cost_currency
+            total_costs[currency] = total_costs.get(currency, Decimal("0")) + call.cost
+            total_sources.setdefault(currency, set()).add(call.cost_source.value)
     return {
         "calls": sum(item["calls"] for item in ordered),
         "input_tokens": sum(item["input_tokens"] for item in ordered),
         "output_tokens": sum(item["output_tokens"] for item in ordered),
-        "cost_usd": round(sum(item["cost_usd"] for item in ordered), 12),
+        "costs": [
+            {
+                "amount": str(total_costs[currency]),
+                "currency": currency,
+                "sources": sorted(total_sources[currency]),
+            }
+            for currency in sorted(total_costs)
+        ],
+        "unknown_cost_calls": sum(item["unknown_cost_calls"] for item in ordered),
         "phases": ordered,
     }
