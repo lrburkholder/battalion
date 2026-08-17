@@ -4,6 +4,12 @@ This directory is a disposable Tauri 2 prototype. It is benchmark evidence,
 not production Battalion code. The renderer consumes BTN-37's generated JSON
 and the shared acceptance validator without changing either contract.
 
+Work in this subtree must follow the scoped [Tauri development guardrails](AGENTS.md).
+They keep Rust limited to a small native shell, preserve Python as the owner of
+Battalion application policy, and require Rust changes to be explained as
+human learning artifacts. They are provisional until BTN-41 records the
+framework decision in an accepted ADR.
+
 ## Current state
 
 The framework-neutral scenario adapter and Tauri shell are implemented. The
