@@ -6,11 +6,12 @@ schema — see spec.md's "State Schema (v1, draft)" and plan.md ADR-001.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RunStatus(str, Enum):
@@ -90,14 +91,52 @@ class ReviewResult(BaseModel):
     cause: str | None = Field(default=None, max_length=2000)
 
 
+class CostSource(str, Enum):
+    PROVIDER_REPORTED = "provider-reported"
+    ESTIMATED = "estimated"
+    UNKNOWN = "unknown"
+
+
 class LLMCallCost(BaseModel):
-    """Provider-reported usage and dollar cost for one successful LLM call."""
+    """Token usage and explicitly sourced monetary evidence for one LLM call."""
 
     call_id: str = Field(min_length=1, max_length=200)
     model: str = Field(min_length=1, max_length=500)
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
-    cost_usd: float = Field(ge=0, allow_inf_nan=False)
+    cost: Decimal | None = Field(default=None, ge=0, allow_inf_nan=False)
+    cost_currency: str | None = Field(
+        default=None, pattern=r"^[A-Z]{3}$"
+    )
+    cost_source: CostSource = CostSource.UNKNOWN
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_cost_usd(cls, value: Any) -> Any:
+        """Read execution-record 1.1 observations without rewriting history."""
+        if not isinstance(value, dict) or "cost_usd" not in value or "cost" in value:
+            return value
+        migrated = dict(value)
+        legacy_cost = migrated.pop("cost_usd")
+        migrated.update(
+            cost=str(legacy_cost),
+            cost_currency="USD",
+            cost_source=CostSource.PROVIDER_REPORTED,
+        )
+        return migrated
+
+    @model_validator(mode="after")
+    def validate_cost_evidence(self) -> Self:
+        if self.cost is None:
+            if self.cost_currency is not None or self.cost_source != CostSource.UNKNOWN:
+                raise ValueError(
+                    "unknown cost requires null currency and source 'unknown'"
+                )
+        elif self.cost_currency is None or self.cost_source == CostSource.UNKNOWN:
+            raise ValueError(
+                "known cost requires a currency and a known cost source"
+            )
+        return self
 
 
 class NodeExecution(BaseModel):
@@ -124,7 +163,7 @@ class NodeExecution(BaseModel):
 class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
-    schema_version: Literal["1.0", "1.1"] = "1.1"
+    schema_version: Literal["1.0", "1.1", "1.2"] = "1.2"
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 

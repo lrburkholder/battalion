@@ -115,8 +115,9 @@ def test_complete_graph_run_records_every_node_and_artifact(tmp_path):
 
 
 def test_execution_record_format_is_versioned_and_validated():
-    assert ExecutionRecord().schema_version == "1.1"
+    assert ExecutionRecord().schema_version == "1.2"
     assert ExecutionRecord(schema_version="1.0").schema_version == "1.0"
+    assert ExecutionRecord(schema_version="1.1").schema_version == "1.1"
     with pytest.raises(ValidationError):
         ExecutionRecord(schema_version="2.0")
 

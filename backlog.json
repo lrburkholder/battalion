@@ -843,7 +843,7 @@
       "id": "BTN-35",
       "phase": "implementation",
       "title": "Usage evidence revision",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Revise usage evidence to represent provider-reported or calculated cost with nullable decimal amount, currency, source, and explicit unknown semantics.",
       "acceptance_criteria": [
@@ -860,7 +860,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: Usage evidence revision",
-      "notes": "Cost is evidence, not an estimate presented as fact. The source field must make provenance explicit."
+      "notes": "Implemented 2026-08-17. Execution-record schema 1.2 stores nullable Decimal cost with separately validated ISO 4217 currency and provider-reported, estimated, or unknown source. Missing cost remains null while tokens remain inspectable; legacy 1.1 cost_usd evidence loads as provider-reported USD without rewriting history. Currency-aware projections preserve exact decimal strings and count unknown-cost calls. Full suite: 349 tests passing."
     },
     {
       "id": "BTN-36",
