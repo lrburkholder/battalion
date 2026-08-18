@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import posixpath
 import re
 import shutil
 from pathlib import Path
@@ -22,6 +23,7 @@ PUBLISHED_DOCUMENTS = {
         for number in range(1, 22)
     },
     "docs/rfcs/rfc0004.md": "docs/rfcs/rfc0004.md",
+    "benchmarks/desktop/README.md": "benchmarks/desktop/index.md",
 }
 
 SUPPORTING_FILES = {
@@ -38,13 +40,15 @@ def _rewrite_markdown_links(content: str, source: str) -> str:
     source_directory = Path(source).parent
 
     def replace(match: re.Match[str]) -> str:
-        target = (source_directory / match.group("target")).as_posix()
+        target = posixpath.normpath(
+            (source_directory / match.group("target")).as_posix()
+        )
         destination = PUBLISHED_DOCUMENTS.get(target)
         if destination is None:
             return match.group(0)
         html_target = str(Path(destination).with_suffix(".html")).replace("\\", "/")
-        current_destination = Path(PUBLISHED_DOCUMENTS[source]).parent
-        relative_target = Path(html_target).relative_to(current_destination).as_posix()
+        current_destination = Path(PUBLISHED_DOCUMENTS[source]).parent.as_posix()
+        relative_target = posixpath.relpath(html_target, current_destination)
         return f'{match.group("prefix")}{relative_target}{match.group("suffix")}'
 
     return MARKDOWN_LINK.sub(replace, content)
