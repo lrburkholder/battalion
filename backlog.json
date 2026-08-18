@@ -939,7 +939,7 @@
       "id": "BTN-39",
       "phase": "implementation",
       "title": "PySide6 desktop architecture spike",
-      "status": "in-progress",
+      "status": "done",
       "priority": "P1",
       "description": "Implement the common desktop benchmark fixture as a disposable PySide6 prototype and record the evidence needed for framework selection.",
       "acceptance_criteria": [
@@ -955,7 +955,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: PySide6 architecture spike",
-      "notes": "The spike must exercise the same workflow as Tauri and Electron rather than optimizing for Python-specific convenience."
+      "notes": "Completed 2026-08-18. The disposable Qt Widgets prototype passes BTN-37's unchanged scenario and validator, including a packaged trace. Evidence records a 484.99 ms median packaged scenario, 82,890,752-byte median idle working set, one-process idle model, 97,025,381-byte standalone distribution, ambient Python process authority, and substantially lower framework-boundary complexity than the webview candidates. Clean-machine launch, native screen-reader inspection, and real-worker crash recovery were unavailable and remain explicit BTN-42 production risks rather than inferred passes. Focused validation: tests/test_pyside6_spike.py passes."
     },
     {
       "id": "BTN-40",

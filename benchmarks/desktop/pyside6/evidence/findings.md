@@ -1,6 +1,6 @@
 # BTN-39 PySide6 Spike Evidence
 
-Status: In progress  
+Status: Complete with recorded limitations
 Control fixture: `BTN-37-desktop-v1`  
 Framework: PySide6 6.10.1, Qt Widgets, Python 3.14.6  
 Environment date: 2026-08-17  
@@ -38,7 +38,9 @@ Observations: installed bytes; artifact count; clean-machine launch.
 - Standalone deployment: 70 files totaling 97,025,381 bytes.
 - Launcher: `app.exe`, 7,255,040 bytes, SHA-256
   `6A34E624E671AFD26DAA0E90366B9C03DD4FD45E7AB3D4A679B8364AEFAFA756`.
-- A clean-machine launch remains to be measured.
+- A clean-machine launch was unavailable. The standalone artifact launched on
+  the benchmark workstation, but portability to a second Windows image remains
+  a production packaging risk for BTN-42.
 
 ## Process
 
@@ -66,8 +68,10 @@ Observations: keyboard completion; focus order; screen-reader names; contrast.
 
 - Native Qt list and read-only text controls expose explicit accessible names
   and keyboard focus.
-- Automated inspection, keyboard-only completion, and Windows screen-reader
-  passes remain to be recorded.
+- Automated inspection, keyboard-only completion, and a Windows screen-reader
+  pass were not recorded. Accessibility therefore remains unverified beyond
+  the structural offscreen assertions and must be acceptance evidence for the
+  production UI.
 
 ## Testability
 
@@ -87,7 +91,9 @@ fixture.
 - Reconnect renders the durable checkpoint before acknowledging the event
   barrier, matching the shared scenario.
 - Unsupported fixture identity fails explicitly.
-- Native worker-crash and client-restart injection remain to be measured.
+- The disposable adapter has no real worker to crash. Native worker-crash and
+  client-restart injection were not measured and remain production risks rather
+  than inferred passes.
 
 ## Permission surface
 
@@ -108,7 +114,9 @@ Observations: new concepts; blocked time; debugging time; confidence.
   no cross-language serialization or web frontend toolchain.
 - New framework concepts: widget ownership, layouts, Qt stylesheets, accessible
   item roles, and offscreen platform testing.
-- Packaging and native accessibility confidence remain unmeasured.
+- Confidence is high for the Python application-boundary fit, deterministic
+  fixture projection, and Windows workstation resource profile; low for
+  clean-machine packaging and native accessibility until BTN-42 validates them.
 
 ## Implementation complexity
 
@@ -120,3 +128,21 @@ dependencies.
   and Shiboken wheels.
 - UI structure: one imperative Qt Widgets module; no QML, browser renderer,
   JavaScript runtime, Rust host, or frontend bundler.
+
+## Reproduction
+
+From the repository root:
+
+```powershell
+uv pip install --python .\.venv\Scripts\python.exe -r benchmarks\desktop\pyside6\requirements.txt
+.\.venv\Scripts\python.exe -m benchmarks.desktop.pyside6.prepare
+$env:QT_QPA_PLATFORM = "offscreen"
+.\.venv\Scripts\python.exe -m pytest tests\test_pyside6_spike.py -q
+.\.venv\Scripts\python.exe -m benchmarks.desktop.pyside6.app --trace benchmarks\desktop\pyside6\evidence\trace.json --screenshot benchmarks\desktop\pyside6\evidence\pyside6-benchmark.png
+.\.venv\Scripts\python.exe -m benchmarks.desktop.acceptance benchmarks\desktop\pyside6\evidence\trace.json
+```
+
+Packaging requires the additional `pip` prerequisite and `pyside6-deploy`
+command documented in the spike README. The retained numbers are packaged
+release measurements; the commands above reproduce the contract, test, and
+rendering paths without claiming a second-machine packaging result.
