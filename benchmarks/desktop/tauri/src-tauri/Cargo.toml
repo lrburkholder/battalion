@@ -1,0 +1,13 @@
+[package]
+name = "battalion-tauri-spike"
+version = "0.1.0"
+description = "Disposable BTN-38 desktop framework benchmark"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+
