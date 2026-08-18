@@ -933,7 +933,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: Tauri architecture spike",
-      "notes": "Rust unfamiliarity is learning evidence, not an automatic negative; the spike should measure whether the resulting boundary and product are worth that investment."
+      "notes": "Completed 2026-08-18. The release Tauri prototype passes BTN-37's unchanged scenario and validator. Evidence records a 620.63 ms median completed scenario, 432,709,632-byte median idle working set across a seven-process Tauri/WebView2 tree, 8,697,344-byte application payload, MSI and NSIS installers, verified renderer capability denials, Windows UI Automation structure, restart cleanup, and durable reconnect. No clean machine, real Python sidecar, or audible Narrator pass was available; those limitations remain explicit rather than inferred passes. Focused validation: tests/test_tauri_spike.py passes."
     },
     {
       "id": "BTN-39",
@@ -983,7 +983,7 @@
       "id": "BTN-41",
       "phase": "architecture",
       "title": "Desktop framework selection ADR",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Compare the three framework spikes using their common evidence and record the selected production desktop framework in an accepted ADR.",
       "acceptance_criteria": [
@@ -1001,7 +1001,7 @@
       "blocks": [],
       "assignee_role": "architect",
       "source": "RFC-0004 Expected Follow-Up Tickets: Desktop framework ADR",
-      "notes": "Framework choice follows the three equivalent spikes; no candidate is preferred solely because of current language familiarity."
+      "notes": "Completed 2026-08-18. ADR-0022 accepts PySide6 with Qt Widgets for production desktop presentation after comparing all nine BTN-37 evidence categories across Tauri, PySide6, and Electron. PySide6 had the fastest median completed scenario (484.99 ms), lowest median idle working set (82,890,752 bytes), one-process presentation model, and simplest fit with Battalion's Python application boundary. The decision also records Tauri's stronger packaging, renderer-capability, recovery, and measured accessibility results. BTN-42 must close PySide6's clean-machine packaging, native accessibility, worker-failure, restart, and ambient-authority risks; disposable spike code is not production code."
     },
     {
       "id": "BTN-42",

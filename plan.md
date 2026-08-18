@@ -9,9 +9,10 @@ configuration, and project-layout-aware scope enforcement. RFC-0004 and all
 desktop foundations through BTN-36 are merged: the shared application boundary,
 detached worker supervision, canonical run/project identity, bounded operator
 and revision evidence, immutable Recon candidate persistence, exact sourced
-usage evidence, and durable-first live observation. BTN-37 adds the shared,
-provider-free framework benchmark control. The three framework spikes and later
-desktop tickets remain unshipped backlog work.
+usage evidence, and durable-first live observation. BTN-37 through BTN-41 add
+the shared provider-free benchmark, three disposable framework spikes, and the
+accepted PySide6 desktop presentation decision in ADR-0022. The production
+desktop tickets beginning with BTN-42 remain unshipped backlog work.
 
 ## Architecture overview
 
@@ -111,6 +112,7 @@ The decisions implemented by the v1 architecture are:
 | [ADR-0019](docs/adrs/adr0019.md) | Supervise active runs with detached per-run workers |
 | [ADR-0020](docs/adrs/adr0020.md) | Separate canonical run and project identity from display names |
 | [ADR-0021](docs/adrs/adr0021.md) | Recover live observation from durable state |
+| [ADR-0022](docs/adrs/adr0022.md) | Use PySide6 for desktop presentation |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human
@@ -164,6 +166,11 @@ The v1 implementation landed in this dependency order:
 BTN-37 defines the shared desktop fixture, scenario, acceptance validator, and
 measurement procedure used unchanged by the three framework spikes.
 
+BTN-38 through BTN-40 retain equivalent Tauri, PySide6, and Electron evidence.
+ADR-0022 completes BTN-41 by selecting PySide6 with Qt Widgets for production
+presentation while carrying its packaging, native accessibility, recovery, and
+ambient-authority limitations into BTN-42 acceptance.
+
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.
 
@@ -207,3 +214,7 @@ human approval boundaries, and receive separate implementation tickets.
 - BTN-36 classifies live events as durable-backed facts, lossy progress, or
   action requests. Per-run operation sequences support concurrent workers;
   reconnect always reloads `RunState` before consuming post-barrier events.
+- ADR-0022 selects PySide6 for desktop presentation. The selection does not
+  grant widgets graph or persistence authority: production clients remain thin
+  adapters over `battalion.application`, and BTN-42 must validate accessibility,
+  packaging, resource, restart, and real-worker failure behavior.

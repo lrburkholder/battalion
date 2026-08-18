@@ -15,9 +15,10 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 The v1 execution graph is complete. Durable execution evidence, the Recon and
 Intel knowledge lifecycle, deterministic context assembly, and the desktop
 operator architecture, shared application boundary, isolated active-run worker
-supervision, and durable run/project identity are also implemented. Operator
-summary and revision evidence remains queued; the typed live-observation and
-durable-first reconnect contract is implemented for future presentation clients.
+supervision, durable run/project identity, operator evidence, and typed
+live-observation are also implemented. After equivalent desktop spikes,
+[ADR-0022](docs/adrs/adr0022.md) selects PySide6 with Qt Widgets for the
+production presentation client. The read-only production console is next.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -382,17 +383,17 @@ persistence, scope, or interrupt authority into the presentation client.
   shared application commands, isolated workers, durable run/project identity,
   operator evidence, candidate persistence, usage semantics, and a live
   observation contract are all merged.
-- **Framework selection (BTN-37–41):** benchmark equivalent Tauri, PySide6,
-  and Electron prototypes, then select the production framework through an ADR.
-  BTN-37 is complete and defines the shared fixture, scenario, acceptance
-  validator, and [measurement procedure](benchmarks/desktop/README.md); the
-  three disposable framework spikes remain.
+- **Framework selection (BTN-37–41, complete):** the shared fixture and
+  [measurement procedure](benchmarks/desktop/README.md) drove equivalent Tauri,
+  PySide6, and Electron release prototypes. [ADR-0022](docs/adrs/adr0022.md)
+  selects PySide6 with Qt Widgets and carries its packaging, accessibility,
+  recovery, and ambient-authority risks into production acceptance.
 - **Production UI (BTN-42–44):** ship the read-only operator console, add
   human-action surfaces, and provide history search and descriptive
   model-by-role analytics.
 
-The desktop framework is intentionally undecided until the benchmark evidence
-and BTN-41 ADR exist.
+The desktop framework is decided; BTN-42 must build a production PySide6 client
+over `battalion.application` rather than promote disposable benchmark code.
 
 ### Future Architecture Planning
 
