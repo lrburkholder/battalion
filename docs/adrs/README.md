@@ -27,6 +27,7 @@ status states whether it is part of the shipped system.
 | [ADR-0019](adr0019.md) | Supervise active runs with detached per-run workers | Accepted | BTN-31 |
 | [ADR-0020](adr0020.md) | Separate canonical run and project identity from display names | Accepted | BTN-32 |
 | [ADR-0021](adr0021.md) | Recover live observation from durable state | Accepted | BTN-36 |
+| [ADR-0022](adr0022.md) | Use PySide6 for desktop presentation | Accepted | BTN-41; production begins BTN-42 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique

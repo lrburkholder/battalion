@@ -20,10 +20,13 @@ PUBLISHED_DOCUMENTS = {
     "docs/adrs/README.md": "docs/adrs/index.md",
     **{
         f"docs/adrs/adr{number:04d}.md": f"docs/adrs/adr{number:04d}.md"
-        for number in range(1, 22)
+        for number in range(1, 23)
     },
     "docs/rfcs/rfc0004.md": "docs/rfcs/rfc0004.md",
     "benchmarks/desktop/README.md": "benchmarks/desktop/index.md",
+    "benchmarks/desktop/tauri/evidence/findings.md": "benchmarks/desktop/tauri/findings.md",
+    "benchmarks/desktop/pyside6/evidence/findings.md": "benchmarks/desktop/pyside6/findings.md",
+    "benchmarks/desktop/electron/evidence/findings.md": "benchmarks/desktop/electron/findings.md",
 }
 
 SUPPORTING_FILES = {

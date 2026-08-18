@@ -37,9 +37,12 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "plan.md",
             "spec.md",
             "docs/adrs/index.md",
-            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 22)},
+            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 23)},
             "docs/rfcs/rfc0004.md",
             "benchmarks/desktop/index.md",
+            "benchmarks/desktop/tauri/findings.md",
+            "benchmarks/desktop/pyside6/findings.md",
+            "benchmarks/desktop/electron/findings.md",
         }
         assert all(
             not ({"recon", "intel", "ui"} & set(Path(path).parts))
@@ -77,7 +80,14 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "adr0019.html" in adr_index
         assert "adr0020.html" in adr_index
         assert "adr0021.html" in adr_index
+        assert "adr0022.html" in adr_index
         assert "../../benchmarks/desktop/index.html" in rfc
+        benchmark_index = (output / "benchmarks" / "desktop" / "index.md").read_text(
+            encoding="utf-8"
+        )
+        assert "tauri/findings.html" in benchmark_index
+        assert "pyside6/findings.html" in benchmark_index
+        assert "electron/findings.html" in benchmark_index
         assert (output / "docs" / "rfcs" / "rfc0004.md").exists()
         assert (output / "benchmarks" / "desktop" / "index.md").exists()
     finally:

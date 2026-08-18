@@ -66,3 +66,12 @@ boundary adapter.
 Do not change fixture data or acceptance expectations to accommodate a
 framework. If the control case is defective, fix BTN-37 once and rerun all
 three spikes from the same revision.
+
+## Outcome
+
+The completed [Tauri](tauri/evidence/findings.md),
+[PySide6](pyside6/evidence/findings.md), and
+[Electron](electron/evidence/findings.md) records retain both measurements and
+known limitations. [ADR-0022](../../docs/adrs/adr0022.md) selects PySide6 with
+Qt Widgets for production presentation. The spikes remain disposable benchmark
+evidence and are not production UI modules.
