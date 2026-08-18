@@ -961,7 +961,7 @@
       "id": "BTN-40",
       "phase": "implementation",
       "title": "Electron desktop architecture spike",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Implement the common desktop benchmark fixture as a disposable Electron prototype and record the evidence needed for framework selection.",
       "acceptance_criteria": [
@@ -977,7 +977,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: Electron architecture spike",
-      "notes": "The spike must measure Electron as a desktop shell for Battalion, not assume web familiarity outweighs process, packaging, or resource evidence."
+      "notes": "Completed 2026-08-18. The disposable Electron prototype passes BTN-37's unchanged scenario and validator through its packaged main/preload/renderer path. Evidence records a 774.39 ms median packaged scenario, 370,696,192-byte median idle working set, four-process idle model, 365,521,443-byte unpacked package and 145,435,393-byte ZIP, a mechanically narrowed renderer, ambient Node main-process authority, and the largest boundary/toolchain surface of the candidates. Clean-machine launch, active-memory sampling, native screen-reader inspection, and real-worker crash recovery were unavailable and remain recorded limitations. Focused Python and Node contract validation pass."
     },
     {
       "id": "BTN-41",
