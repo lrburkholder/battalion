@@ -1,6 +1,6 @@
 # BTN-40 Electron Spike Evidence
 
-Status: In progress  
+Status: Complete with recorded limitations
 Control fixture: `BTN-37-desktop-v1`  
 Framework: Electron 43.4.0, Electron Forge 7.11.2, Node.js v24.2.0  
 Environment date: 2026-08-17  
@@ -26,8 +26,9 @@ Observations: installed bytes; artifact count; clean-machine launch.
   `12CDE31EE51B4EC088041A231545AC63DECFB105C264AF5D831CA0F9F0187D49`).
 - The ZIP distributable is 145,435,393 bytes (SHA-256
   `BF65F9C157EC16AE417B4AC3525398EF6593ACA33A54835E0FB573E3B62D3BDB`).
-- A clean-machine launch was not performed; the package carries Electron and
-  application dependencies rather than requiring a workstation Node install.
+- A clean-machine launch was unavailable. The package carries Electron and
+  application dependencies rather than requiring a workstation Node install,
+  but portability to a second Windows image remains a production risk.
 
 ## Process
 
@@ -55,14 +56,17 @@ Observations: startup time; idle working set; active working set; CPU.
   372,338,688, 361,472,000, 361,644,032, and 372,994,048 bytes (median
   370,696,192); private bytes 218,251,264, 220,381,184, 208,556,032,
   209,375,232, and 220,594,176 (median 218,251,264).
-- Active working set and CPU sampling remain pending.
+- A separate active working-set and CPU series was not retained. The scenario
+  timing includes rendering and capture, but no active-memory claim is inferred
+  from it.
 
 ## Accessibility
 
 Observations: keyboard completion; focus order; screen-reader names; contrast.
 
 - Semantic HTML, landmarks, focusable results, and a polite status region are
-  present. Native keyboard and screen-reader passes remain pending.
+  present. Native keyboard and screen-reader passes were not recorded, so
+  production accessibility remains unverified.
 
 ## Testability
 
@@ -82,7 +86,9 @@ fixture.
 
 - Reconnect projects durable state before the stream barrier.
 - Unknown fixture identity fails explicitly.
-- Main/renderer crash and restart injection remain to be measured.
+- The disposable adapter has no real Battalion worker. Main/renderer crash and
+  restart injection were not measured and remain production risks rather than
+  inferred passes.
 
 ## Permission surface
 
@@ -119,3 +125,24 @@ dependencies.
 - Significant implementation/configuration is 245 lines across main, preload,
   adapter, renderer HTML/ECMAScript/CSS, Forge configuration, and preparation
   code (tests, evidence, lockfile, and documentation excluded).
+
+## Reproduction
+
+From `benchmarks/desktop/electron` after preparing the shared inputs:
+
+```powershell
+pnpm install
+Set-Location C:\src\battalion
+.\.venv\Scripts\python.exe -m benchmarks.desktop.electron.prepare
+Set-Location benchmarks\desktop\electron
+pnpm exec node tests\run-contract.mjs
+pnpm start -- --trace=evidence\trace.json --screenshot=evidence\electron-benchmark.png
+pnpm package
+pnpm make
+```
+
+Validate the emitted trace from the repository root with
+`.\.venv\Scripts\python.exe -m benchmarks.desktop.acceptance
+benchmarks\desktop\electron\evidence\trace.json`. The retained numbers are
+packaged release measurements; these commands do not claim a second-machine
+launch or the missing native accessibility and recovery passes.
