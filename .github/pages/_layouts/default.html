@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#17181b">
+    <meta name="description" content="Battalion is a human-directed SDLC orchestrator with explicit checkpoints and durable evidence.">
+    <title>{% if page.title %}{{ page.title }} · {% endif %}{{ site.title }}</title>
+    <link rel="icon" href="{{ '/assets/favicon.ico' | relative_url }}" sizes="any">
+    <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="{{ '/' | relative_url }}" aria-label="Battalion home">
+        <img src="{{ '/assets/mark-transparent.svg' | relative_url }}" alt="" width="34" height="34">
+        <span>battalion</span>
+      </a>
+      <nav aria-label="Primary">
+        <a href="{{ '/spec.html' | relative_url }}">Specification</a>
+        <a href="{{ '/plan.html' | relative_url }}">Plan</a>
+        <a href="{{ '/docs/adrs/' | relative_url }}">ADRs</a>
+        <a href="{{ '/docs/operator/workflow.html' | relative_url }}">Operator guide</a>
+        <a class="nav-cta" href="https://github.com/lrburkholder/battalion">GitHub</a>
+      </nav>
+    </header>
+    <main>{{ content }}</main>
+    <footer>
+      <span>Battalion · humans decide, Battalion executes, both learn.</span>
+      <a href="{{ '/LICENSE' | relative_url }}">MIT License</a>
+    </footer>
+  </body>
+</html>

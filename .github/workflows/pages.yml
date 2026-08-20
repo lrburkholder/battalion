@@ -10,7 +10,12 @@ on:
       - spec.md
       - plan.md
       - docs/adrs/**
+      - docs/ui/**
+      - docs/assets/**
+      - battalion/desktop/assets/favicon.ico
+      - battalion/desktop/assets/mark-transparent.svg
       - scripts/build_pages.py
+      - scripts/capture_pages_screenshots.py
       - .github/pages/**
       - .github/workflows/pages.yml
   pull_request:
@@ -20,7 +25,12 @@ on:
       - spec.md
       - plan.md
       - docs/adrs/**
+      - docs/ui/**
+      - docs/assets/**
+      - battalion/desktop/assets/favicon.ico
+      - battalion/desktop/assets/mark-transparent.svg
       - scripts/build_pages.py
+      - scripts/capture_pages_screenshots.py
       - .github/pages/**
       - .github/workflows/pages.yml
   workflow_dispatch:

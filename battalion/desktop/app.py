@@ -372,6 +372,25 @@ class BattalionWindow(QMainWindow):
         self.view_state.setText(message)
         self.view_state.setProperty("state", state)
 
+    def select_showcase_view(self, view: str) -> None:
+        """Select stable production widgets for a published showcase capture."""
+
+        destinations = {"work": 0, "history": 1, "intel": 2}
+        if view not in destinations:
+            raise ValueError(f"Unknown showcase view: {view}")
+        self.navigation.setCurrentRow(destinations[view])
+        if view == "intel":
+            candidates = self.intel_tree.topLevelItem(1)
+            if candidates is not None and candidates.childCount():
+                self.intel_tree.setCurrentItem(candidates.child(0))
+            return
+        runs = self.work_tree if view == "work" else self.history_tree
+        executions = self.work_executions if view == "work" else self.history_executions
+        if runs.topLevelItemCount() and runs.topLevelItem(0).childCount():
+            runs.setCurrentItem(runs.topLevelItem(0).child(0))
+            if view == "history" and executions.topLevelItemCount():
+                executions.setCurrentItem(executions.topLevelItem(0))
+
     def _populate_runs(
         self,
         tree: QTreeWidget,

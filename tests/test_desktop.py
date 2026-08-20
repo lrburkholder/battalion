@@ -33,6 +33,7 @@ from battalion.intel.candidates import CandidateDisposition, CandidateInboxEntry
 from battalion.intel.models import CandidateInstinct
 from battalion.intel.review import ReviewAction
 from battalion.desktop.app import BattalionWindow
+from battalion.desktop.demo import showcase_snapshot
 from battalion.desktop.controller import DesktopController
 from battalion.desktop.presentation import render_execution
 from battalion.desktop.theme import (
@@ -668,6 +669,27 @@ def test_desktop_entrypoint_launches_from_an_unrelated_working_directory(tmp_pat
 
     assert completed.returncode == 0, completed.stderr
     assert screenshot.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_showcase_snapshot_selects_shipped_work_history_and_intel_views(qt_app, tmp_path):
+    window = BattalionWindow(tmp_path, autoload=False)
+    project, intel = showcase_snapshot()
+    window.render_snapshot(project, intel)
+
+    window.select_showcase_view("work")
+    assert window.navigation.currentItem().text() == "Work"
+    assert window.selected_run.inspection.state.status is RunStatus.AWAITING_HUMAN
+    assert window.resume_button.isEnabled()
+
+    window.select_showcase_view("history")
+    assert window.navigation.currentItem().text() == "History"
+    assert "Role: reviewer" in window.history_inspector.toPlainText()
+
+    window.select_showcase_view("intel")
+    assert window.navigation.currentItem().text() == "Intel"
+    assert window.selected_candidate.instinct_id == "INS-REVIEW-EVIDENCE"
+    assert window.accept_candidate_button.isEnabled()
+    window.close()
 
 
 def test_importing_battalion_does_not_initialize_graph_authority(tmp_path):
