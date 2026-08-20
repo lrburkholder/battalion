@@ -1237,7 +1237,7 @@
       "id": "BTN-51",
       "phase": "architecture",
       "title": "Zero-cost inference and model-endpoint architecture RFC",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Define Battalion's inference-target model for local and zero-cost remote inference without replacing LiteLLM, weakening model-diversity guarantees, or allowing an external router to silently own Battalion's role or model-selection policy.",
       "acceptance_criteria": [
@@ -1407,6 +1407,34 @@
       "assignee_role": "driver",
       "source": "User-provided ui/mockup visual design and assets, 2026-08-20",
       "notes": "Completed 2026-08-20. The BTN-52 labels inside the mockup are illustrative content only; canonical BTN-52 remains the endpoint-aware local inference ticket. The production client now registers bundled IBM Plex Sans and Mono faces, applies the supplied charcoal, border, spacing, control-state, and blue-accent tokens, displays the Battalion mark, and uses the supplied icon for its window and generated Windows executable. The OFL license and assets are included in Python package data and the frozen distribution configuration. Existing accessible names and application-boundary behavior are unchanged. The current product specification, workflows, and screen contract in docs/ui were reconciled with BTN-42, BTN-43, and BTN-56. Focused validation passed 18 tests, the complete offline suite passed 419 tests, and the offscreen production render was visually reviewed. No native Nuitka build was run for this presentation-only change."
+    },
+    {
+      "id": "BTN-57",
+      "phase": "rollout",
+      "title": "GitHub Pages product showcase and visual assets",
+      "status": "not-started",
+      "priority": "P3",
+      "description": "Refresh Battalion's public GitHub Pages experience with truthful production screenshots, the accepted Battalion mark and icons, and a concise visual introduction to the shipped operator workflow.",
+      "acceptance_criteria": [
+        "The Pages landing experience uses the canonical Battalion mark and an appropriate favicon or application icon from the BTN-56 asset set rather than introducing an unrelated or divergent brand copy",
+        "The site presents reviewed screenshots of the production PySide6 client covering representative shipped Work, run detail or History, interrupt or human-action, and Intel experiences without depicting mockup-only or unshipped behavior",
+        "Screenshots are generated from deterministic credential-free fixture or demo data, contain no secrets, provider credentials, personal paths, or misleading live-service claims, and have a documented refresh procedure",
+        "Each visual has useful alternative text and a concise caption or surrounding explanation, remains readable on narrow and wide layouts, and does not replace the text path to the same documentation or workflow",
+        "The landing copy explains Battalion's human-directed Architect to Driver to Reviewer to Refactorer workflow, links to the current specification, plan, ADR index, and operator documentation, and clearly labels future roadmap behavior as unshipped",
+        "Published raster assets are appropriately sized and compressed, retain legible text at their rendered dimensions, and do not materially regress the Pages landing page load or repository size",
+        "scripts/build_pages.py explicitly stages every new public document and asset, focused tests validate the publication allowlist, rewritten links, image and favicon destinations, and the staged Pages output contains no broken local references",
+        "The final staged Pages site is visually reviewed at desktop and narrow viewport widths before the ticket is marked done"
+      ],
+      "dependencies": [
+        "BTN-18",
+        "BTN-42",
+        "BTN-43",
+        "BTN-56"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "User backlog request 2026-08-20; BTN-18, BTN-42, BTN-43, BTN-56",
+      "notes": "Coordinate visual placement with BTN-50's badge row, but keep the tickets independently deliverable: BTN-50 covers verifiable repository trust signals, while BTN-57 covers product presentation and shipped-workflow visuals. Reuse the canonical assets under battalion/desktop/assets. The ui/mockup files may guide composition but are not evidence of production behavior. Do not publish screenshots from a developer's real run state or require provider credentials to refresh them."
     }
   ]
 }

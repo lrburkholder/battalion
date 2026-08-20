@@ -20,9 +20,10 @@ PUBLISHED_DOCUMENTS = {
     "docs/adrs/README.md": "docs/adrs/index.md",
     **{
         f"docs/adrs/adr{number:04d}.md": f"docs/adrs/adr{number:04d}.md"
-        for number in range(1, 24)
+        for number in range(1, 25)
     },
     "docs/rfcs/rfc0004.md": "docs/rfcs/rfc0004.md",
+    "docs/rfcs/rfc0005.md": "docs/rfcs/rfc0005.md",
     "benchmarks/desktop/README.md": "benchmarks/desktop/index.md",
     "benchmarks/desktop/tauri/evidence/findings.md": "benchmarks/desktop/tauri/findings.md",
     "benchmarks/desktop/pyside6/evidence/findings.md": "benchmarks/desktop/pyside6/findings.md",

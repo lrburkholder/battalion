@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "project_id": "d876f1f8-8096-46cf-ad01-4b5cb789cd4d",
+  "runs": [
+    {
+      "run_id": "11cf906e-0ecd-4a7a-9e7d-6c9fd3978f2f",
+      "display_alias": "BTN-52-11cf906e",
+      "ticket_id": "BTN-52",
+      "state_path": ".battalion/state/11cf906e-0ecd-4a7a-9e7d-6c9fd3978f2f.json",
+      "legacy_id": false
+    }
+  ]
+}
