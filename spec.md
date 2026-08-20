@@ -38,6 +38,45 @@ run automatically.
   dogfooding model is "used to build Battalion's next work," not autonomous
   self-editing.
 
+## Accepted Post-v1 Inference Contract (delivery pending)
+
+[RFC-0005](docs/rfcs/rfc0005.md) and
+[ADR-0024](docs/adrs/adr0024.md) accept an endpoint-aware inference identity
+and cost policy without changing the shipped v1 runtime. BTN-52 through BTN-55
+deliver the contract; until those tickets complete, the existing LiteLLM
+model-string configuration, BTN-14 string comparison, and BTN-35 call evidence
+remain the implemented behavior.
+
+The accepted identity separates the Battalion-requested model, resolved or
+response model, provider, backend and non-secret endpoint, inference location,
+canonical model family, and cost policy. Local Ollama, LM Studio, vLLM, and
+other OpenAI-compatible services, plus remote inference through FreeLLMAPI, are
+optional sources behind LiteLLM. No source or router owns Battalion's role,
+graph, model-selection, diversity, retry, cost, or failure policy. A localhost
+proxy proves only a local first hop, not local inference.
+
+The accepted policies are `local-only`, `free-only`, and backwards-compatible
+`paid-capable`. Local-only admits verified same-host inference. Free-only
+admits verified local or current, sourced verified-free targets. Unknown
+classification fails closed in both zero-cost modes, and retry or failover may
+not cross the configured canonical-model, inference-location, or cost-policy
+boundary. Paid-capable permits only effective configured targets; it does not
+authorize arbitrary paid fallback.
+
+BTN-14 diversity is defined over distinct canonical model families. Different
+providers, endpoints, quantizations, or aliases alone do not qualify. Opaque
+auto, profile, smart, or fusion routes cannot serve Driver or Reviewer unless
+their family is constrained and mechanically proven before use. A runtime
+identity contradiction invalidates the affected output or verdict and pauses
+through interrupt condition 5.
+
+BTN-35 monetary semantics remain unchanged: admission evidence and accounting
+evidence are separate, missing monetary evidence is unknown rather than zero,
+and a reported non-zero amount under a zero-cost policy is recorded before the
+policy failure pauses execution. Credentials remain in the approved secret
+boundary; endpoint URLs and bounded non-secret classification evidence may be
+persisted.
+
 ## State Schema (v1, draft)
 Follows `regiment-backlog.json` conventions: explicit `schema_version`,
 enum-constrained `status`, per-item dependency/blocking fields. Lives as one
@@ -260,6 +299,10 @@ receives the passing file set.
 | 4 | Role-definition edit | Any action modifying a Battalion role/node definition | Always interrupt, no exceptions in v1 |
 | 5 | Infra failure | Node crash, malformed state, or LiteLLM call fails after retries | Separate handling path — not folded into triggers 1 or 3; surfaces as a distinct failure state, not a judgment escalation |
 | 6 | Manual checkpoint | User declares a checkpoint on the ticket/run config (e.g. "pause after Architect") independent of any system-detected condition | Graph pauses unconditionally at the declared point, regardless of whether any other trigger fired |
+
+ADR-0024 accepts a post-v1 extension of trigger #5 for runtime inference
+identity or zero-cost policy contradictions. That extension is not shipped
+until BTN-54 and BTN-55 implement and validate it.
 
 Deliberately deferred: severity-based ("critical finding") triggers. BTN-47
 must determine whether this belongs in existing Reviewer and interrupt policy
