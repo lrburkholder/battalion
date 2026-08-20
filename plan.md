@@ -11,8 +11,9 @@ detached worker supervision, canonical run/project identity, bounded operator
 and revision evidence, immutable Recon candidate persistence, exact sourced
 usage evidence, and durable-first live observation. BTN-37 through BTN-41 add
 the shared provider-free benchmark, three disposable framework spikes, and the
-accepted PySide6 desktop presentation decision in ADR-0022. The production
-desktop tickets beginning with BTN-42 remain unshipped backlog work.
+accepted PySide6 desktop presentation decision in ADR-0022. BTN-42 implements
+the production read-only desktop console on its feature branch; state-changing
+desktop controls and analytics remain BTN-43 and BTN-44 work.
 
 ## Architecture overview
 
@@ -171,6 +172,12 @@ ADR-0022 completes BTN-41 by selecting PySide6 with Qt Widgets for production
 presentation while carrying its packaging, native accessibility, recovery, and
 ambient-authority limitations into BTN-42 acceptance.
 
+BTN-42 adds the production `battalion.desktop` presentation, pure evidence
+projections, background project and Intel queries, durable-first live recovery,
+explicit missing/failure states, a standalone deployment path, and native
+accessibility evidence. Package exports and graph execution remain lazy so the
+read-only client does not initialize graph or provider authority.
+
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.
 
@@ -214,7 +221,7 @@ human approval boundaries, and receive separate implementation tickets.
 - BTN-36 classifies live events as durable-backed facts, lossy progress, or
   action requests. Per-run operation sequences support concurrent workers;
   reconnect always reloads `RunState` before consuming post-barrier events.
-- ADR-0022 selects PySide6 for desktop presentation. The selection does not
-  grant widgets graph or persistence authority: production clients remain thin
-  adapters over `battalion.application`, and BTN-42 must validate accessibility,
-  packaging, resource, restart, and real-worker failure behavior.
+- ADR-0022 selects PySide6 for desktop presentation. BTN-42 keeps widgets as
+  thin adapters over `battalion.application` and validates accessibility,
+  packaging, restart, and real-worker failure behavior without granting graph
+  or persistence authority.
