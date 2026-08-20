@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from battalion.config import BattalionConfig
@@ -22,10 +22,16 @@ from battalion.execution import summarize_costs
 from battalion.graph import resume_ticket, run_ticket
 from battalion.identity import (
     IdentityError,
+    ProjectIdentity,
+    RunCatalogEntry,
     generate_run_identity,
     load_project_identity,
+    load_run_catalog,
     register_run,
 )
+from battalion.intel.candidates import CandidateRepository
+from battalion.intel.models import AcceptedInstinct, CandidateInstinct
+from battalion.intel.repository import IntelRepository
 from battalion.observation import (
     ObservationCallback,
     ObservationCursor,
@@ -93,6 +99,24 @@ class IdentityApplicationError(ApplicationError):
     """Raised when run/project identity evidence cannot be reconciled."""
 
 
+class ProjectReadFailed(ApplicationError):
+    """Raised when a project cannot be opened as authoritative local data."""
+
+    def __init__(self, project_root: Path, cause: Exception) -> None:
+        self.project_root = project_root
+        self.cause = cause
+        super().__init__(f"Could not read project at {project_root}: {cause}")
+
+
+class IntelReadFailed(ApplicationError):
+    """Raised when persisted Intel or Recon evidence cannot be validated."""
+
+    def __init__(self, project_root: Path, cause: Exception) -> None:
+        self.project_root = project_root
+        self.cause = cause
+        super().__init__(f"Could not read Intel for {project_root}: {cause}")
+
+
 class RunIdentityChanged(IdentityApplicationError):
     """Raised when graph execution attempts to replace canonical identity."""
 
@@ -142,6 +166,20 @@ class InspectRun:
     """Read-only request for current durable run evidence."""
 
     run_id: str
+
+
+@dataclass(frozen=True)
+class InspectProject:
+    """Read-only request for a project's saved-run catalog."""
+
+    project_root: str | Path
+
+
+@dataclass(frozen=True)
+class InspectIntel:
+    """Read-only request for accepted Intel and immutable Recon candidates."""
+
+    project_root: str | Path
 
 
 @dataclass(frozen=True)
@@ -210,6 +248,33 @@ class RunInspection:
     state_path: Path
     state: RunState
     costs: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ProjectRunInspection:
+    """One catalog entry plus either validated state or an explicit limitation."""
+
+    catalog_entry: RunCatalogEntry
+    availability: Literal["available", "malformed", "inaccessible"]
+    inspection: RunInspection | None = None
+    limitation: str | None = None
+
+
+@dataclass(frozen=True)
+class ProjectInspection:
+    """Read-only project and run projection used by presentation clients."""
+
+    project_root: Path
+    identity: ProjectIdentity
+    runs: tuple[ProjectRunInspection, ...]
+
+
+@dataclass(frozen=True)
+class IntelInspection:
+    """Validated knowledge evidence without any review or mutation operations."""
+
+    accepted: tuple[AcceptedInstinct, ...]
+    candidates: tuple[CandidateInstinct, ...]
 
 
 def state_path(run_id: str, state_dir: str | Path = DEFAULT_STATE_DIR) -> Path:
@@ -379,6 +444,32 @@ def inspect_run(
     )
 
 
+def inspect_project(query: InspectProject) -> ProjectInspection:
+    """Discover saved runs without giving the caller filesystem authority."""
+    root = Path(query.project_root).resolve()
+    try:
+        identity = load_project_identity(root)
+        catalog = load_run_catalog(root, discover_legacy=True)
+    except (OSError, ValueError) as exc:
+        raise ProjectReadFailed(root, exc) from exc
+
+    runs = tuple(_inspect_catalog_entry(root, entry) for entry in catalog.runs)
+    return ProjectInspection(project_root=root, identity=identity, runs=runs)
+
+
+def inspect_intel(query: InspectIntel) -> IntelInspection:
+    """Load local Intel and Recon evidence through a read-only application query."""
+    root = Path(query.project_root).resolve()
+    try:
+        accepted = IntelRepository(root / ".battalion" / "intel").list_all()
+        candidates = CandidateRepository(
+            root / ".battalion" / "recon" / "candidates"
+        ).list_all()
+    except (OSError, ValueError, TypeError) as exc:
+        raise IntelReadFailed(root, exc) from exc
+    return IntelInspection(accepted=tuple(accepted), candidates=tuple(candidates))
+
+
 def reconnect_observation(
     query: ReconnectObservation,
     source: ObservationSource,
@@ -513,6 +604,49 @@ def _load_run(run_id: str, state_dir: str | Path) -> RunState:
         return load_state(path)
     except (OSError, ValueError) as exc:
         raise StateReadFailed(run_id, path, exc) from exc
+
+
+def _inspect_catalog_entry(
+    project_root: Path, entry: RunCatalogEntry
+) -> ProjectRunInspection:
+    path = Path(entry.state_path)
+    if not path.is_absolute():
+        path = project_root / path
+    try:
+        state = load_state(path)
+    except OSError as exc:
+        return ProjectRunInspection(
+            catalog_entry=entry,
+            availability="inaccessible",
+            limitation=str(exc),
+        )
+    except ValueError as exc:
+        return ProjectRunInspection(
+            catalog_entry=entry,
+            availability="malformed",
+            limitation=str(exc),
+        )
+    if state.run_id != entry.run_id:
+        return ProjectRunInspection(
+            catalog_entry=entry,
+            availability="malformed",
+            limitation=(
+                f"State run ID {state.run_id!r} does not match catalog entry "
+                f"{entry.run_id!r}."
+            ),
+        )
+    return ProjectRunInspection(
+        catalog_entry=entry,
+        availability="available",
+        inspection=RunInspection(
+            run_id=state.run_id,
+            run_alias=state.run_alias,
+            state_version=state.schema_version,
+            state_path=path,
+            state=state,
+            costs=summarize_costs(state.execution_record),
+        ),
+    )
 
 
 def _register_canonical_run(

@@ -149,10 +149,20 @@ def load_run_catalog(
         return catalog
 
     known = {entry.run_id for entry in catalog.runs}
+    known_paths = {
+        (
+            Path(entry.state_path)
+            if Path(entry.state_path).is_absolute()
+            else root / entry.state_path
+        ).resolve()
+        for entry in catalog.runs
+    }
     projected = list(catalog.runs)
     state_dir = root / STATE_DIRECTORY
     if state_dir.exists():
         for state_path in sorted(state_dir.glob("*.json")):
+            if state_path.resolve() in known_paths:
+                continue
             state = load_state(state_path)
             if state.run_id in known:
                 continue

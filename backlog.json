@@ -1007,7 +1007,7 @@
       "id": "BTN-42",
       "phase": "implementation",
       "title": "Read-only desktop operator console",
-      "status": "not-started",
+      "status": "in-progress",
       "priority": "P1",
       "description": "Deliver the first production desktop vertical slice for browsing Work, History, execution evidence, provenance, token and cost usage, and the Intel library without state-changing controls.",
       "acceptance_criteria": [
