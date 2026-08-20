@@ -1007,7 +1007,7 @@
       "id": "BTN-42",
       "phase": "implementation",
       "title": "Read-only desktop operator console",
-      "status": "in-progress",
+      "status": "done",
       "priority": "P1",
       "description": "Deliver the first production desktop vertical slice for browsing Work, History, execution evidence, provenance, token and cost usage, and the Intel library without state-changing controls.",
       "acceptance_criteria": [
@@ -1028,7 +1028,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "RFC-0004 Expected Follow-Up Tickets: Read-only operator console",
-      "notes": "This is the first production UI slice after framework selection. It deliberately establishes trustworthy visibility before state-changing controls."
+      "notes": "Completed 2026-08-20. The production PySide6 Qt Widgets client presents Work, History, detailed execution evidence, accepted Intel, and persisted Recon candidates exclusively through battalion.application read queries. It renders prompt, Git, bounded-context, artifact, verification, token, sourced-cost, legacy, missing, malformed, inaccessible, loading, empty, crashed-worker, and unknown-cost semantics; state-changing controls are absent and mechanically guarded. Durable-first reconnect is tested before post-barrier observations, including visible UI refresh after state checkpoints and a real subprocess death recovered as a crashed worker. Native Windows UI Automation exposed 25 named and 7 keyboard-focusable elements on the Work surface, including Work/History/Intel navigation; Qt keyboard tests traverse every destination. The standalone build produced a 70-file, 143,124,648-byte distribution, launched from an unrelated clean project with exit code 0, and recorded a five-second packaged idle sample of 103,440,384 working-set bytes and 51,920,896 private bytes. Full offline validation: 404 tests passed. The disposable BTN-39 spike remains separate production evidence."
     },
     {
       "id": "BTN-43",

@@ -19,12 +19,13 @@ from uuid import UUID
 
 from battalion.config import BattalionConfig
 from battalion.execution import summarize_costs
-from battalion.graph import resume_ticket, run_ticket
 from battalion.identity import (
     IdentityError,
     ProjectIdentity,
+    ProjectRunCatalog,
     RunCatalogEntry,
     generate_run_identity,
+    is_canonical_run_id,
     load_project_identity,
     load_run_catalog,
     register_run,
@@ -55,6 +56,20 @@ from battalion.workers import (
 
 DEFAULT_STATE_DIR = Path(".battalion/state")
 EventCallback = Callable[[dict[str, Any]], None]
+
+
+def run_ticket(*args, **kwargs):
+    """Load the graph authority only when a state-changing operation requests it."""
+    from battalion.graph import run_ticket as execute
+
+    return execute(*args, **kwargs)
+
+
+def resume_ticket(*args, **kwargs):
+    """Load resume policy only when a state-changing operation requests it."""
+    from battalion.graph import resume_ticket as execute
+
+    return execute(*args, **kwargs)
 
 
 class ApplicationError(Exception):
@@ -449,11 +464,14 @@ def inspect_project(query: InspectProject) -> ProjectInspection:
     root = Path(query.project_root).resolve()
     try:
         identity = load_project_identity(root)
-        catalog = load_run_catalog(root, discover_legacy=True)
+        catalog = load_run_catalog(root)
     except (OSError, ValueError) as exc:
         raise ProjectReadFailed(root, exc) from exc
 
-    runs = tuple(_inspect_catalog_entry(root, entry) for entry in catalog.runs)
+    entries = _discover_desktop_runs(root, catalog)
+    runs = tuple(
+        _inspect_catalog_entry(root, entry, identity) for entry in entries
+    )
     return ProjectInspection(project_root=root, identity=identity, runs=runs)
 
 
@@ -607,7 +625,7 @@ def _load_run(run_id: str, state_dir: str | Path) -> RunState:
 
 
 def _inspect_catalog_entry(
-    project_root: Path, entry: RunCatalogEntry
+    project_root: Path, entry: RunCatalogEntry, identity: ProjectIdentity
 ) -> ProjectRunInspection:
     path = Path(entry.state_path)
     if not path.is_absolute():
@@ -635,6 +653,15 @@ def _inspect_catalog_entry(
                 f"{entry.run_id!r}."
             ),
         )
+    if state.project_id is not None and state.project_id != str(identity.project_id):
+        return ProjectRunInspection(
+            catalog_entry=entry,
+            availability="malformed",
+            limitation=(
+                f"State belongs to project {state.project_id}, not "
+                f"{identity.project_id}."
+            ),
+        )
     return ProjectRunInspection(
         catalog_entry=entry,
         availability="available",
@@ -647,6 +674,50 @@ def _inspect_catalog_entry(
             costs=summarize_costs(state.execution_record),
         ),
     )
+
+
+def _discover_desktop_runs(
+    project_root: Path, catalog: ProjectRunCatalog
+) -> tuple[RunCatalogEntry, ...]:
+    """Project uncataloged states without letting one malformed file hide history."""
+    entries = list(catalog.runs)
+    known_run_ids = {entry.run_id for entry in entries}
+    known_paths = {
+        _catalog_state_path(project_root, entry).resolve() for entry in entries
+    }
+    state_dir = project_root / ".battalion" / "state"
+    if not state_dir.exists():
+        return tuple(entries)
+    for path in sorted(state_dir.glob("*.json")):
+        if path.resolve() in known_paths:
+            continue
+        try:
+            state = load_state(path)
+        except (OSError, ValueError):
+            entries.append(RunCatalogEntry(
+                run_id=path.stem,
+                display_alias=path.stem,
+                ticket_id="Unknown ticket",
+                state_path=path.relative_to(project_root).as_posix(),
+                legacy_id=not is_canonical_run_id(path.stem),
+            ))
+            continue
+        if state.run_id in known_run_ids:
+            continue
+        entries.append(RunCatalogEntry(
+            run_id=state.run_id,
+            display_alias=state.run_alias or state.run_id,
+            ticket_id=state.ticket_id,
+            state_path=path.relative_to(project_root).as_posix(),
+            legacy_id=not is_canonical_run_id(state.run_id),
+        ))
+        known_run_ids.add(state.run_id)
+    return tuple(entries)
+
+
+def _catalog_state_path(project_root: Path, entry: RunCatalogEntry) -> Path:
+    path = Path(entry.state_path)
+    return path if path.is_absolute() else project_root / path
 
 
 def _register_canonical_run(

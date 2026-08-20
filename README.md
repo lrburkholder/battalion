@@ -10,15 +10,16 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 ## Status
 
-**Current Milestone**: desktop operator foundations
+**Current Milestone**: desktop operator UI
 
 The v1 execution graph is complete. Durable execution evidence, the Recon and
 Intel knowledge lifecycle, deterministic context assembly, and the desktop
 operator architecture, shared application boundary, isolated active-run worker
 supervision, durable run/project identity, operator evidence, and typed
 live-observation are also implemented. After equivalent desktop spikes,
-[ADR-0022](docs/adrs/adr0022.md) selects PySide6 with Qt Widgets for the
-production presentation client. The read-only production console is next.
+[ADR-0022](docs/adrs/adr0022.md) selects PySide6 with Qt Widgets. BTN-42's
+production read-only console is implemented and validated on its feature branch;
+state-changing desktop controls remain BTN-43 work.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -50,8 +51,11 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-31**: Active-run worker supervision
 - ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
 - ✅ **BTN-33**: Operator summaries and revision evidence
+- ✅ **BTN-34**: Immutable persisted Recon candidate inbox
 - ✅ **BTN-35**: Exact, sourced, currency-aware usage evidence
 - ✅ **BTN-36**: Typed live observation and durable-first reconnect contract
+- ✅ **BTN-37–41**: Controlled desktop spikes and PySide6 framework selection
+- ✅ **BTN-42**: Read-only PySide6 operator console
 
 ## Architecture
 
@@ -62,7 +66,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.state.models` | Versioned state contract (Pydantic models) | ✅ Complete |
 | `battalion.state.persistence` | Local JSON load/save | ✅ Complete |
 | `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
-| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | ✅ Complete on BTN-34 branch; pending merge |
+| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | ✅ Complete (BTN-34) |
 | `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
 | `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
 | `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
@@ -70,6 +74,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
 | `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | ✅ Complete (BTN-36) |
+| `battalion.desktop` | Read-only PySide6 Work, History, execution-evidence, and Intel presentation | ✅ Complete (BTN-42) |
 | `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | ✅ Complete (BTN-16, BTN-19, BTN-35) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
@@ -151,6 +156,9 @@ cd battalion
 python -m venv .venv
 python -m pip install -e ".[dev]"
 python -m pip install langgraph  # temporary until declared in pyproject.toml
+
+# Add the production desktop client when needed
+python -m pip install -e ".[desktop,dev]"
 ```
 
 Battalion requires Python 3.11 or newer. The project imports LangGraph at
@@ -197,6 +205,25 @@ run-level turn budget used by interrupt trigger #3.
 Run `python -m battalion <command> --help` for the authoritative options while
 the CLI is evolving.
 
+### Browse with the Desktop Console
+
+```bash
+# Open the current project through the read-only application boundary
+battalion-desktop --project .
+
+# Equivalent module entry point
+python -m battalion.desktop --project .
+
+# Build the standalone desktop distribution under dist/desktop/
+python scripts/build_desktop.py
+```
+
+The BTN-42 client exposes Work, History, node-attempt evidence, accepted Intel,
+and persisted Recon candidates. It deliberately has no start, resume, cancel,
+interrupt-resolution, promotion, rejection, or editing controls. Refresh and
+client restart reload authoritative local state; post-barrier live observations
+are applied only after durable recovery.
+
 ### Running Tests
 
 ```bash
@@ -215,6 +242,10 @@ battalion/
 ├── __init__.py
 ├── __main__.py                 # `python -m battalion`
 ├── application.py              # Shared typed command/query boundary (BTN-30)
+├── desktop/                    # Read-only PySide6 operator console (BTN-42)
+│   ├── app.py                  # Qt Widgets and desktop entry point
+│   ├── controller.py           # Background application queries and reconnect
+│   └── presentation.py         # Pure evidence and missing-data projections
 ├── workers.py                  # Per-run worker supervision and recovery (BTN-31)
 ├── observation.py              # Typed live observation contract (BTN-36)
 ├── cli.py                      # Thin Typer presentation adapter
@@ -388,12 +419,12 @@ persistence, scope, or interrupt authority into the presentation client.
   PySide6, and Electron release prototypes. [ADR-0022](docs/adrs/adr0022.md)
   selects PySide6 with Qt Widgets and carries its packaging, accessibility,
   recovery, and ambient-authority risks into production acceptance.
-- **Production UI (BTN-42–44):** ship the read-only operator console, add
-  human-action surfaces, and provide history search and descriptive
+- **Production UI:** BTN-42 implements the read-only operator console. BTN-43
+  adds human-action surfaces, and BTN-44 adds history search and descriptive
   model-by-role analytics.
 
-The desktop framework is decided; BTN-42 must build a production PySide6 client
-over `battalion.application` rather than promote disposable benchmark code.
+The production PySide6 client is separate from the disposable benchmark code
+and depends on `battalion.application` rather than LangGraph or persistence.
 
 ### Future Architecture Planning
 

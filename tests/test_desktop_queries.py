@@ -118,6 +118,21 @@ def test_project_query_keeps_malformed_run_visible(tmp_path):
     assert result.runs[0].limitation
 
 
+def test_project_query_keeps_uncataloged_malformed_legacy_state_visible(tmp_path):
+    load_project_identity(tmp_path, create=True)
+    state_dir = tmp_path / ".battalion" / "state"
+    state_dir.mkdir()
+    (state_dir / "orphaned-broken.json").write_text("not json", encoding="utf-8")
+
+    result = inspect_project(InspectProject(tmp_path))
+
+    assert len(result.runs) == 1
+    assert result.runs[0].catalog_entry.run_id == "orphaned-broken"
+    assert result.runs[0].catalog_entry.ticket_id == "Unknown ticket"
+    assert result.runs[0].availability == "malformed"
+    assert result.runs[0].limitation
+
+
 def test_project_query_reports_inaccessible_project(tmp_path):
     with pytest.raises(ProjectReadFailed) as raised:
         inspect_project(InspectProject(tmp_path))
