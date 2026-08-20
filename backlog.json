@@ -1076,7 +1076,8 @@
         "BTN-32",
         "BTN-33",
         "BTN-35",
-        "BTN-42"
+        "BTN-42",
+        "BTN-54"
       ],
       "blocks": [],
       "assignee_role": "architect",
@@ -1182,6 +1183,207 @@
       "assignee_role": "architect",
       "source": "README Future Architecture Planning; docs/future/self-modification.md",
       "notes": "Long-term research planning only. Dogfooding does not authorize autonomous self-editing, and this ticket must not change runtime graph, role, scope, interrupt, merge, or deployment authority."
+    },
+    {
+      "id": "BTN-49",
+      "phase": "architecture",
+      "title": "Pluggable repository quality gates and anti-slop evaluation",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Decide how deterministic repository quality checks such as linters should participate in Battalion runs, and validate the proposed boundary with dmmulroy/anti-slop as a TypeScript/JavaScript case study without assuming that linting belongs in the plugin architecture.",
+      "acceptance_criteria": [
+        "The design compares core-owned quality gates, permissioned plugins defined by BTN-46, and repository-owned CI or command hooks, and records why the selected boundary preserves one application and graph policy authority",
+        "A language-neutral quality-gate contract defines discovery, configuration, working directory, inputs, command or API invocation, structured findings, exit semantics, timeouts, cancellation, version compatibility, and unavailable-tool behavior",
+        "Execution placement relative to Driver RED/GREEN, Reviewer clean-tree verification, refactoring, interrupts, resume, and human override is explicit, with durable provenance for tool identity, version, configuration, findings, and disposition",
+        "Filesystem, process, network, dependency-installation, and configuration-write capabilities remain least-authority grants and cannot broaden node write scopes or silently mutate the target repository",
+        "A disposable TypeScript/JavaScript fixture evaluates anti-slop and a representative Python check evaluates whether the contract is genuinely language-neutral, including pass, finding, malformed-output, missing-tool, timeout, and false-positive scenarios",
+        "The decision identifies which findings are advisory versus blocking, documents the operator correction path, and splits any accepted runtime, plugin SDK, bundled checker, UI, specification, ADR, and test work into separate tickets"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-30",
+        "BTN-46"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "User backlog request 2026-08-20; github.com/dmmulroy/anti-slop; BTN-46",
+      "notes": "Planning and disposable evaluation only. anti-slop is an opinionated vendored Oxlint rule set for TypeScript and JavaScript, not a Battalion dependency or a language-neutral contract. This ticket does not authorize a plugin loader, automatic dependency installation, a new graph checkpoint, or blocker policy."
+    },
+    {
+      "id": "BTN-50",
+      "phase": "rollout",
+      "title": "Repository status badges and README trust signals",
+      "status": "not-started",
+      "priority": "P3",
+      "description": "Add a compact, accessible badge row to the Battalion README that communicates verifiable repository health and project entry points without making unsupported package, service, or contribution claims.",
+      "acceptance_criteria": [
+        "The README begins with a compact badge row covering automated test status, supported Python version, MIT license, published documentation, and selected repository or contribution signals that are useful to prospective users and contributors",
+        "The test-status badge is backed by a GitHub Actions workflow that installs declared development dependencies and runs the credential-independent test suite on supported Python, with no live provider calls",
+        "Every badge has meaningful alt text, links to the corresponding workflow, documentation, license, contribution guidance, or repository page, and renders legibly on GitHub in light and dark themes",
+        "Dynamic badges report actual public repository state; package-registry, container-registry, API-access, community-service, or 'PRs welcome' badges are included only when their target and claim are valid for Battalion",
+        "Badge URLs and README rendering are covered by focused validation, and the published Pages staging build is checked so the README-derived landing page has no broken badge or destination links",
+        "The final badge set stays visually restrained and documents any omitted candidates, including their missing prerequisite or relevance concern"
+      ],
+      "dependencies": [
+        "BTN-10",
+        "BTN-18"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "User backlog request 2026-08-20; reference badge image",
+      "notes": "The reference image suggests CI, stars, license, contribution, container-registry, API, and DeepWiki-style badges. It is visual inspiration rather than proof that Battalion currently has those services. Do not add decorative, stale, or unverifiable badges."
+    },
+    {
+      "id": "BTN-51",
+      "phase": "architecture",
+      "title": "Zero-cost inference and model-endpoint architecture RFC",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Define Battalion's inference-target model for local and zero-cost remote inference without replacing LiteLLM, weakening model-diversity guarantees, or allowing an external router to silently own Battalion's role or model-selection policy.",
+      "acceptance_criteria": [
+        "The RFC distinguishes requested model, resolved model, provider, backend or endpoint, and cost policy instead of treating one LiteLLM model string as the complete inference identity",
+        "Local inference through Ollama, LM Studio, vLLM, or another OpenAI-compatible endpoint and remote inference through FreeLLMAPI are evaluated as optional inference sources behind the existing LiteLLM boundary",
+        "The RFC defines local-only, free-only, and explicitly configured paid-capable policy semantics, including classification ownership, evidence requirements, and behavior when monetary cost or free-tier status is unknown",
+        "BTN-14 model diversity remains mechanically meaningful behind proxies and routers; opaque aliases that may resolve Driver and Reviewer to the same underlying model cannot silently satisfy the constraint",
+        "Credential, endpoint URL, local or remote classification, secret, connectivity validation, failure, retry, failover, offline degradation, and upstream terms-of-service responsibilities are explicit",
+        "FreeLLMAPI remains optional infrastructure rather than a replacement for Battalion policy, and its presence alone is not evidence that every routed request is zero-cost, stable, or production-suitable",
+        "BTN-35 semantics remain intact so absent monetary evidence is recorded as unknown rather than silently converted to zero",
+        "Accepted work is reconciled with spec.md and durable ADRs, then split into endpoint configuration, FreeLLMAPI integration, provenance and diversity, and zero-cost enforcement tickets"
+      ],
+      "dependencies": [
+        "BTN-3",
+        "BTN-14",
+        "BTN-15",
+        "BTN-35"
+      ],
+      "blocks": [
+        "BTN-52",
+        "BTN-53",
+        "BTN-54",
+        "BTN-55"
+      ],
+      "assignee_role": "architect",
+      "source": "User backlog request 2026-08-20; BTN-3, BTN-14, BTN-15, BTN-35; github.com/tashfeenahmed/freellmapi",
+      "notes": "Architecture first because this crosses configuration, provenance, cost semantics, external routing, and an existing mechanical safety constraint. Battalion already has partial local-model support through keyless-provider recognition and NodeLLMConfig.extra_params; the RFC must extend rather than replace those capabilities."
+    },
+    {
+      "id": "BTN-52",
+      "phase": "implementation",
+      "title": "Endpoint-aware local inference configuration and setup",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Extend Battalion's existing LiteLLM configuration and guided setup so per-role models can target local inference endpoints explicitly and reproducibly.",
+      "acceptance_criteria": [
+        "Per-node configuration can express the model and endpoint parameters required for Ollama, LM Studio or other OpenAI-compatible localhost servers, and vLLM without hardcoding those runtimes into node implementations",
+        "battalion setup configures and preserves endpoint-aware NodeLLMConfig fields instead of reducing every role to only a normalized model string",
+        "Setup recognizes supported local and keyless targets without requesting irrelevant provider credentials, while bearer tokens and other secrets remain outside repository configuration",
+        "Connectivity validation checks each distinct effective inference target needed to prove the saved configuration; a shared provider name does not suppress validation of a different endpoint or model target",
+        "Driver and Reviewer diversity validation continues to operate on the canonical identity contract accepted by BTN-51",
+        "Endpoint URLs and non-secret settings may be persisted with explicit local or remote classification, while existing plain provider/model configurations remain backwards-compatible",
+        "Automated tests cover Ollama-style local inference, OpenAI-compatible localhost inference, unavailable endpoints, preserved existing configuration, distinct targets sharing a provider, and mixed local and remote role configurations"
+      ],
+      "dependencies": [
+        "BTN-15",
+        "BTN-51"
+      ],
+      "blocks": [
+        "BTN-53",
+        "BTN-54",
+        "BTN-55"
+      ],
+      "assignee_role": "driver",
+      "source": "BTN-15 extension; BTN-51",
+      "notes": "setup.py already treats Ollama, vLLM, LM Studio, and local providers as keyless, and NodeLLMConfig.extra_params already reaches LiteLLM. The current gaps are that run_setup persists only model strings and connectivity validation deduplicates by provider rather than effective target."
+    },
+    {
+      "id": "BTN-53",
+      "phase": "implementation",
+      "title": "FreeLLMAPI optional inference backend",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Support a user-operated FreeLLMAPI instance as an optional OpenAI-compatible inference source while keeping Battalion responsible for role, model, diversity, cost, and failure policy.",
+      "acceptance_criteria": [
+        "Battalion can configure a FreeLLMAPI /v1 endpoint and obtain its bearer credential from the approved secret boundary through the endpoint-aware model configuration path",
+        "Architect, Driver, Reviewer, and Refactorer can independently select concrete FreeLLMAPI model families without node-specific integration code",
+        "Setup performs a minimal endpoint and requested-model availability check before saving validated configuration without persisting the bearer credential",
+        "Battalion does not depend on FreeLLMAPI-specific graph, workflow, role, smart-routing, prompt-transformation, or application policy",
+        "Opaque auto, profile, fusion, or equivalent virtual routes cannot satisfy Driver and Reviewer diversity unless BTN-51 defines a mechanically verifiable identity contract for them",
+        "Concrete model families may use provider-level failover only when it preserves the configured model and cost-policy identity and emits sufficient resolution evidence",
+        "FreeLLMAPI unavailability, malformed routing evidence, exhausted provider capacity, and upstream failures surface through Battalion's existing infra-failure and interrupt boundary",
+        "Tests use mocked or disposable local endpoints, require no external network or paid key, and cover model discovery, authentication failure, concrete routing, unavailable capacity, and compatible failure responses"
+      ],
+      "dependencies": [
+        "BTN-51",
+        "BTN-52"
+      ],
+      "blocks": [
+        "BTN-54",
+        "BTN-55"
+      ],
+      "assignee_role": "driver",
+      "source": "BTN-51; github.com/tashfeenahmed/freellmapi",
+      "notes": "FreeLLMAPI currently exposes an OpenAI-compatible endpoint, concrete and virtual routes, provider failover, and routed-provider response metadata. Its free-tier catalog and upstream availability can change, and its documentation characterizes the project as personal-experimentation infrastructure rather than a production SLA."
+    },
+    {
+      "id": "BTN-54",
+      "phase": "implementation",
+      "title": "Resolved inference identity and model-diversity provenance",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Extend durable LLM-call evidence so Battalion records requested and effective inference identity and can demonstrate that model-diversity rules remain true across local endpoints and proxies.",
+      "acceptance_criteria": [
+        "Durable execution evidence distinguishes requested model, resolved or response model when available, backend and endpoint classification, and routed provider when reliably reported",
+        "Existing token, monetary cost, currency, and cost-source evidence remains backwards-compatible, including explicit unknown monetary evidence",
+        "A local call is durably identifiable as local inference rather than appearing only as an arbitrary OpenAI-compatible model string",
+        "A FreeLLMAPI call preserves the Battalion-requested concrete model and routed provider/model metadata such as X-Routed-Via when available without fabricating absent evidence",
+        "BTN-14 configuration validation is reconciled with the new identity model so differently named aliases cannot trivially masquerade as independent Driver and Reviewer models",
+        "If runtime evidence contradicts the configured diversity assumption, Battalion records the contradiction and follows the failure or interrupt behavior accepted by BTN-51",
+        "Historical execution records remain readable through an explicit migration or compatibility path",
+        "BTN-44 analytics consumes the new typed fields without inferring provider, endpoint, or model identity from display strings"
+      ],
+      "dependencies": [
+        "BTN-35",
+        "BTN-51",
+        "BTN-52",
+        "BTN-53"
+      ],
+      "blocks": [
+        "BTN-44",
+        "BTN-55"
+      ],
+      "assignee_role": "driver",
+      "source": "BTN-14, BTN-19, BTN-35, BTN-44; BTN-51",
+      "notes": "BTN-14 currently compares configured model strings, while LLM-call evidence records the response model plus token and cost information. That is adequate for direct providers but not a robust provenance contract for routed endpoints."
+    },
+    {
+      "id": "BTN-55",
+      "phase": "implementation",
+      "title": "Zero-cost execution policy and enforcement",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Add a user-selectable inference-cost policy that can mechanically prevent Battalion runs from intentionally using paid inference while preserving explicit unknown-cost semantics.",
+      "acceptance_criteria": [
+        "Battalion implements the inference policies accepted by BTN-51, including at minimum local-only and free-only",
+        "local-only rejects every configured inference target not verifiably classified as local before graph execution begins",
+        "free-only rejects targets known to require paid inference and never silently falls back from a free or local target to a paid provider",
+        "Unknown cost or free-tier status follows BTN-51's explicit policy and is never treated as zero merely because a provider or proxy omitted monetary evidence",
+        "Provider-reported non-zero cost under a zero-cost policy is recorded durably and triggers the policy-violation or interrupt behavior accepted by BTN-51",
+        "Retry, model routing, and provider failover cannot cross the configured cost-policy boundary",
+        "Cost policy is visible through application and CLI inspection and is durable run configuration and evidence rather than an ephemeral setup preference",
+        "Existing turn-budget interrupt semantics remain separate from monetary inference policy",
+        "Tests cover local-only success, remote rejection under local-only, verified zero-cost remote success, forbidden paid fallback, unknown cost, reported non-zero cost, resume, and mixed-role configurations"
+      ],
+      "dependencies": [
+        "BTN-35",
+        "BTN-51",
+        "BTN-52",
+        "BTN-53",
+        "BTN-54"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "BTN-8, BTN-27, BTN-35; BTN-51",
+      "notes": "Do not overload budget_limit, which tracks graph-run turns rather than money. FreeLLMAPI is one possible inference source, not the definition of free-only policy; the policy must remain valid if that external project or its provider catalog changes."
     }
   ]
 }

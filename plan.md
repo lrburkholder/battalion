@@ -183,16 +183,30 @@ run, resume, persistence, or review paths.
 
 ## Future architecture planning
 
-BTN-45 through BTN-48 turn the README's post-v2 directions into bounded
+BTN-45 through BTN-49 turn the README's post-v2 directions into bounded
 architecture work for a possible Specifier role, a permissioned plugin model,
 severity-based review and a possible Guardian role, and carefully constrained
-self-modification research. Their planning briefs live under `docs/future/`.
+self-modification research. BTN-49 adds a follow-on decision and disposable
+evaluation for language-neutral repository quality gates after BTN-46 defines
+the plugin boundary. The existing planning briefs live under `docs/future/`.
 
 These tickets produce decision-ready RFCs and follow-up decomposition only.
 They do not authorize new roles, graph transitions, interrupt behavior,
 permissions, integrations, or self-editing. Any accepted change to those
 surfaces must reconcile `spec.md`, record durable decisions in ADRs, preserve
 human approval boundaries, and receive separate implementation tickets.
+
+BTN-50 is independent rollout work for truthful repository status badges and a
+credential-independent test workflow. It must not advertise packages,
+services, contribution policy, or repository health that Battalion cannot
+verify.
+
+BTN-51 through BTN-55 define an architecture-first inference-target and cost
+policy, then sequence endpoint-aware local setup, optional FreeLLMAPI support,
+resolved identity evidence, and zero-cost enforcement. FreeLLMAPI remains a
+replaceable OpenAI-compatible infrastructure option: its routing must not own
+Battalion's role, diversity, cost, graph, or failure policy, and an external
+free-tier claim is not itself durable zero-cost evidence.
 
 ## Risks and watch items
 

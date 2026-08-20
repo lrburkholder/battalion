@@ -439,6 +439,13 @@ changes Battalion's current roles or authority until its RFC is accepted:
   narrower extension of existing Reviewer and interrupt policy.
 - **BTN-48:** Define safety invariants and staged evidence for bounded,
   human-authorized self-modification proposals.
+- **BTN-49:** Decide where deterministic repository quality gates belong and
+  evaluate a language-neutral contract using anti-slop and Python fixtures.
+- **BTN-50:** Add a restrained README badge set backed by real CI,
+  documentation, license, and repository state.
+- **BTN-51–55:** Define transparent local and zero-cost inference policy, then
+  add endpoint-aware setup, optional FreeLLMAPI support, resolved inference
+  provenance, and mechanical cost-policy enforcement.
 
 The former Teacher concept is no longer planned as a Battalion role. It is
 expected to evolve into **Dojo**, a separate future application. Researcher
