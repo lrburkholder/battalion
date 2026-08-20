@@ -232,6 +232,10 @@ def resume(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to battalion.config.yaml"),
     base_dir: str = typer.Option(".", "--base-dir", help="Base directory for file operations"),
     prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
+    actor: str = typer.Option("operator", "--actor", help="Identity recorded for the human action"),
+    resolution: str = typer.Option(
+        "authorized resume", "--resolution", help="Durable resolution for the latest interrupt"
+    ),
 ):
     """Resume a paused/interrupted run from saved state."""
     cfg = load_config(config, {"base_dir": base_dir, "prompts_dir": prompts_dir})
@@ -240,7 +244,12 @@ def resume(
     try:
         with display:
             result = resume_run(
-                ResumeRun(run_id=run_id, config=cfg),
+                ResumeRun(
+                    run_id=run_id,
+                    config=cfg,
+                    actor=actor,
+                    resolution=resolution,
+                ),
                 state_dir=STATE_DIR,
                 on_node_event=display.handle_event,
                 on_token=display.handle_token,

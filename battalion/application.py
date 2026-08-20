@@ -11,11 +11,12 @@ types.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from battalion.config import BattalionConfig
 from battalion.execution import summarize_costs
@@ -30,16 +31,36 @@ from battalion.identity import (
     load_run_catalog,
     register_run,
 )
-from battalion.intel.candidates import CandidateRepository
+from battalion.intel.candidates import (
+    CandidateInbox,
+    CandidateInboxEntry,
+    CandidateNotFoundError,
+    CandidateRepository,
+)
 from battalion.intel.models import AcceptedInstinct, CandidateInstinct
 from battalion.intel.repository import IntelRepository
+from battalion.intel.review import (
+    DecisionAlreadyRecordedError,
+    InstinctDecisionRepository,
+    InstinctReviewDecision,
+    InstinctReviewWorkflow,
+    ReviewAction,
+)
 from battalion.observation import (
     ObservationCallback,
     ObservationCursor,
     ObservationSource,
     RunObservationPublisher,
 )
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import (
+    Budget,
+    HumanActionRecord,
+    HumanIntervention,
+    InterventionKind,
+    InterventionTarget,
+    RunState,
+    RunStatus,
+)
 from battalion.state.persistence import load_state, save_state
 from battalion.workers import (
     DEFAULT_WORKER_DIR,
@@ -48,6 +69,7 @@ from battalion.workers import (
     WorkerLaunchFailed as _WorkerLaunchFailed,
     WorkerNotFound as _WorkerNotFound,
     cancel_worker as _cancel_worker,
+    inactive_worker_guard as _inactive_worker_guard,
     launch_worker,
     observe_worker as _observe_worker,
     reconnect_worker as _reconnect_worker,
@@ -132,6 +154,14 @@ class IntelReadFailed(ApplicationError):
         super().__init__(f"Could not read Intel for {project_root}: {cause}")
 
 
+class HumanActionRejected(ApplicationError):
+    """Raised when a requested human action violates durable authority policy."""
+
+
+class CandidateReviewFailed(ApplicationError):
+    """Raised when candidate review cannot complete through the canonical workflow."""
+
+
 class RunIdentityChanged(IdentityApplicationError):
     """Raised when graph execution attempts to replace canonical identity."""
 
@@ -174,6 +204,30 @@ class ResumeRun:
 
     run_id: str
     config: BattalionConfig
+    actor: str = "operator"
+    resolution: str = "authorized resume"
+
+
+@dataclass(frozen=True)
+class QueueIntervention:
+    """Queue bounded context for one exact target-node attempt."""
+
+    run_id: str
+    kind: InterventionKind
+    target: InterventionTarget
+    text: str
+    actor: str
+
+
+@dataclass(frozen=True)
+class ReviewCandidate:
+    """Human-authorized Recon candidate decision."""
+
+    project_root: str | Path
+    candidate_id: str
+    action: ReviewAction
+    actor: str
+    edits: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -290,6 +344,24 @@ class IntelInspection:
 
     accepted: tuple[AcceptedInstinct, ...]
     candidates: tuple[CandidateInstinct, ...]
+    candidate_entries: tuple[CandidateInboxEntry, ...] = ()
+
+
+@dataclass(frozen=True)
+class HumanActionResult:
+    """Durable run state produced by an authorized human action."""
+
+    action: HumanActionRecord
+    state: RunState
+    state_path: Path
+
+
+@dataclass(frozen=True)
+class CandidateReviewResult:
+    """Durable candidate decision and its resulting disposition."""
+
+    decision: InstinctReviewDecision
+    disposition: Literal["promoted", "rejected"]
 
 
 def state_path(run_id: str, state_dir: str | Path = DEFAULT_STATE_DIR) -> Path:
@@ -396,7 +468,14 @@ def resume_run(
     """Load, resume through the canonical graph behavior, and save one run."""
     state = _load_run(command.run_id, state_dir)
     warning = None
-    if state.status != RunStatus.AWAITING_HUMAN:
+    if state.status == RunStatus.AWAITING_HUMAN:
+        state = _resolve_latest_interrupt(
+            state,
+            actor=command.actor,
+            resolution=command.resolution,
+        )
+        save_state(state, state_path(command.run_id, state_dir))
+    else:
         warning = (
             f"Run status is '{state.status.value}', not 'awaiting-human'. Resuming anyway."
         )
@@ -480,12 +559,132 @@ def inspect_intel(query: InspectIntel) -> IntelInspection:
     root = Path(query.project_root).resolve()
     try:
         accepted = IntelRepository(root / ".battalion" / "intel").list_all()
-        candidates = CandidateRepository(
+        candidate_repository = CandidateRepository(
             root / ".battalion" / "recon" / "candidates"
+        )
+        decision_repository = InstinctDecisionRepository(
+            root / ".battalion" / "recon" / "decisions"
+        )
+        entries = CandidateInbox(
+            candidate_repository, decision_repository
         ).list_all()
     except (OSError, ValueError, TypeError) as exc:
         raise IntelReadFailed(root, exc) from exc
-    return IntelInspection(accepted=tuple(accepted), candidates=tuple(candidates))
+    return IntelInspection(
+        accepted=tuple(accepted),
+        candidates=tuple(entry.candidate for entry in entries),
+        candidate_entries=tuple(entries),
+    )
+
+
+def queue_intervention(
+    command: QueueIntervention,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    _clock: Callable[[], datetime] | None = None,
+    _action_id: str | None = None,
+) -> HumanActionResult:
+    """Durably queue exact-target context while no run worker is active."""
+    state_path(command.run_id, state_dir)
+    try:
+        with _inactive_worker_guard(command.run_id, worker_dir=worker_dir):
+            return _persist_intervention(
+                command,
+                state_dir=state_dir,
+                clock=_clock,
+                action_id=_action_id,
+            )
+    except _WorkerAlreadyActive as exc:
+        raise HumanActionRejected(
+            "Interventions cannot be queued while a model generation may be in flight"
+        ) from exc
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise WorkerRecordReadFailed(command.run_id, exc) from exc
+
+
+def _persist_intervention(
+    command: QueueIntervention,
+    *,
+    state_dir: str | Path,
+    clock: Callable[[], datetime] | None,
+    action_id: str | None,
+) -> HumanActionResult:
+    state = _load_run(command.run_id, state_dir)
+    occurred_at = (clock or (lambda: datetime.now(timezone.utc)))()
+    identifier = action_id or f"action-{uuid4()}"
+    try:
+        kind = InterventionKind(command.kind)
+        target = InterventionTarget(command.target)
+        intervention = HumanIntervention(
+            action_id=identifier,
+            kind=kind,
+            target=target,
+            text=command.text,
+            actor=command.actor,
+            requested_at=occurred_at,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HumanActionRejected(str(exc)) from exc
+    action = HumanActionRecord(
+        action_id=identifier,
+        kind=kind.value,
+        actor=command.actor,
+        occurred_at=occurred_at,
+        target=target.value,
+        disposition="queued",
+        detail=command.text,
+        resulting_state_version=state.schema_version,
+        resulting_status=state.status,
+        resulting_phase=state.phase,
+    )
+    updated = state.model_copy(update={
+        "interventions": [*state.interventions, intervention],
+        "human_action_log": [*state.human_action_log, action],
+    })
+    path = state_path(command.run_id, state_dir)
+    save_state(updated, path)
+    return HumanActionResult(action=action, state=updated, state_path=path)
+
+
+def review_candidate(command: ReviewCandidate) -> CandidateReviewResult:
+    """Apply one candidate decision through the audited Intel workflow."""
+    root = Path(command.project_root).resolve()
+    candidates = CandidateRepository(root / ".battalion" / "recon" / "candidates")
+    workflow = InstinctReviewWorkflow(
+        IntelRepository(root / ".battalion" / "intel"),
+        InstinctDecisionRepository(root / ".battalion" / "recon" / "decisions"),
+    )
+    try:
+        candidate = candidates.get(command.candidate_id)
+        if command.action is ReviewAction.ACCEPT:
+            if command.edits:
+                raise HumanActionRejected("accept does not permit candidate edits")
+            decision = workflow.accept(candidate, decided_by=command.actor)
+        elif command.action is ReviewAction.EDIT_AND_ACCEPT:
+            decision = workflow.edit_then_accept(
+                candidate,
+                decided_by=command.actor,
+                edits=command.edits or {},
+            )
+        else:
+            if command.edits:
+                raise HumanActionRejected("reject does not permit candidate edits")
+            decision = workflow.reject(candidate, decided_by=command.actor)
+    except HumanActionRejected:
+        raise
+    except (
+        CandidateNotFoundError,
+        DecisionAlreadyRecordedError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise CandidateReviewFailed(str(exc)) from exc
+    disposition = (
+        "rejected" if decision.action is ReviewAction.REJECT else "promoted"
+    )
+    return CandidateReviewResult(decision=decision, disposition=disposition)
 
 
 def reconnect_observation(
@@ -539,6 +738,18 @@ def start_worker(
 
     state_path(operation.run_id, state_dir)  # validate before using it as a filename
     state = _load_run(operation.run_id, state_dir)
+    if not operation.actor.strip():
+        raise HumanActionRejected("Human action actor must not be empty")
+    if not operation.resolution.strip():
+        raise HumanActionRejected("Interrupt resolution must not be empty")
+    if state.status is RunStatus.AWAITING_HUMAN:
+        # Validate the durable resolution target before starting a process;
+        # the worker performs and persists the actual state transition.
+        _resolve_latest_interrupt(
+            state,
+            actor=operation.actor,
+            resolution=operation.resolution,
+        )
     try:
         return launch_worker(
             operation="resume",
@@ -548,6 +759,8 @@ def start_worker(
             config=operation.config,
             state_dir=state_dir,
             worker_dir=worker_dir,
+            resume_actor=operation.actor,
+            resume_resolution=operation.resolution,
         )
     except _WorkerAlreadyActive as exc:
         raise WorkerAlreadyActive(str(exc)) from exc
@@ -612,6 +825,58 @@ def _live_callbacks(
             on_token(event)
 
     return node_callback, token_callback
+
+
+def _resolve_latest_interrupt(
+    state: RunState,
+    *,
+    actor: str,
+    resolution: str,
+    occurred_at: datetime | None = None,
+    action_id: str | None = None,
+) -> RunState:
+    """Resolve exactly the latest unresolved interrupt before canonical resume."""
+    unresolved = [
+        index for index, entry in enumerate(state.interrupt_log)
+        if entry.resolution is None
+    ]
+    if not resolution.strip():
+        raise HumanActionRejected("Interrupt resolution must not be empty")
+    interrupts = list(state.interrupt_log)
+    if unresolved:
+        index = unresolved[-1]
+        interrupts[index] = interrupts[index].model_copy(
+            update={"resolution": resolution.strip()}
+        )
+        target = f"interrupt:{index}"
+    elif not interrupts:
+        # Legacy awaiting-human state predates durable interrupt evidence.
+        target = "legacy-pause"
+    else:
+        raise HumanActionRejected(
+            "The awaiting-human run has no unresolved interrupt"
+        )
+    timestamp = occurred_at or datetime.now(timezone.utc)
+    identifier = action_id or f"action-{uuid4()}"
+    try:
+        action = HumanActionRecord(
+            action_id=identifier,
+            kind="interrupt-resolution",
+            actor=actor,
+            occurred_at=timestamp,
+            target=target,
+            disposition="applied",
+            detail=resolution.strip(),
+            resulting_state_version=state.schema_version,
+            resulting_status=state.status,
+            resulting_phase=state.phase,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HumanActionRejected(str(exc)) from exc
+    return state.model_copy(update={
+        "interrupt_log": interrupts,
+        "human_action_log": [*state.human_action_log, action],
+    })
 
 
 def _load_run(run_id: str, state_dir: str | Path) -> RunState:

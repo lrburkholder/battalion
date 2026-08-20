@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -27,6 +28,9 @@ from battalion.state.persistence import save_state
 
 
 DEFAULT_WORKER_DIR = Path(".battalion/workers")
+PACKAGED_WORKER_RELATIVE_PATH = (
+    Path("worker") / "worker_entry.dist" / "BattalionWorker.exe"
+)
 
 
 class WorkerStatus(str, Enum):
@@ -85,6 +89,32 @@ class WorkerLaunchFailed(WorkerError):
     pass
 
 
+@contextmanager
+def inactive_worker_guard(
+    run_id: str, *, worker_dir: str | Path = DEFAULT_WORKER_DIR
+):
+    """Exclude worker launch while a non-running human action is persisted."""
+    directory = Path(worker_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    record_path = _record_path(run_id, directory)
+    lock_path = record_path.with_suffix(record_path.suffix + ".launch.lock")
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise WorkerAlreadyActive(
+            f"Run {run_id!r} has a worker launch or human action in progress"
+        ) from exc
+    try:
+        if record_path.exists() and reconnect_worker(
+            run_id, worker_dir=directory
+        ).active:
+            raise WorkerAlreadyActive(f"Run {run_id!r} has an active worker")
+        yield
+    finally:
+        os.close(lock_fd)
+        lock_path.unlink(missing_ok=True)
+
+
 def launch_worker(
     *,
     operation: str,
@@ -94,6 +124,8 @@ def launch_worker(
     config: BattalionConfig,
     state_dir: str | Path,
     worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    resume_actor: str | None = None,
+    resume_resolution: str | None = None,
 ) -> WorkerRecord:
     """Launch one detached Python worker after durably reserving ``run_id``."""
     if operation not in {"start", "resume"}:
@@ -155,6 +187,8 @@ def launch_worker(
         "config": config.model_dump(mode="json"),
         "state_dir": str(state_dir),
         "worker_dir": str(directory),
+        "resume_actor": resume_actor,
+        "resume_resolution": resume_resolution,
     }
     try:
         process = _spawn_process()
@@ -241,10 +275,26 @@ def _spawn_process() -> subprocess.Popen[bytes]:
         )
     else:
         kwargs["start_new_session"] = True
-    return subprocess.Popen(
-        [sys.executable, "-m", "battalion.workers", "run"],
-        **kwargs,
-    )
+    compiled = bool(getattr(sys, "frozen", False)) or globals().get(
+        "__compiled__"
+    ) is not None
+    if compiled:
+        override = os.getenv("BATTALION_WORKER_EXECUTABLE")
+        executable = (
+            Path(override)
+            if override
+            else Path(sys.executable).resolve().parent.parent
+            / PACKAGED_WORKER_RELATIVE_PATH
+        )
+        if not executable.is_file():
+            raise FileNotFoundError(
+                "Packaged Battalion worker is unavailable at "
+                f"{executable}; rebuild or install the split worker distribution"
+            )
+        argv = [str(executable)]
+    else:
+        argv = [sys.executable, "-m", "battalion.workers", "run"]
+    return subprocess.Popen(argv, **kwargs)
 
 
 def _worker_main(stdin: BinaryIO) -> int:
@@ -270,7 +320,12 @@ def _worker_main(stdin: BinaryIO) -> int:
             )
         else:
             resume_run(
-                ResumeRun(run_id=run_id, config=config),
+                ResumeRun(
+                    run_id=run_id,
+                    config=config,
+                    actor=request.get("resume_actor") or "operator",
+                    resolution=request.get("resume_resolution") or "authorized resume",
+                ),
                 state_dir=request["state_dir"],
             )
     except BaseException as exc:

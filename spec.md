@@ -66,6 +66,11 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `retry_bound` (configurable per ticket, per open decision)
 - `budget` (tracked per graph run, not per node)
 - `interrupt_log` (list of {trigger, timestamp, resolution})
+- `interventions` (bounded typed human context with action ID, actor, time,
+  exact Architect/Driver RED/Driver GREEN/Refactorer target, queued/delivered
+  disposition, and the sole receiving node-attempt ID)
+- `human_action_log` (append-only run-action evidence with actor, time, target,
+  disposition, detail, and resulting durable state version/status/phase)
 - `manual_checkpoints` (list of phase names the user has declared a mandatory
   pause after — supports interrupt trigger #6)
 - `execution_record` (a separately versioned, validated history of node
@@ -77,6 +82,32 @@ replace that identity. `.battalion/runs.json` is a project-scoped, rebuildable
 catalog whose references use canonical run IDs. Moving a repository with its
 `.battalion` directory preserves project identity. Legacy files are discovered
 under their original IDs without rewriting historical provenance (ADR-0020).
+
+### Human actions and next-attempt context
+
+Interrupt resolution is persisted before resume and records the human actor,
+time, interrupt target, resolution, disposition, and resulting durable state.
+CLI and desktop clients submit the same `ResumeRun` application command; graph
+resume inference and execution remain canonical.
+
+V1 has exactly two intervention intents. `correction` targets `driver_red`,
+`driver_green`, or `refactorer`; `design-decision` targets `architect`. Reviewer
+is not a target, and neither Reviewer verdict override nor manual checkpoint
+override is introduced. Submission is rejected while an active worker may have
+a provider generation in flight.
+
+Queued interventions are associated with a generated node-attempt identifier
+and checkpointed before that target assembles context or calls a provider. The
+attempt receives a named bounded Human intervention section, and its execution
+record retains a hashed context reference to the action. Delivered content is
+not supplied to later attempts or other roles. A crash before association
+leaves the item queued; a crash after association preserves the receiving
+attempt identity (ADR-0023).
+
+Recon candidate accept, edit-and-accept, and reject operations remain outside
+`RunState`. Application commands delegate to the audited Intel workflow, which
+leaves candidate Markdown immutable and creates separate accepted Intel and
+append-only review-decision evidence.
 
 ### Durable execution record
 

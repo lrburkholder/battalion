@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtGui import QAction, QFont, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFrame,
+    QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QMainWindow,
     QPlainTextEdit,
+    QPushButton,
     QSplitter,
     QStackedWidget,
     QTreeWidget,
@@ -33,7 +39,17 @@ from battalion.desktop.presentation import (
     render_run,
     run_label,
 )
+from battalion.desktop.theme import (
+    BRAND_ICON,
+    MONO_FONT_FAMILY,
+    STYLESHEET,
+    application_icon,
+    load_bundled_fonts,
+)
 from battalion.observation import ObservationEvent, ObservationKind
+from battalion.intel.models import CandidateInstinct
+from battalion.intel.review import ReviewAction
+from battalion.state.models import InterventionKind, InterventionTarget, RunStatus
 
 
 RUN_DATA = Qt.ItemDataRole.UserRole
@@ -53,7 +69,9 @@ class BattalionWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.controller = controller or DesktopController(project_root)
-        self.setWindowTitle("Battalion Operator Console")
+        load_bundled_fonts()
+        self.setWindowTitle("Battalion")
+        self.setWindowIcon(application_icon())
         self.setMinimumSize(900, 600)
         self.resize(1380, 860)
         self.setCentralWidget(self._build_content())
@@ -66,19 +84,44 @@ class BattalionWindow(QMainWindow):
     def _build_content(self) -> QWidget:
         root = QWidget()
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 12, 14, 10)
+        layout.setSpacing(8)
 
-        title = QLabel("Battalion operator console")
+        top_bar = QFrame()
+        top_bar.setObjectName("topBar")
+        top_bar_layout = QHBoxLayout(top_bar)
+        top_bar_layout.setContentsMargins(8, 5, 8, 6)
+        top_bar_layout.setSpacing(8)
+        brand_mark = QLabel()
+        brand_mark.setAccessibleName("Battalion mark")
+        brand_mark.setPixmap(
+            QPixmap(str(BRAND_ICON)).scaled(
+                22,
+                22,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        title = QLabel("battalion")
         title.setObjectName("title")
         title.setAccessibleName("Battalion operator console")
+        separator = QLabel("│")
+        separator.setObjectName("navSeparator")
+        project_identity = QLabel(f"project  {self.controller.project_root.name}")
+        project_identity.setObjectName("projectIdentity")
+        project_identity.setAccessibleName("Current project")
+        top_bar_layout.addWidget(brand_mark)
+        top_bar_layout.addWidget(title)
+        top_bar_layout.addWidget(separator)
+        top_bar_layout.addWidget(project_identity)
+        top_bar_layout.addStretch(1)
         self.view_state = QLabel("Loading project…")
         self.view_state.setObjectName("viewState")
         self.view_state.setAccessibleName("Project loading and error status")
         self.live_state = QLabel("Live connection: durable snapshot")
         self.live_state.setObjectName("liveState")
         self.live_state.setAccessibleName("Live run observation status")
-        layout.addWidget(title)
+        layout.addWidget(top_bar)
         layout.addWidget(self.view_state)
 
         body = QSplitter(Qt.Orientation.Horizontal)
@@ -88,13 +131,14 @@ class BattalionWindow(QMainWindow):
         self.navigation.setAccessibleName("Primary navigation")
         self.navigation.addItems(("Work", "History", "Intel"))
         self.navigation.setCurrentRow(0)
-        self.navigation.setMaximumWidth(180)
+        self.navigation.setMaximumWidth(160)
         self.pages = QStackedWidget()
         self.pages.setAccessibleName("Operator destination")
 
         work, self.work_tree, self.work_executions, self.work_inspector = self._run_page(
             "Active and actionable work", "work"
         )
+        work.layout().addWidget(self._work_actions())
         history, self.history_tree, self.history_executions, self.history_inspector = self._run_page(
             "Completed and earlier run history", "history"
         )
@@ -134,7 +178,7 @@ class BattalionWindow(QMainWindow):
         inspector.setObjectName(f"{prefix}Inspector")
         inspector.setAccessibleName(f"{heading_text} evidence inspector")
         inspector.setReadOnly(True)
-        inspector.setFont(QFont("Cascadia Mono", 10))
+        inspector.setFont(QFont(MONO_FONT_FAMILY, 10))
         inspector.setPlainText("Select a run or node attempt to inspect its evidence.")
 
         splitter.addWidget(self._panel(runs, "Runs"))
@@ -165,16 +209,104 @@ class BattalionWindow(QMainWindow):
         self.intel_inspector.setObjectName("intelInspector")
         self.intel_inspector.setAccessibleName("Intel evidence inspector")
         self.intel_inspector.setReadOnly(True)
-        self.intel_inspector.setFont(QFont("Cascadia Mono", 10))
+        self.intel_inspector.setFont(QFont(MONO_FONT_FAMILY, 10))
         self.intel_inspector.setPlainText(
-            "Select an Instinct. BTN-42 intentionally provides no review actions."
+            "Select an Instinct. Pending Recon candidates can be promoted or rejected."
         )
         splitter.addWidget(self._panel(self.intel_tree, "Library"))
         splitter.addWidget(self._panel(self.intel_inspector, "Inspector"))
         splitter.setSizes((450, 800))
         layout.addWidget(splitter, 1)
+        layout.addWidget(self._intel_actions())
         self.intel_tree.currentItemChanged.connect(self._select_intel)
         return page
+
+    def _work_actions(self) -> QFrame:
+        panel = QFrame()
+        panel.setObjectName("actionPanel")
+        layout = QVBoxLayout(panel)
+        heading = QLabel("Human actions")
+        heading.setObjectName("panelTitle")
+        layout.addWidget(heading)
+
+        identity = QHBoxLayout()
+        identity.addWidget(QLabel("Actor"))
+        self.actor_edit = QLineEdit(getpass.getuser() or "operator")
+        self.actor_edit.setAccessibleName("Human action actor")
+        identity.addWidget(self.actor_edit)
+        identity.addWidget(QLabel("Interrupt resolution"))
+        self.resolution_edit = QLineEdit("Reviewed and authorized to resume")
+        self.resolution_edit.setAccessibleName("Interrupt resolution")
+        identity.addWidget(self.resolution_edit, 1)
+        self.resume_button = QPushButton("Resolve and resume")
+        self.resume_button.setAccessibleName("Resolve interrupt and resume run")
+        self.resume_button.setEnabled(False)
+        self.resume_button.clicked.connect(self._resume_selected_run)
+        identity.addWidget(self.resume_button)
+        layout.addLayout(identity)
+
+        intervention = QHBoxLayout()
+        self.intervention_kind = QComboBox()
+        self.intervention_kind.setAccessibleName("Intervention intent")
+        self.intervention_kind.addItem("Correction", InterventionKind.CORRECTION)
+        self.intervention_kind.addItem(
+            "Design decision", InterventionKind.DESIGN_DECISION
+        )
+        self.intervention_target = QComboBox()
+        self.intervention_target.setAccessibleName("Intervention target")
+        self.intervention_text = QLineEdit()
+        self.intervention_text.setAccessibleName("Bounded intervention text")
+        self.intervention_text.setPlaceholderText(
+            "Additional context for the target's next attempt"
+        )
+        self.queue_button = QPushButton("Queue for next attempt")
+        self.queue_button.setAccessibleName("Queue intervention for next attempt")
+        self.queue_button.setEnabled(False)
+        self.queue_button.clicked.connect(self._queue_selected_intervention)
+        self.intervention_kind.currentIndexChanged.connect(
+            self._refresh_intervention_targets
+        )
+        intervention.addWidget(self.intervention_kind)
+        intervention.addWidget(self.intervention_target)
+        intervention.addWidget(self.intervention_text, 1)
+        intervention.addWidget(self.queue_button)
+        layout.addLayout(intervention)
+        self._refresh_intervention_targets()
+        self.selected_run: ProjectRunInspection | None = None
+        return panel
+
+    def _intel_actions(self) -> QFrame:
+        panel = QFrame()
+        panel.setObjectName("actionPanel")
+        layout = QHBoxLayout(panel)
+        layout.addWidget(QLabel("Review actor"))
+        self.intel_actor_edit = QLineEdit(getpass.getuser() or "operator")
+        self.intel_actor_edit.setAccessibleName("Recon review actor")
+        layout.addWidget(self.intel_actor_edit, 1)
+        self.accept_candidate_button = QPushButton("Promote")
+        self.accept_candidate_button.setAccessibleName("Promote selected Recon candidate")
+        self.edit_candidate_button = QPushButton("Edit and promote")
+        self.edit_candidate_button.setAccessibleName(
+            "Edit recommendation and promote selected Recon candidate"
+        )
+        self.reject_candidate_button = QPushButton("Reject")
+        self.reject_candidate_button.setAccessibleName("Reject selected Recon candidate")
+        for button in (
+            self.accept_candidate_button,
+            self.edit_candidate_button,
+            self.reject_candidate_button,
+        ):
+            button.setEnabled(False)
+            layout.addWidget(button)
+        self.accept_candidate_button.clicked.connect(
+            lambda: self._review_selected_candidate(ReviewAction.ACCEPT)
+        )
+        self.edit_candidate_button.clicked.connect(self._edit_selected_candidate)
+        self.reject_candidate_button.clicked.connect(
+            lambda: self._review_selected_candidate(ReviewAction.REJECT)
+        )
+        self.selected_candidate: CandidateInstinct | None = None
+        return panel
 
     @staticmethod
     def _panel(content: QWidget, heading_text: str) -> QFrame:
@@ -200,6 +332,8 @@ class BattalionWindow(QMainWindow):
         self.controller.load_failed.connect(self.show_error)
         self.controller.durable_recovered.connect(self.render_recovered_run)
         self.controller.live_observation.connect(self.apply_observation)
+        self.controller.action_completed.connect(self._action_completed)
+        self.controller.action_failed.connect(self._action_failed)
 
     def show_loading(self) -> None:
         self.view_state.setText("Loading authoritative project state…")
@@ -211,6 +345,12 @@ class BattalionWindow(QMainWindow):
         self.work_tree.clear()
         self.history_tree.clear()
         self.intel_tree.clear()
+
+    def _action_completed(self, message: str) -> None:
+        self.live_state.setText(f"Human action recorded · {message}")
+
+    def _action_failed(self, message: str) -> None:
+        self.live_state.setText(f"Human action rejected · {message}")
 
     def render_snapshot(
         self, project: ProjectInspection, intel: IntelInspection
@@ -275,9 +415,13 @@ class BattalionWindow(QMainWindow):
             child = QTreeWidgetItem((item.instinct_id, "accepted"))
             child.setData(0, INTEL_DATA, item)
             accepted.addChild(child)
+        entries = {entry.candidate.instinct_id: entry for entry in inspection.candidate_entries}
         for item in inspection.candidates:
-            child = QTreeWidgetItem((item.instinct_id, "candidate · read-only"))
+            entry = entries.get(item.instinct_id)
+            disposition = entry.disposition.value if entry is not None else "pending"
+            child = QTreeWidgetItem((item.instinct_id, disposition))
             child.setData(0, INTEL_DATA, item)
+            child.setData(1, INTEL_DATA, disposition)
             candidates.addChild(child)
         if intel_empty(inspection):
             empty = QTreeWidgetItem(("No Intel or Recon evidence", "empty"))
@@ -297,6 +441,12 @@ class BattalionWindow(QMainWindow):
         run = item.data(0, RUN_DATA)
         if not isinstance(run, ProjectRunInspection):
             return
+        self.selected_run = run
+        available = run.inspection is not None
+        self.queue_button.setEnabled(available)
+        self.resume_button.setEnabled(
+            available and run.inspection.state.status is RunStatus.AWAITING_HUMAN
+        )
         worker = None
         if run.inspection is not None:
             worker = self.controller.worker_for(run.inspection.run_id)
@@ -335,6 +485,70 @@ class BattalionWindow(QMainWindow):
         instinct = item.data(0, INTEL_DATA)
         if instinct is not None:
             self.intel_inspector.setPlainText(render_intel_item(instinct))
+        self.selected_candidate = instinct if isinstance(instinct, CandidateInstinct) else None
+        pending = self.selected_candidate is not None and item.data(1, INTEL_DATA) == "pending"
+        for button in (
+            self.accept_candidate_button,
+            self.edit_candidate_button,
+            self.reject_candidate_button,
+        ):
+            button.setEnabled(pending)
+
+    def _refresh_intervention_targets(self) -> None:
+        self.intervention_target.clear()
+        kind = self.intervention_kind.currentData()
+        if kind == InterventionKind.DESIGN_DECISION:
+            self.intervention_target.addItem("Architect", InterventionTarget.ARCHITECT)
+            return
+        self.intervention_target.addItem("Driver RED", InterventionTarget.DRIVER_RED)
+        self.intervention_target.addItem("Driver GREEN", InterventionTarget.DRIVER_GREEN)
+        self.intervention_target.addItem("Refactorer", InterventionTarget.REFACTORER)
+
+    def _resume_selected_run(self) -> None:
+        if self.selected_run is None or self.selected_run.inspection is None:
+            return
+        self.controller.resolve_and_resume(
+            self.selected_run.inspection.run_id,
+            self.actor_edit.text(),
+            self.resolution_edit.text(),
+        )
+
+    def _queue_selected_intervention(self) -> None:
+        if self.selected_run is None or self.selected_run.inspection is None:
+            return
+        self.controller.queue_intervention(
+            self.selected_run.inspection.run_id,
+            self.intervention_kind.currentData(),
+            self.intervention_target.currentData(),
+            self.intervention_text.text(),
+            self.actor_edit.text(),
+        )
+
+    def _review_selected_candidate(self, action: ReviewAction) -> None:
+        if self.selected_candidate is None:
+            return
+        self.controller.review_candidate(
+            self.selected_candidate.instinct_id,
+            action,
+            self.intel_actor_edit.text(),
+        )
+
+    def _edit_selected_candidate(self) -> None:
+        if self.selected_candidate is None:
+            return
+        recommendation, accepted = QInputDialog.getMultiLineText(
+            self,
+            "Edit and promote Recon candidate",
+            "Recommendation",
+            self.selected_candidate.recommendation,
+        )
+        if accepted and recommendation.strip():
+            self.controller.review_candidate(
+                self.selected_candidate.instinct_id,
+                ReviewAction.EDIT_AND_ACCEPT,
+                self.intel_actor_edit.text(),
+                {"recommendation": recommendation.strip()},
+            )
 
     def render_recovered_run(self, inspection) -> None:
         self.live_state.setText(
@@ -349,25 +563,6 @@ class BattalionWindow(QMainWindow):
         )
         if event.kind is ObservationKind.STATE_CHECKPOINT:
             self.controller.refresh()
-
-
-STYLESHEET = """
-QMainWindow, QWidget { background: #0d1420; color: #edf2f8; font: 14px "Segoe UI"; }
-QMenuBar, QMenu { background: #111c2c; color: #edf2f8; }
-QMenu::item { padding: 6px 72px 6px 12px; }
-QLabel#title { font-size: 28px; font-weight: 700; }
-QLabel#sectionTitle { font-size: 20px; font-weight: 650; padding: 4px; }
-QLabel#panelTitle { color: #9fd5ff; font-size: 15px; font-weight: 650; }
-QLabel#viewState, QLabel#liveState { color: #b9c9dc; padding: 4px; }
-QFrame#panel { background: #172235; border: 1px solid #415675; border-radius: 8px; }
-QListWidget, QTreeWidget, QPlainTextEdit {
-    background: #172235; color: #edf2f8; border: 1px solid #415675; padding: 6px;
-}
-QListWidget::item, QTreeWidget::item { min-height: 28px; }
-QListWidget::item:selected, QTreeWidget::item:selected { background: #315b84; color: white; }
-QHeaderView::section { background: #22344e; color: white; padding: 7px; border: 0; }
-QSplitter::handle { background: #0d1420; width: 9px; }
-"""
 
 
 def main(argv: list[str] | None = None) -> int:

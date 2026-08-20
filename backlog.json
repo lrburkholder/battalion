@@ -1034,7 +1034,7 @@
       "id": "BTN-43",
       "phase": "implementation",
       "title": "Desktop human-action surfaces",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Add canonical interrupt resolution and Recon candidate review to the desktop client, followed by typed next-attempt Correction and Design decision context.",
       "acceptance_criteria": [
@@ -1054,7 +1054,7 @@
       "blocks": [],
       "assignee_role": "architect",
       "source": "RFC-0004 Expected Follow-Up Tickets: Human-action surfaces",
-      "notes": "Any change to role authority, interrupt semantics, or graph transitions discovered here requires specification and ADR reconciliation before implementation."
+      "notes": "Completed 2026-08-20. ADR-0023 records the accepted authority and delivery contract. Typed application operations now resolve interrupts through the canonical resume path, review immutable Recon candidates through the existing audited workflow, and queue bounded Corrections or Design decisions for one exact next node attempt with durable pre-generation association and complete human-action evidence. Accessible PySide6 controls expose those operations without Reviewer intervention, verdict override, manual checkpoint override, or in-flight steering. Authorization and failure paths are covered by the 418-test offline suite. Native validation confirmed that the split lightweight desktop build completed quickly and the independent graph/provider worker build completed without hanging; both apply Nuitka pytest anti-bloat policy and emit compilation reports."
     },
     {
       "id": "BTN-44",
@@ -1384,6 +1384,29 @@
       "assignee_role": "driver",
       "source": "BTN-8, BTN-27, BTN-35; BTN-51",
       "notes": "Do not overload budget_limit, which tracks graph-run turns rather than money. FreeLLMAPI is one possible inference source, not the definition of free-only policy; the policy must remain valid if that external project or its provider catalog changes."
+    },
+    {
+      "id": "BTN-56",
+      "phase": "implementation",
+      "title": "Desktop visual system and brand assets",
+      "status": "done",
+      "priority": "P2",
+      "description": "Apply the accepted ui/mockup visual tokens, typography, and application icon to the production PySide6 client without changing its application-boundary behavior.",
+      "acceptance_criteria": [
+        "The production desktop uses the mockup's IBM Plex Sans and IBM Plex Mono typography, charcoal surface hierarchy, restrained blue accent, compact spacing, borders, and control states",
+        "Font files are bundled under their license and load without requiring system installation or runtime network access",
+        "The supplied Battalion icon is used for the window and frozen Windows executable",
+        "Source, installed-package, and frozen-build paths include the required visual assets reproducibly",
+        "Existing keyboard navigation, accessible names, human actions, and application-boundary authority remain unchanged",
+        "Automated tests cover font registration, icon discovery, style tokens, package data, and deployment configuration, with a rendered screenshot reviewed before completion"
+      ],
+      "dependencies": [
+        "BTN-43"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "User-provided ui/mockup visual design and assets, 2026-08-20",
+      "notes": "Completed 2026-08-20. The BTN-52 labels inside the mockup are illustrative content only; canonical BTN-52 remains the endpoint-aware local inference ticket. The production client now registers bundled IBM Plex Sans and Mono faces, applies the supplied charcoal, border, spacing, control-state, and blue-accent tokens, displays the Battalion mark, and uses the supplied icon for its window and generated Windows executable. The OFL license and assets are included in Python package data and the frozen distribution configuration. Existing accessible names and application-boundary behavior are unchanged. The current product specification, workflows, and screen contract in docs/ui were reconciled with BTN-42, BTN-43, and BTN-56. Focused validation passed 18 tests, the complete offline suite passed 419 tests, and the offscreen production render was visually reviewed. No native Nuitka build was run for this presentation-only change."
     }
   ]
 }

@@ -80,7 +80,19 @@ def render_run(run: ProjectRunInspection, worker: WorkerRecord | None = None) ->
         f"Worker: {_worker_summary(worker)}",
     ]
     if state.status is RunStatus.AWAITING_HUMAN:
-        lines.append("Human action: required (read-only in BTN-42)")
+        lines.append("Human action: interrupt resolution and resume available")
+    queued_interventions = sum(
+        item.disposition.value == "queued" for item in state.interventions
+    )
+    lines.append(f"Queued interventions: {queued_interventions}")
+    if state.human_action_log:
+        lines.extend(("", "HUMAN ACTIONS"))
+        lines.extend(
+            f"- {item.occurred_at.isoformat()} · {item.actor} · {item.kind} · "
+            f"{item.target} · {item.disposition} · resulting "
+            f"{item.resulting_status.value}/{item.resulting_phase}"
+            for item in state.human_action_log
+        )
     return "\n".join(lines)
 
 
@@ -212,7 +224,10 @@ def render_intel_item(item: AcceptedInstinct | CandidateInstinct) -> str:
         for evidence in item.evidence
     )
     if isinstance(item, CandidateInstinct):
-        lines.append("Authority: candidate only; promotion and rejection are disabled")
+        lines.append(
+            "Authority: candidate only; a human may promote or reject it through "
+            "the canonical review workflow"
+        )
     else:
         lines.append(
             "Accepted by: "

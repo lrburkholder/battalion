@@ -1,641 +1,144 @@
-# Runs Hub Screen
-Version: 0.1
-
-> Historical screen exploration. RFC-0004 under `docs/rfcs/` supersedes the
-> Runs Hub as the current product direction. This document does not describe
-> shipped behavior.
-
----
-
-# Purpose
-
-The Runs Hub is Battalion's primary interface.
-
-It replaces the traditional "New Chat" landing page found in AI assistants.
-
-Rather than centering the conversation, the Runs Hub centers engineering
-execution.
-
-The screen answers four questions immediately:
-
-1. What is Battalion doing?
-2. What has Battalion done recently?
-3. How much did it cost?
-4. Why did it make those decisions?
-
-Every other detail is progressively discoverable.
-
----
-
-# Layout
-
-The screen is composed of four persistent regions.
-
-+---------------------------------------------------------------+
-| Top Navigation                                                 |
-+-------------+----------------------------+--------------------+
-|             |                            |                    |
-|             |                            |                    |
-| Run List    |      Execution Graph       |     Inspector      |
-|             |                            |                    |
-|             |                            |                    |
-+-------------+----------------------------+--------------------+
-| Bottom Status Bar                                             |
-+---------------------------------------------------------------+
-
-The layout remains stable.
-
-Changing the selected run updates content inside the regions rather than
-changing pages whenever possible.
-
----
-
-# Region Responsibilities
-
-## Top Navigation
-
-Purpose
-
-Global navigation and high-level project status.
-
-Contains
-
-Battalion logo
-
-Current project
-
-(Currently always Battalion)
-
-Current branch
-
-Current session
-
-Search button (disabled until implemented)
-
-Settings
-
-Future
-
-Project switcher
-
-Notifications
-
-Multi-project support
-
----
-
-## Run List
-
-Purpose
-
-Display every execution in chronological order.
-
-Default Sort
-
-Newest first.
-
-Each Run Card displays
-
-Role
-
-Status
-
-Model
-
-Start time
-
-Duration
-
-Token count
-
-Estimated cost
-
-Associated ticket (if any)
-
-Branch
-
-Hover State
-
-Highlights row
-
-Shows quick actions
-
-Right Click
-
-Future context menu
-
-Selection
-
-Selecting a run updates
-
-Execution Graph
-
-Inspector
-
-Status Bar
-
-Without changing screens.
-
----
-
-## Run Card
-
-Example
-
-----------------------------------------------------
-
-Driver
-
-Running
-
-Claude Sonnet 5
-
-2m 14s
-
-18,441 tokens
-
-$0.21
-
-REG-184
-
-feature/reg-184
-
-----------------------------------------------------
-
-Status Color
-
-Queued
-
-Gray
-
-Running
-
-Blue
-
-Waiting
-
-Amber
-
-Succeeded
-
-Green
-
-Failed
-
-Red
-
-Cancelled
-
-Neutral
-
----
-
-## Execution Graph
-
-Purpose
-
-Visualize relationships between runs.
-
-Nodes
-
-Agent executions
-
-Edges
-
-Manual launch
-
-Automatic handoff
-
-Dependency
-
-Future orchestration
-
-Default Layout
-
-Top-to-bottom
-
-Example
-
-Researcher
-
-↓
-
-Specifier
-
-↓
-
-Architect
-
-↓
-
-Driver
-
-↓
-
-Reviewer
-
-↓
-
-Deployer
-
-Current Run
-
-Animated border
-
-Completed Runs
-
-Solid
-
-Failed Runs
-
-Red outline
-
-Hover
-
-Highlights incoming and outgoing edges.
-
-Click
-
-Updates Inspector.
-
-Future
-
-Zoom
-
-Pan
-
-Filtering
-
-Replay animation
-
----
-
-## Inspector
-
-Purpose
-
-Display detailed information for the selected run.
-
-The Inspector uses tabs.
-
-Overview
-
-Timeline
-
-Messages
-
-Tool Calls
-
-Artifacts
-
-Observability
-
-Provenance
-
-Raw Trace
-
-Default Tab
-
-Overview
-
----
-
-### Overview
-
-Shows
-
-Role
-
-Status
-
-Objective
-
-Summary
-
-Duration
-
-Provider
-
-Model
-
-Token totals
-
-Estimated cost
-
-Inputs
-
-Outputs
-
----
-
-### Timeline
-
-Chronological execution.
-
-Example
-
-14:32:18
-
-Started
-
-14:32:22
-
-Loaded spec.md
-
-14:32:26
-
-Read ADR-12
-
-14:32:41
-
-Generated plan.md
-
-14:33:03
-
-Completed
-
----
-
-### Messages
-
-Conversation exchanged during execution.
-
-Initially collapsed.
-
-Supports
-
-Markdown
-
-Syntax highlighting
-
-Future
-
-Semantic search
-
----
-
-### Tool Calls
-
-Each invocation shows
-
-Tool
-
-Arguments
-
-Duration
-
-Result
-
-Expandable
-
----
-
-### Artifacts
-
-Lists generated outputs.
-
-Examples
-
-plan.md
-
-spec.md
-
-ADR-18
-
-commit
-
-review.md
-
-Clicking an artifact opens it.
-
----
-
-### Observability
-
-Displays
-
-Provider
-
-Model
-
-Latency
-
-Input Tokens
-
-Output Tokens
-
-Cached Tokens
-
-Cost
-
-Retries
-
-Tool Count
-
-LangFuse Trace ID
-
-Future
-
-Historical comparison
-
-Model recommendations
-
----
-
-### Provenance
-
-Shows
-
-Inputs consumed
-
-Referenced artifacts
-
-Referenced runs
-
-Referenced specifications
-
-Referenced ADRs
-
-Every item is clickable.
-
----
-
-### Raw Trace
-
-Developer mode.
-
-Contains
-
-Prompt
-
-Context
-
-Streaming events
-
-Tool payloads
-
-LLM responses
-
-Only loaded when requested.
-
----
-
-# Component Boundaries
-
-RunsHub
-├── TopNavigation
-├── RunList
-│   ├── RunCard
-│   └── RunFilters (future)
-├── ExecutionGraph
-│   ├── GraphNode
-│   ├── GraphEdge
-│   └── GraphLegend
-├── Inspector
-│   ├── OverviewTab
-│   ├── TimelineTab
-│   ├── MessagesTab
-│   ├── ToolCallsTab
-│   ├── ArtifactsTab
-│   ├── ObservabilityTab
-│   ├── ProvenanceTab
-│   └── RawTraceTab
-└── StatusBar
-
----
-
-# Bottom Status Bar
-
-Always visible.
-
-Displays
-
-Current session duration
-
-Total session tokens
-
-Total session cost
-
-Current model
-
-Connection status
-
-Background activity
-
-Future
-
-Rate limits
-
-Queued work
-
-Memory usage
-
----
-
-# Empty State
-
-When no runs exist.
-
-Display
-
-Welcome to Battalion
-
-Create your first run
-
-Explain what a run is
-
-Provide one primary action
-
-Start Session
-
-Avoid presenting an empty chat window.
-
----
-
-# Loading State
-
-Execution Graph
-
-Skeleton nodes
-
-Inspector
-
-Skeleton content
-
-Run List
-
-Placeholder cards
-
-Never leave regions blank.
-
----
-
-# Error State
-
-Errors remain localized.
-
-Example
-
-Execution Graph unavailable.
-
-Retry
-
-rather than
-
-Entire screen unavailable.
-
----
-
-# Keyboard Navigation
-
-Up / Down
-
-Select previous or next run
-
-Enter
-
-Open selected run
-
-Tab
-
-Move between regions
-
-1-7
-
-Switch Inspector tabs
-
-Ctrl+F
-
-Future global search
-
----
-
-# Design Rules
-
-The Runs Hub must remain calm.
-
-Avoid dashboards filled with numbers.
-
-Surface detail only when requested.
-
-Every number shown should answer an engineering question.
-
-Every artifact should expose provenance.
-
-Every interaction should preserve user context.
-
-No navigation should unexpectedly destroy the engineer's place in the workflow.
-
----
-
-# Success Criteria
-
-A first-time user can determine within ten seconds:
-
-- What Battalion is currently doing.
-- Which agent is active.
-- What has happened recently.
-- Where generated artifacts originated.
-- Approximately how much the current work has cost.
-
-An experienced user can inspect any execution without consulting log files or terminal output.
+# Desktop Work, History, and Intel Screen Contract
+
+**Version:** 1.0
+**Status:** Implemented
+
+This document maps the production Qt Widgets screen rather than the earlier
+conceptual Runs Hub. It is intentionally concrete about what is present today.
+
+## Stable shell
+
+```text
++--------------------------------------------------------------------------+
+| [mark] battalion | project <name>                                        |
++--------------------------------------------------------------------------+
+| authoritative project status                                             |
++------------+-------------------------------------------------------------+
+| Work       | destination content                                         |
+| History    |                                                             |
+| Intel      |                                                             |
++------------+-------------------------------------------------------------+
+| live connection, recovery, or human-action status                         |
++--------------------------------------------------------------------------+
+```
+
+The menu bar provides **Project → Refresh authoritative state** (`Ctrl+R`).
+The top bar identifies the application and current project. Primary navigation
+is persistent, and changing destination does not create another project or run
+context.
+
+## Work destination
+
+```text
++----------------------+----------------------+-----------------------------+
+| Runs                 | Execution map        | Inspector                   |
+| Ticket / run         | Attempt / role /     | Selected run or attempt     |
+| Status / phase       | phase / outcome      | evidence                    |
++----------------------+----------------------+-----------------------------+
+| Human actions: actor, resolution/resume, intent, target, context, queue   |
++----------------------------------------------------------------------------+
+```
+
+### Runs
+
+Active and actionable runs are grouped by ticket. Each selectable run shows its
+display label, durable status, and phase. The parent ticket rows organize the
+list and are not actions.
+
+### Execution map
+
+The current production map is an ordered tree of durable node attempts, not a
+free-form animated graph. Columns show attempt number, role, phase, and outcome.
+Selecting an attempt updates the Inspector. Zoom, pan, graph-edge interaction,
+and replay are future possibilities, not shipped behavior.
+
+### Inspector
+
+The read-only monospaced Inspector renders the selected run summary or complete
+node-attempt evidence. It explicitly calls out legacy or unavailable evidence.
+Artifact references and provenance are displayed as evidence; the client does
+not act as a general file editor.
+
+### Human actions
+
+The panel is visible and preserves context even when an action is unavailable.
+Buttons become enabled only when the selected run and durable state satisfy the
+operation's preconditions.
+
+- **Resolve and resume** is available only for `awaiting-human` runs.
+- **Queue for next attempt** accepts only the target combinations defined in
+  ADR-0023 and requires the run to have no active worker.
+- Actor, resolution, intent, target, and intervention fields have accessible
+  names and participate in standard focus traversal.
+
+## History destination
+
+History uses the same Runs → Execution map → Inspector structure without the
+human-action panel. It includes terminal and unavailable entries so loss or
+corruption is visible. History search and analytics are not yet present.
+
+## Intel destination
+
+```text
++--------------------------------+------------------------------------------+
+| Library                        | Inspector                                |
+| Accepted Intel                 | Selected Instinct or candidate evidence  |
+| Recon candidates + lifecycle  |                                          |
++--------------------------------+------------------------------------------+
+| Review actor | Promote | Edit and promote | Reject                        |
++----------------------------------------------------------------------------+
+```
+
+Accepted Instincts and persisted Recon candidates are separate groups. The
+lifecycle column shows pending or recorded disposition. Review buttons are
+enabled only for a pending candidate. The Inspector remains read-only; edited
+promotion text is collected in a modal prompt and passed to the canonical
+review operation.
+
+## Loading, empty, and failure states
+
+- **Loading:** the project-status line announces authoritative loading while
+  the last durable layout remains stable.
+- **Empty:** trees contain explicit non-selectable empty rows.
+- **Unavailable run:** the catalog entry remains visible and its limitation is
+  rendered in the Inspector.
+- **Project error:** the status line identifies the inaccessible project and
+  clears stale tree content.
+- **Action rejection:** the live-status line reports the domain failure without
+  applying an optimistic local mutation.
+- **Worker crash:** durable worker metadata is reconciled and recovery status is
+  shown with the run.
+
+## Visual language
+
+The production screen follows `ui/mockup/battalion-runs-hub-mockup.html` while
+retaining the implemented information architecture:
+
+- IBM Plex Sans for interface content;
+- IBM Plex Mono for evidence, controls, headers, and status;
+- base `#1a1b1e`, raised `#212226`, and sunken `#17181b` surfaces;
+- quiet `#2c2d31` and strong `#3a3c42` borders;
+- `#d8d9dc`, `#8b8d93`, and `#55575c` text hierarchy;
+- `#5b8dd6` selection and focus accent;
+- two-pixel radii and compact spacing; and
+- visible hover, focus, selected, pressed, and disabled control states.
+
+The brand mark appears in the top bar. The same supplied icon is used for the
+window and packaged Windows application. Font and icon assets live under
+`battalion/desktop/assets` and are included in installed and frozen builds.
+
+## Accessibility contract
+
+Every navigation destination, run/execution tree, inspector, action field, and
+button exposes a meaningful accessible name. Keyboard focus reaches each
+destination and enabled action. State is always available as text; palette
+differences supplement rather than replace labels.
+
+The UI must continue to preserve these guarantees when its layout evolves:
+
+1. presentation never bypasses `battalion.application`;
+2. durable recovery precedes transient observation;
+3. missing evidence remains explicit;
+4. disabled actions remain understandable;
+5. human-action authority is not broadened by visual affordances; and
+6. presentation-only changes must not require recompiling the worker runtime.

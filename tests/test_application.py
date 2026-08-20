@@ -123,7 +123,9 @@ def test_resume_run_loads_canonical_state_and_persists_result(tmp_path):
         _execute=execute,
     )
 
-    assert captured["state"] == paused
+    assert captured["state"].interrupt_log == paused.interrupt_log
+    assert captured["state"].human_action_log[-1].kind == "interrupt-resolution"
+    assert captured["state"].human_action_log[-1].target == "legacy-pause"
     assert result.warning is None
     assert result.state.status == RunStatus.DONE
     assert inspect_run(InspectRun(paused.run_id), state_dir=tmp_path).state == result.state

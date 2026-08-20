@@ -19,7 +19,8 @@ supervision, durable run/project identity, operator evidence, and typed
 live-observation are also implemented. After equivalent desktop spikes,
 [ADR-0022](docs/adrs/adr0022.md) selects PySide6 with Qt Widgets. BTN-42's
 production read-only console is implemented and validated on its feature branch;
-state-changing desktop controls remain BTN-43 work.
+state-changing desktop controls and the split runtime are implemented through
+BTN-43. BTN-56 applies the accepted visual mockup and bundled brand assets.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -56,6 +57,8 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-36**: Typed live observation and durable-first reconnect contract
 - ✅ **BTN-37–41**: Controlled desktop spikes and PySide6 framework selection
 - ✅ **BTN-42**: Read-only PySide6 operator console
+- ✅ **BTN-43**: Desktop interrupt, Recon review, and typed next-attempt actions
+- ✅ **BTN-56**: Desktop visual system, IBM Plex typography, and brand assets
 
 ## Architecture
 
@@ -70,11 +73,11 @@ dependencies, acceptance criteria, and current status.
 | `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
 | `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
 | `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
-| `battalion.application` | Typed run, resume, inspection, cost, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-30–32) |
+| `battalion.application` | Typed run, resume, inspection, human-action, Intel-review, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-43) |
 | `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
 | `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | ✅ Complete (BTN-36) |
-| `battalion.desktop` | Read-only PySide6 Work, History, execution-evidence, and Intel presentation | ✅ Complete (BTN-42) |
+| `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | ✅ Complete (BTN-42–43) |
 | `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | ✅ Complete (BTN-16, BTN-19, BTN-35) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
@@ -155,15 +158,14 @@ cd battalion
 # Create a virtual environment, activate it for your shell, then install dependencies
 python -m venv .venv
 python -m pip install -e ".[dev]"
-python -m pip install langgraph  # temporary until declared in pyproject.toml
 
 # Add the production desktop client when needed
 python -m pip install -e ".[desktop,dev]"
 ```
 
-Battalion requires Python 3.11 or newer. The project imports LangGraph at
-runtime; until it is declared in `pyproject.toml`, install a compatible
-`langgraph` package explicitly in a fresh environment.
+Battalion requires Python 3.11 or newer. Core installation includes the
+validated LangGraph 1.x runtime. The desktop extra adds pinned PySide6 and
+Nuitka packaging tools.
 
 ### Configure Models
 
@@ -208,21 +210,45 @@ the CLI is evolving.
 ### Browse with the Desktop Console
 
 ```bash
-# Open the current project through the read-only application boundary
+# Open the current project through the shared application boundary
 battalion-desktop --project .
 
 # Equivalent module entry point
 python -m battalion.desktop --project .
 
-# Build the standalone desktop distribution under dist/desktop/
-python scripts/build_desktop.py
+# Fast UI-only package; graph and provider modules remain excluded
+python scripts/build_desktop.py --component desktop
+
+# Heavy detached-worker package; build independently when runtime code changes
+python scripts/build_desktop.py --component worker
+
+# Release build of both sibling distributions
+python scripts/build_desktop.py --component all
 ```
 
-The BTN-42 client exposes Work, History, node-attempt evidence, accepted Intel,
-and persisted Recon candidates. It deliberately has no start, resume, cancel,
-interrupt-resolution, promotion, rejection, or editing controls. Refresh and
-client restart reload authoritative local state; post-barrier live observations
-are applied only after durable recovery.
+The desktop client exposes Work, History, node-attempt evidence, accepted Intel,
+and persisted Recon candidates. BTN-43 adds canonical interrupt resolution and
+resume, candidate promotion/edit-promotion/rejection, Corrections for Driver RED,
+Driver GREEN, or Refactorer, and Design decisions for Architect. Interventions
+are queued only while no worker is active and are durably associated with the
+target's next attempt before provider generation. Reviewer intervention,
+Reviewer verdict override, and manual checkpoint override are absent. Refresh
+and client restart reload authoritative local state; post-barrier live
+observations are applied only after durable recovery.
+
+BTN-43 packages the Qt client and execution worker separately. The client stays
+small and locates `worker/worker_entry.dist/BattalionWorker.exe` beside its
+distribution; source execution continues to use `python -m battalion.workers`.
+Both builds exclude `pytest` through Nuitka's anti-bloat policy and emit XML
+compilation reports under `dist/desktop/`. This makes ordinary UI packaging
+independent of the much larger LangGraph/LiteLLM provider runtime.
+
+The desktop visual system follows the design source in `ui/mockup/`: IBM Plex
+Sans for interface text, IBM Plex Mono for operational evidence, charcoal
+surfaces, compact two-pixel geometry, and a restrained blue accent. The OFL
+font files and Battalion application icon are bundled in source distributions
+and frozen desktop builds; no system font installation or network access is
+required at runtime.
 
 ### Running Tests
 
@@ -242,11 +268,12 @@ battalion/
 ├── __init__.py
 ├── __main__.py                 # `python -m battalion`
 ├── application.py              # Shared typed command/query boundary (BTN-30)
-├── desktop/                    # Read-only PySide6 operator console (BTN-42)
+├── desktop/                    # PySide6 operator console (BTN-42–43)
 │   ├── app.py                  # Qt Widgets and desktop entry point
 │   ├── controller.py           # Background application queries and reconnect
 │   └── presentation.py         # Pure evidence and missing-data projections
 ├── workers.py                  # Per-run worker supervision and recovery (BTN-31)
+├── worker_entry.py             # Split frozen worker entry point (BTN-43)
 ├── observation.py              # Typed live observation contract (BTN-36)
 ├── cli.py                      # Thin Typer presentation adapter
 ├── config.py                   # Configuration loading and validation
@@ -319,8 +346,9 @@ Recon candidate evidence is stored at
 `<project>/.battalion/recon/candidates/INS-....md`. YAML front matter is the
 validated machine contract and the remaining Markdown is its deterministic
 operator-readable rendering. Candidate files are create-only. Promotion or
-rejection is represented by a separate append-only review decision, so the
-original candidate remains unchanged. Rejected candidates are retained
+rejection is represented by a separate append-only review decision under
+`<project>/.battalion/recon/decisions/`, so the original candidate remains
+unchanged. Rejected candidates are retained
 indefinitely for audit evidence; the persistence API intentionally exposes no
 delete operation.
 
@@ -328,7 +356,7 @@ delete operation.
 
 - **Python**: >= 3.11
 - **Core**: 
-  - `langgraph` - Graph construction and execution (runtime import; packaging declaration pending)
+  - `langgraph>=1.2,<2.0` - Graph construction and execution
   - `pydantic>=2.0` - Data validation and models
   - `litellm>=1.40` - Multi-provider LLM abstraction
   - `typer>=0.9` - CLI framework
@@ -362,6 +390,13 @@ operations. Each active run executes in a detached Python process associated
 with one canonical run ID. Project-local worker metadata reports lifecycle and
 crash recovery, while atomically saved `RunState` remains the execution
 authority; reconnecting clients never need the original process handle.
+
+ADR-0023 keeps human actions with their existing authority. Interrupt
+resolutions and typed interventions are durable `RunState` evidence; candidate
+review remains in the append-only Intel decision repository. Both CLI and
+desktop resume through the same application command and graph path. A delivered
+intervention is tied to one node-attempt ID, included through a named bounded
+context section, and recorded in execution context provenance.
 
 See the [complete ADR index](docs/adrs/README.md) for all accepted architecture
 decisions and their implementation status.

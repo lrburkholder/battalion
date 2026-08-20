@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal, Sequence
 
 from battalion.intel.models import AcceptedInstinct
-from battalion.state.models import RunState
+from battalion.state.models import InterventionDisposition, RunState
 
 MAX_CONTEXT_CHARS = 32_000
 MAX_FILE_CHARS = 8_000
@@ -140,12 +140,39 @@ def _base_sections(
     return sections
 
 
+def _human_intervention_context(
+    state: RunState, target: str, node_execution_id: str | None
+) -> str | None:
+    if node_execution_id is None:
+        return None
+    delivered = [
+        item for item in state.interventions
+        if item.target.value == target
+        and item.disposition is InterventionDisposition.DELIVERED
+        and item.delivered_to_execution_id == node_execution_id
+    ]
+    if not delivered:
+        return None
+    return "\n\n".join(
+        f"### {item.kind.value} ({item.action_id})\n"
+        f"Actor: {item.actor}\nTarget: {item.target.value}\n{item.text}"
+        for item in delivered
+    )
+
+
 def architect_context(
     state: RunState,
     *,
     instincts: Sequence[AcceptedInstinct] = (),
+    node_execution_id: str | None = None,
 ) -> str:
-    return _bounded(_base_sections(state, instincts))
+    sections = _base_sections(state, instincts)
+    intervention = _human_intervention_context(
+        state, "architect", node_execution_id
+    )
+    if intervention is not None:
+        sections.append(("Human intervention", intervention))
+    return _bounded(sections)
 
 
 def driver_context(
@@ -154,10 +181,16 @@ def driver_context(
     mode: Literal["red", "green"],
     *,
     instincts: Sequence[AcceptedInstinct] = (),
+    node_execution_id: str | None = None,
 ) -> str:
     selection = "implementation" if mode == "red" else "tests"
     file_kind = "Existing implementation" if mode == "red" else "Accepted RED tests"
     sections = _base_sections(state, instincts)
+    intervention = _human_intervention_context(
+        state, f"driver_{mode}", node_execution_id
+    )
+    if intervention is not None:
+        sections.append(("Human intervention", intervention))
     sections.append(("Approved plan", _plan_text(base_dir)))
     sections.extend(
         (f"{file_kind}: {relative}", content)
@@ -171,8 +204,14 @@ def refactorer_context(
     base_dir: str | Path,
     *,
     instincts: Sequence[AcceptedInstinct] = (),
+    node_execution_id: str | None = None,
 ) -> str:
     sections = _base_sections(state, instincts)
+    intervention = _human_intervention_context(
+        state, "refactorer", node_execution_id
+    )
+    if intervention is not None:
+        sections.append(("Human intervention", intervention))
     sections.append(("Approved plan", _plan_text(base_dir)))
     sections.extend(
         (f"Passing file: {relative}", content)

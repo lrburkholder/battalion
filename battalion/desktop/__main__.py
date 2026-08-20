@@ -1,4 +1,4 @@
-"""Launch the Battalion desktop operator console."""
+"""Launch the lightweight Battalion desktop client."""
 
 from battalion.desktop.app import main
 

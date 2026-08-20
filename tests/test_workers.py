@@ -206,6 +206,45 @@ def test_worker_process_is_detached_from_presentation_client(monkeypatch):
         assert captured["start_new_session"] is True
 
 
+def test_frozen_desktop_launches_sibling_worker_distribution(tmp_path, monkeypatch):
+    captured = {}
+
+    def popen(argv, **kwargs):
+        captured["argv"] = argv
+        return FakeProcess(6102)
+
+    monkeypatch.setattr("battalion.workers.subprocess.Popen", popen)
+    monkeypatch.setattr("battalion.workers.__compiled__", object(), raising=False)
+    desktop = tmp_path / "Battalion.dist" / "Battalion.exe"
+    desktop.parent.mkdir()
+    desktop.touch()
+    worker = (
+        tmp_path / "worker" / "worker_entry.dist" / "BattalionWorker.exe"
+    )
+    worker.parent.mkdir(parents=True)
+    worker.touch()
+    monkeypatch.setattr("battalion.workers.sys.executable", str(desktop))
+
+    from battalion.workers import _spawn_process
+
+    _spawn_process()
+
+    assert captured["argv"] == [str(worker)]
+
+
+def test_frozen_desktop_reports_missing_split_worker(tmp_path, monkeypatch):
+    desktop = tmp_path / "Battalion.dist" / "Battalion.exe"
+    desktop.parent.mkdir()
+    desktop.touch()
+    monkeypatch.setattr("battalion.workers.__compiled__", object(), raising=False)
+    monkeypatch.setattr("battalion.workers.sys.executable", str(desktop))
+
+    from battalion.workers import _spawn_process
+
+    with pytest.raises(FileNotFoundError, match="split worker distribution"):
+        _spawn_process()
+
+
 def test_worker_entrypoint_executes_application_boundary_and_records_completion(
     tmp_path, monkeypatch
 ):

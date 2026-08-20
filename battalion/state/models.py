@@ -55,6 +55,65 @@ class InterruptLogEntry(BaseModel):
     node_execution_id: str | None = None
 
 
+class InterventionKind(str, Enum):
+    CORRECTION = "correction"
+    DESIGN_DECISION = "design-decision"
+
+
+class InterventionTarget(str, Enum):
+    ARCHITECT = "architect"
+    DRIVER_RED = "driver_red"
+    DRIVER_GREEN = "driver_green"
+    REFACTORER = "refactorer"
+
+
+class InterventionDisposition(str, Enum):
+    QUEUED = "queued"
+    DELIVERED = "delivered"
+
+
+class HumanIntervention(BaseModel):
+    """Bounded human context delivered to exactly one target-node attempt."""
+
+    action_id: str = Field(min_length=1, max_length=200)
+    kind: InterventionKind
+    target: InterventionTarget
+    text: str = Field(min_length=1, max_length=4000)
+    actor: str = Field(min_length=1, max_length=500)
+    requested_at: datetime
+    disposition: InterventionDisposition = InterventionDisposition.QUEUED
+    delivered_to_execution_id: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_authority_and_delivery(self) -> Self:
+        if self.kind is InterventionKind.DESIGN_DECISION:
+            if self.target is not InterventionTarget.ARCHITECT:
+                raise ValueError("design decisions target Architect only")
+        elif self.target is InterventionTarget.ARCHITECT:
+            raise ValueError("corrections target Driver RED, Driver GREEN, or Refactorer")
+        if self.disposition is InterventionDisposition.DELIVERED:
+            if self.delivered_to_execution_id is None:
+                raise ValueError("delivered intervention requires a node execution ID")
+        elif self.delivered_to_execution_id is not None:
+            raise ValueError("queued intervention cannot identify a node execution")
+        return self
+
+
+class HumanActionRecord(BaseModel):
+    """Durable audit result for one human-authorized run action."""
+
+    action_id: str = Field(min_length=1, max_length=200)
+    kind: Literal["interrupt-resolution", "correction", "design-decision"]
+    actor: str = Field(min_length=1, max_length=500)
+    occurred_at: datetime
+    target: str = Field(min_length=1, max_length=200)
+    disposition: Literal["applied", "queued", "delivered", "rejected"]
+    detail: str = Field(min_length=1, max_length=4000)
+    resulting_state_version: str = Field(min_length=1, max_length=100)
+    resulting_status: RunStatus
+    resulting_phase: str = Field(min_length=1, max_length=200)
+
+
 class EvidenceReference(BaseModel):
     """A bounded pointer and digest for node input without copying contents."""
 
@@ -300,6 +359,8 @@ class RunState(BaseModel):
     manual_checkpoints: list[str] = Field(default_factory=list)
     resume_target: str | None = None
     execution_record: ExecutionRecord = Field(default_factory=ExecutionRecord)
+    interventions: list[HumanIntervention] = Field(default_factory=list, max_length=100)
+    human_action_log: list[HumanActionRecord] = Field(default_factory=list, max_length=500)
 
     @field_validator("project_id")
     @classmethod

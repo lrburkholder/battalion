@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0",
     "litellm>=1.40",
+    "langgraph>=1.2,<2.0",
     "typer>=0.9",
     "pyyaml>=6.0",
 ]
@@ -17,6 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 desktop = [
     "PySide6==6.10.1",
+    "Nuitka==4.1.3",
 ]
 dev = [
     "pytest>=8.0",
@@ -27,6 +29,9 @@ battalion-desktop = "battalion.desktop.app:main"
 
 [tool.setuptools.packages.find]
 include = ["battalion*"]
+
+[tool.setuptools.package-data]
+"battalion.desktop" = ["assets/*", "assets/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -69,7 +69,6 @@ Use Python 3.11 or newer from the repository root:
 ```bash
 python -m venv .venv
 python -m pip install -e ".[dev]"
-python -m pip install langgraph  # temporary until declared in pyproject.toml
 python -m pytest
 ```
 

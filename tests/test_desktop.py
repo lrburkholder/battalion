@@ -18,7 +18,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QFontDatabase
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
@@ -29,9 +29,20 @@ from battalion.application import (
     ProjectRunInspection,
     RunInspection,
 )
+from battalion.intel.candidates import CandidateDisposition, CandidateInboxEntry
+from battalion.intel.models import CandidateInstinct
+from battalion.intel.review import ReviewAction
 from battalion.desktop.app import BattalionWindow
 from battalion.desktop.controller import DesktopController
 from battalion.desktop.presentation import render_execution
+from battalion.desktop.theme import (
+    APPLICATION_ICON,
+    BRAND_ICON,
+    FONT_FILES,
+    FONT_ROOT,
+    MONO_FONT_FAMILY,
+    SANS_FONT_FAMILY,
+)
 from battalion.identity import ProjectIdentity, RunCatalogEntry, load_project_identity
 from battalion.observation import (
     ObservationCategory,
@@ -214,11 +225,38 @@ def _project(*runs: ProjectRunInspection) -> ProjectInspection:
     )
 
 
+def _candidate() -> CandidateInstinct:
+    return CandidateInstinct.model_validate({
+        "schema_version": "1.0",
+        "instinct_id": "INS-DESKTOP-ACTION",
+        "lifecycle": "candidate",
+        "recommendation": "Use canonical desktop action commands.",
+        "evidence": [{
+            "run_id": "run-42",
+            "node_execution_id": "node-driver-green-1",
+            "reference": "execution_record.node_executions[0]",
+            "description": "The application boundary retained authority.",
+        }],
+        "audience": ["driver"],
+        "applicability": {"description": "Desktop actions"},
+        "tags": ["desktop"],
+        "creation_provenance": {
+            "originating_run_id": "run-42",
+            "originating_node_execution_ids": ["node-driver-green-1"],
+            "created_at": "2026-08-20T12:00:00Z",
+            "created_by": "recon",
+        },
+    })
+
+
 class StubController(DesktopController):
     def __init__(self, tmp_path: Path, worker: WorkerRecord | None = None) -> None:
         super().__init__(tmp_path)
         self.worker = worker
         self.refresh_count = 0
+        self.resumes = []
+        self.interventions = []
+        self.reviews = []
 
     def refresh(self) -> None:
         self.refresh_count += 1
@@ -226,6 +264,15 @@ class StubController(DesktopController):
 
     def worker_for(self, run_id: str) -> WorkerRecord | None:
         return self.worker
+
+    def resolve_and_resume(self, run_id, actor, resolution):
+        self.resumes.append((run_id, actor, resolution))
+
+    def queue_intervention(self, run_id, kind, target, text, actor):
+        self.interventions.append((run_id, kind, target, text, actor))
+
+    def review_candidate(self, candidate_id, action, actor, edits=None):
+        self.reviews.append((candidate_id, action, actor, edits))
 
 
 def test_execution_inspector_exposes_provenance_verification_and_cost_semantics():
@@ -248,7 +295,7 @@ def test_execution_inspector_exposes_provenance_verification_and_cost_semantics(
     assert "unknown-call" in rendered and "cost=unknown · source=unknown" in rendered
 
 
-def test_window_presents_work_history_and_read_only_intel(qt_app, tmp_path):
+def test_window_presents_work_history_and_human_action_surfaces(qt_app, tmp_path):
     controller = StubController(tmp_path)
     window = BattalionWindow(tmp_path, controller=controller, autoload=False)
     active = _run(RunStatus.IN_PROGRESS, run_id="active", execution=_execution())
@@ -271,7 +318,75 @@ def test_window_presents_work_history_and_read_only_intel(qt_app, tmp_path):
     forbidden = {"resume", "promote", "reject", "accept", "cancel", "start run"}
     action_text = {action.text().lower() for action in window.findChildren(QAction)}
     assert not forbidden.intersection(action_text)
-    assert window.findChildren(QPushButton) == []
+    button_text = {button.text() for button in window.findChildren(QPushButton)}
+    assert button_text == {
+        "Resolve and resume", "Queue for next attempt", "Promote",
+        "Edit and promote", "Reject",
+    }
+    window.close()
+
+
+def test_desktop_loads_bundled_brand_fonts_and_icon(qt_app, tmp_path):
+    window = BattalionWindow(tmp_path, autoload=False)
+
+    assert {SANS_FONT_FAMILY, MONO_FONT_FAMILY} <= set(QFontDatabase.families())
+    assert all((FONT_ROOT / filename).is_file() for filename in FONT_FILES)
+    assert APPLICATION_ICON.is_file()
+    assert BRAND_ICON.is_file()
+    assert not window.windowIcon().isNull()
+    assert window.work_inspector.font().family() == MONO_FONT_FAMILY
+    assert "#1a1b1e" in window.styleSheet()
+    assert "#5b8dd6" in window.styleSheet()
+    window.close()
+
+
+def test_work_actions_are_exact_targeted_and_resume_only_paused_runs(qt_app, tmp_path):
+    controller = StubController(tmp_path)
+    window = BattalionWindow(tmp_path, controller=controller, autoload=False)
+    paused = _run(RunStatus.AWAITING_HUMAN, run_id="paused")
+    window.render_snapshot(_project(paused), IntelInspection((), ()))
+    window.work_tree.setCurrentItem(window.work_tree.topLevelItem(0).child(0))
+
+    assert window.resume_button.isEnabled()
+    assert [window.intervention_target.itemText(index) for index in range(3)] == [
+        "Driver RED", "Driver GREEN", "Refactorer"
+    ]
+    window.intervention_kind.setCurrentIndex(1)
+    assert [window.intervention_target.itemText(index) for index in range(1)] == [
+        "Architect"
+    ]
+    window.actor_edit.setText("human@example.com")
+    window.resolution_edit.setText("Approved after review")
+    window.resume_button.click()
+    assert controller.resumes == [
+        ("paused", "human@example.com", "Approved after review")
+    ]
+    window.intervention_text.setText("Use ADR-0023")
+    window.queue_button.click()
+    assert controller.interventions[0][0] == "paused"
+    assert controller.interventions[0][2] == "architect"
+    window.close()
+
+
+def test_pending_candidate_actions_use_canonical_review_intents(qt_app, tmp_path):
+    controller = StubController(tmp_path)
+    window = BattalionWindow(tmp_path, controller=controller, autoload=False)
+    candidate = _candidate()
+    entry = CandidateInboxEntry(candidate, CandidateDisposition.PENDING, None)
+    window.render_snapshot(
+        _project(), IntelInspection((), (candidate,), (entry,))
+    )
+    item = window.intel_tree.topLevelItem(1).child(0)
+    window.intel_tree.setCurrentItem(item)
+
+    assert item.text(1) == "pending"
+    assert window.accept_candidate_button.isEnabled()
+    window.intel_actor_edit.setText("human@example.com")
+    window.accept_candidate_button.click()
+
+    assert controller.reviews == [
+        (candidate.instinct_id, ReviewAction.ACCEPT, "human@example.com", None)
+    ]
     window.close()
 
 
@@ -498,8 +613,10 @@ def test_desktop_packaging_contract_is_reproducible():
     deployment.read(root / "deployment" / "desktop" / "pysidedeploy.ini")
 
     assert project["project"]["optional-dependencies"]["desktop"] == [
-        "PySide6==6.10.1"
+        "PySide6==6.10.1",
+        "Nuitka==4.1.3",
     ]
+    assert "langgraph>=1.2,<2.0" in project["project"]["dependencies"]
     assert project["project"]["scripts"]["battalion-desktop"] == (
         "battalion.desktop.app:main"
     )
@@ -507,6 +624,22 @@ def test_desktop_packaging_contract_is_reproducible():
     assert deployment["app"]["input_file"] == "battalion/desktop/__main__.py"
     assert deployment["nuitka"]["mode"] == "standalone"
     assert "--nofollow-import-to=battalion.graph" in deployment["nuitka"]["extra_args"]
+    assert "--nofollow-import-to=litellm" in deployment["nuitka"]["extra_args"]
+    assert "--nofollow-import-to=langgraph" in deployment["nuitka"]["extra_args"]
+    assert "--noinclude-pytest-mode=nofollow" in deployment["nuitka"]["extra_args"]
+    assert (
+        "--include-data-dir=battalion/desktop/assets=battalion/desktop/assets"
+        in deployment["nuitka"]["extra_args"]
+    )
+    assert "--report=dist/desktop/desktop-compilation-report.xml" in (
+        deployment["nuitka"]["extra_args"]
+    )
+    assert deployment["python"]["python_path"] == ""
+    assert deployment["app"]["icon"] == ""
+    assert project["tool"]["setuptools"]["package-data"]["battalion.desktop"] == [
+        "assets/*",
+        "assets/fonts/*",
+    ]
     assert set(deployment["qt"]["modules"].split(",")) == {"Core", "Gui", "Widgets"}
     assert "accessiblebridge" in deployment["qt"]["plugins"]
 

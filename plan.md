@@ -12,8 +12,11 @@ and revision evidence, immutable Recon candidate persistence, exact sourced
 usage evidence, and durable-first live observation. BTN-37 through BTN-41 add
 the shared provider-free benchmark, three disposable framework spikes, and the
 accepted PySide6 desktop presentation decision in ADR-0022. BTN-42 implements
-the production read-only desktop console on its feature branch; state-changing
-desktop controls and analytics remain BTN-43 and BTN-44 work.
+the production read-only desktop console. BTN-43 completes the accepted durable
+human-action and next-attempt intervention contract in ADR-0023, including split
+desktop/worker packaging; analytics remain BTN-44 work.
+BTN-56 applies the supplied desktop visual tokens and bundled brand assets
+without changing application authority or workflow behavior.
 
 ## Architecture overview
 
@@ -49,7 +52,7 @@ battalion/
   observation.py          # typed live events, ordering, and reconnect cursors
   cli.py                  # Typer adapter: run, resume, status, setup
   config.py               # YAML, environment, and CLI configuration merge
-  context.py              # bounded role context and Instinct assembly
+  context.py              # bounded role, Instinct, and human-action assembly
   execution.py            # durable node evidence, provenance, and cost views
   setup.py                # provider discovery and connectivity setup (BTN-15)
   graph.py                # graph construction, routing, pause, and resume
@@ -114,6 +117,7 @@ The decisions implemented by the v1 architecture are:
 | [ADR-0020](docs/adrs/adr0020.md) | Separate canonical run and project identity from display names |
 | [ADR-0021](docs/adrs/adr0021.md) | Recover live observation from durable state |
 | [ADR-0022](docs/adrs/adr0022.md) | Use PySide6 for desktop presentation |
+| [ADR-0023](docs/adrs/adr0023.md) | Persist human actions with their existing authority |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human
@@ -177,6 +181,16 @@ projections, background project and Intel queries, durable-first live recovery,
 explicit missing/failure states, a standalone deployment path, and native
 accessibility evidence. Package exports and graph execution remain lazy so the
 read-only client does not initialize graph or provider authority.
+
+BTN-43 follows accepted ADR-0023. It adds durable interrupt-resolution and
+typed intervention operations, exact next-attempt delivery with pre-generation
+checkpointing and provenance, canonical Recon review commands, and accessible
+PySide6 action controls. Reviewer intervention, verdict override, and manual
+checkpoint override remain outside the product contract. Release packaging
+keeps the Qt presentation and graph/provider worker in sibling standalone
+distributions, allowing UI-only builds to retain the BTN-42 graph and LiteLLM
+exclusions. Both components exclude pytest and emit Nuitka compilation reports;
+the worker's heavier dependency closure can be built independently.
 
 Later backlog work must build on these contracts instead of introducing parallel
 run, resume, persistence, or review paths.

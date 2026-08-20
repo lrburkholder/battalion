@@ -17,13 +17,23 @@ from battalion.application import (
     ProjectInspection,
     ReconnectObservation,
     ReconnectWorker,
+    QueueIntervention,
+    ResumeRun,
+    ReviewCandidate,
+    StartWorker,
     WorkerNotFound,
     inspect_intel,
     inspect_project,
+    queue_intervention,
     reconnect_observation,
     reconnect_worker,
+    review_candidate,
+    start_worker,
 )
+from battalion.config import load_config
+from battalion.intel.review import ReviewAction
 from battalion.observation import ObservationCursor, ObservationEvent, ObservationSource
+from battalion.state.models import InterventionKind, InterventionTarget
 from battalion.workers import WorkerRecord
 
 
@@ -41,6 +51,8 @@ class DesktopController(QObject):
     load_failed = Signal(str)
     durable_recovered = Signal(object)
     live_observation = Signal(object)
+    action_completed = Signal(str)
+    action_failed = Signal(str)
 
     def __init__(
         self,
@@ -112,3 +124,83 @@ class DesktopController(QObject):
     ) -> None:
         """Attach a transport without granting it control or persistence access."""
         connect(self.live_observation.emit)
+
+    def _config(self):
+        path = self.project_root / "battalion.config.yaml"
+        return load_config(
+            path if path.exists() else None,
+            {"base_dir": str(self.project_root)},
+        )
+
+    def resolve_and_resume(self, run_id: str, actor: str, resolution: str) -> None:
+        """Resolve and resume through the same worker/application path as CLI."""
+        def command() -> None:
+            try:
+                start_worker(
+                    StartWorker(ResumeRun(
+                        run_id=run_id,
+                        config=self._config(),
+                        actor=actor,
+                        resolution=resolution,
+                    )),
+                    state_dir=self.project_root / ".battalion" / "state",
+                    worker_dir=self.project_root / ".battalion" / "workers",
+                )
+            except (ApplicationError, OSError, TypeError, ValueError) as exc:
+                self.action_failed.emit(str(exc))
+                return
+            self.action_completed.emit(f"Resume started for {run_id}")
+            self.refresh()
+
+        self.thread_pool.start(command)
+
+    def queue_intervention(
+        self,
+        run_id: str,
+        kind: InterventionKind,
+        target: InterventionTarget,
+        text: str,
+        actor: str,
+    ) -> None:
+        def command() -> None:
+            try:
+                result = queue_intervention(
+                    QueueIntervention(run_id, kind, target, text, actor),
+                    state_dir=self.project_root / ".battalion" / "state",
+                    worker_dir=self.project_root / ".battalion" / "workers",
+                )
+            except (ApplicationError, OSError, TypeError, ValueError) as exc:
+                self.action_failed.emit(str(exc))
+                return
+            self.action_completed.emit(
+                f"{result.action.kind} queued for {result.action.target}"
+            )
+            self.refresh()
+
+        self.thread_pool.start(command)
+
+    def review_candidate(
+        self,
+        candidate_id: str,
+        action: ReviewAction,
+        actor: str,
+        edits: dict[str, object] | None = None,
+    ) -> None:
+        def command() -> None:
+            try:
+                result = review_candidate(ReviewCandidate(
+                    project_root=self.project_root,
+                    candidate_id=candidate_id,
+                    action=action,
+                    actor=actor,
+                    edits=edits,
+                ))
+            except (ApplicationError, OSError, TypeError, ValueError) as exc:
+                self.action_failed.emit(str(exc))
+                return
+            self.action_completed.emit(
+                f"{candidate_id} {result.disposition} by {actor}"
+            )
+            self.refresh()
+
+        self.thread_pool.start(command)

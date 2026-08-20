@@ -20,7 +20,7 @@ PUBLISHED_DOCUMENTS = {
     "docs/adrs/README.md": "docs/adrs/index.md",
     **{
         f"docs/adrs/adr{number:04d}.md": f"docs/adrs/adr{number:04d}.md"
-        for number in range(1, 23)
+        for number in range(1, 24)
     },
     "docs/rfcs/rfc0004.md": "docs/rfcs/rfc0004.md",
     "benchmarks/desktop/README.md": "benchmarks/desktop/index.md",

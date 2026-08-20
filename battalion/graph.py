@@ -49,6 +49,7 @@ from battalion.execution import ExecutionCapture
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import (
     CheckpointType,
+    InterventionDisposition,
     RejectionRecord,
     RunState,
     RunStatus,
@@ -133,6 +134,45 @@ def _configured_model(llm_configs: dict[str, Any], role: str) -> str:
     return getattr(config, "model", "unconfigured")
 
 
+def _deliver_interventions(
+    state: RunState,
+    target: str,
+    execution_id: str,
+    on_state_checkpoint: Callable[[RunState], None] | None,
+) -> RunState:
+    """Associate queued context with one attempt before provider generation."""
+    matched = {
+        item.action_id for item in state.interventions
+        if item.target.value == target
+        and item.disposition is InterventionDisposition.QUEUED
+    }
+    if not matched:
+        return state
+    interventions = [
+        item.model_copy(update={
+            "disposition": InterventionDisposition.DELIVERED,
+            "delivered_to_execution_id": execution_id,
+        }) if item.action_id in matched else item
+        for item in state.interventions
+    ]
+    actions = [
+        item.model_copy(update={
+            "disposition": "delivered",
+            "resulting_state_version": state.schema_version,
+            "resulting_status": state.status,
+            "resulting_phase": state.phase,
+        }) if item.action_id in matched else item
+        for item in state.human_action_log
+    ]
+    delivered = state.model_copy(update={
+        "interventions": interventions,
+        "human_action_log": actions,
+    })
+    if on_state_checkpoint is not None:
+        on_state_checkpoint(delivered)
+    return delivered
+
+
 def _handle_node_error(
     state: RunState,
     error: Exception,
@@ -180,6 +220,7 @@ def _make_architect_node(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     instinct_retriever: InstinctRetriever | None = None,
+    on_state_checkpoint: Callable[[RunState], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create the Architect node function for the graph."""
     from battalion.nodes.architect import run_architect
@@ -192,6 +233,10 @@ def _make_architect_node(
             state, NODE_ARCHITECT, _configured_model(llm_configs, "architect"), base_dir,
             prompts_dir=prompts_dir, model_configuration=model_config,
         )
+        state = _deliver_interventions(
+            state, NODE_ARCHITECT, capture.execution_id, on_state_checkpoint
+        )
+        capture.include_human_interventions(state)
         # Increment budget for this LLM call
         state = increment_budget(state)
         
@@ -201,7 +246,9 @@ def _make_architect_node(
             if instinct_retriever is not None
             else ()
         )
-        spec_text = architect_context(state, instincts=instincts)
+        spec_text = architect_context(
+            state, instincts=instincts, node_execution_id=capture.execution_id
+        )
         
         if on_node_event is not None:
             on_node_event({
@@ -272,6 +319,7 @@ def _make_driver_node(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     instinct_retriever: InstinctRetriever | None = None,
+    on_state_checkpoint: Callable[[RunState], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Driver node function for the graph.
     
@@ -290,6 +338,10 @@ def _make_driver_node(
             state, node_name, _configured_model(llm_configs, "driver"), base_dir,
             prompts_dir=prompts_dir, model_configuration=model_config,
         )
+        state = _deliver_interventions(
+            state, node_name, capture.execution_id, on_state_checkpoint
+        )
+        capture.include_human_interventions(state)
         # Increment budget for this LLM call
         state = increment_budget(state)
         
@@ -298,7 +350,13 @@ def _make_driver_node(
             if instinct_retriever is not None
             else ()
         )
-        ticket_text = driver_context(state, base_dir, mode, instincts=instincts)
+        ticket_text = driver_context(
+            state,
+            base_dir,
+            mode,
+            instincts=instincts,
+            node_execution_id=capture.execution_id,
+        )
         
         if on_node_event is not None:
             on_node_event({
@@ -476,6 +534,7 @@ def _make_refactorer_node(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     instinct_retriever: InstinctRetriever | None = None,
+    on_state_checkpoint: Callable[[RunState], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create the Refactorer node function for the graph."""
     from battalion.nodes.refactorer import run_refactorer
@@ -493,6 +552,10 @@ def _make_refactorer_node(
             else _configured_model(llm_configs, "driver"),
             base_dir, prompts_dir=prompts_dir, model_configuration=model_config,
         )
+        state = _deliver_interventions(
+            state, NODE_REFACTORER, capture.execution_id, on_state_checkpoint
+        )
+        capture.include_human_interventions(state)
         # Increment budget for this LLM call
         state = increment_budget(state)
         
@@ -501,7 +564,12 @@ def _make_refactorer_node(
             if instinct_retriever is not None
             else ()
         )
-        refactor_text = refactorer_context(state, base_dir, instincts=instincts)
+        refactor_text = refactorer_context(
+            state,
+            base_dir,
+            instincts=instincts,
+            node_execution_id=capture.execution_id,
+        )
         
         if on_node_event is not None:
             on_node_event({
@@ -646,16 +714,28 @@ def build_graph(
         "on_token": on_token,
         "instinct_retriever": instinct_retriever,
     }
-    architect_node = _make_architect_node(llm_configs, base_dir, prompts_dir, **shared)
-    driver_red_node = _make_driver_node("red", llm_configs, base_dir, prompts_dir, **shared)
-    driver_green_node = _make_driver_node("green", llm_configs, base_dir, prompts_dir, **shared)
+    architect_node = _make_architect_node(
+        llm_configs, base_dir, prompts_dir,
+        on_state_checkpoint=on_state_checkpoint, **shared
+    )
+    driver_red_node = _make_driver_node(
+        "red", llm_configs, base_dir, prompts_dir,
+        on_state_checkpoint=on_state_checkpoint, **shared
+    )
+    driver_green_node = _make_driver_node(
+        "green", llm_configs, base_dir, prompts_dir,
+        on_state_checkpoint=on_state_checkpoint, **shared
+    )
     reviewer_red_node = _make_reviewer_node(
         CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir, **shared
     )
     reviewer_green_node = _make_reviewer_node(
         CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir, **shared
     )
-    refactorer_node = _make_refactorer_node(llm_configs, base_dir, prompts_dir, **shared)
+    refactorer_node = _make_refactorer_node(
+        llm_configs, base_dir, prompts_dir,
+        on_state_checkpoint=on_state_checkpoint, **shared
+    )
     reviewer_refactor_node = _make_reviewer_node(
         CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir, **shared
     )

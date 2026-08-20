@@ -447,6 +447,26 @@ class ExecutionCapture:
             update={"interrupt_log": interrupts, "execution_record": record}
         )
 
+    def include_human_interventions(self, state: RunState) -> None:
+        """Record bounded provenance for interventions delivered to this attempt."""
+        for item in state.interventions:
+            if item.delivered_to_execution_id != self.execution_id:
+                continue
+            encoded = item.text.encode("utf-8")
+            digest, truncated, observed, hashed = _bounded_digest(encoded)
+            self.input_references.append(EvidenceReference(
+                kind="state",
+                reference=f"RunState.interventions/{item.action_id}",
+                sha256=digest,
+                hash_algorithm="sha256",
+                inclusion_reason=(
+                    f"human-supplied {item.kind.value} for {item.target.value}"
+                ),
+                truncated=truncated,
+                observed_bytes=observed,
+                hashed_bytes=hashed,
+            ))
+
 
 def record_scoped_write(target: Path) -> None:
     """Link a bound write tool action to the currently executing node."""

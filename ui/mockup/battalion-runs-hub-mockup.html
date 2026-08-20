@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Battalion — Runs Hub (design mockup)</title>
+<link rel="icon" type="image/png" href="favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-base:#1a1b1e;
+    --bg-raised:#212226;
+    --bg-sunken:#17181b;
+    --bg-hover:#26282c;
+    --border:#2c2d31;
+    --border-strong:#3a3c42;
+    --text-primary:#d8d9dc;
+    --text-secondary:#8b8d93;
+    --text-tertiary:#55575c;
+    --accent:#5b8dd6;
+    --status-queued:#6b6d73;
+    --status-running:#5b8dd6;
+    --status-waiting:#d6a95b;
+    --status-succeeded:#6ba85b;
+    --status-failed:#d65b5b;
+    --status-cancelled:#55575c;
+    --font-mono:'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --font-sans:'IBM Plex Sans', -apple-system, system-ui, sans-serif;
+    --radius:2px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg-base);
+    color:var(--text-primary);
+    font-family:var(--font-sans);
+    font-size:13px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .shell{
+    display:grid;
+    grid-template-rows:44px 1fr 26px;
+    height:100vh;
+  }
+
+  /* ---------- top nav ---------- */
+  .topnav{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    padding:0 14px;
+    background:var(--bg-raised);
+    border-bottom:1px solid var(--border);
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-secondary);
+  }
+  .logo{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    font-family:var(--font-sans);
+    font-weight:600;
+    font-size:13px;
+    color:var(--text-primary);
+    letter-spacing:0.2px;
+  }
+  .logo-mark{ width:16px; height:16px; flex-shrink:0; }
+
+  /* formation-grid progress spinner: cells light up in sequence */
+  .formation-spinner{ width:13px; height:13px; flex-shrink:0; }
+  .formation-spinner rect{ fill:var(--border-strong); }
+  .formation-spinner .c0{ animation:cell-cycle 1.2s steps(1) infinite; animation-delay:0s; }
+  .formation-spinner .c1{ animation:cell-cycle 1.2s steps(1) infinite; animation-delay:0.3s; }
+  .formation-spinner .c2{ animation:cell-cycle 1.2s steps(1) infinite; animation-delay:0.6s; }
+  .formation-spinner .c3{ animation:cell-cycle 1.2s steps(1) infinite; animation-delay:0.9s; }
+  @keyframes cell-cycle{
+    0%{ fill:var(--status-running); }
+    22%{ fill:var(--border-strong); }
+    100%{ fill:var(--border-strong); }
+  }
+  .nav-sep{ width:1px; height:16px; background:var(--border-strong); }
+  .nav-item{ display:flex; align-items:center; gap:6px; }
+  .nav-item .k{ color:var(--text-tertiary); }
+  .nav-spacer{ flex:1; }
+  .nav-btn{
+    background:none; border:1px solid var(--border-strong);
+    color:var(--text-secondary); font-family:var(--font-mono);
+    font-size:11px; padding:4px 9px; border-radius:var(--radius);
+    cursor:pointer;
+  }
+  .nav-btn:hover{ background:var(--bg-hover); color:var(--text-primary); }
+  .nav-btn[disabled]{ opacity:0.4; cursor:not-allowed; }
+
+  /* ---------- main three-pane grid ---------- */
+  .main{
+    display:grid;
+    grid-template-columns:280px 1fr 380px;
+    min-height:0;
+  }
+  .pane{ min-height:0; display:flex; flex-direction:column; }
+  .pane + .pane{ border-left:1px solid var(--border); }
+
+  .pane-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:9px 12px;
+    border-bottom:1px solid var(--border);
+    font-family:var(--font-mono);
+    font-size:10.5px; letter-spacing:0.8px; text-transform:uppercase;
+    color:var(--text-tertiary);
+    flex-shrink:0;
+  }
+  .pane-body{ flex:1; overflow-y:auto; }
+
+  /* ---------- run list ---------- */
+  .run-card{
+    padding:10px 12px;
+    border-bottom:1px solid var(--border);
+    cursor:pointer;
+    border-left:2px solid transparent;
+  }
+  .run-card:hover{ background:var(--bg-hover); }
+  .run-card.selected{ background:var(--bg-raised); border-left-color:var(--accent); }
+  .run-card-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .run-role{ font-weight:600; font-size:13px; color:var(--text-primary); }
+  .status-chip{
+    display:inline-flex; align-items:center; gap:5px;
+    font-family:var(--font-mono); font-size:10px; letter-spacing:0.4px;
+    padding:2px 6px; border-radius:var(--radius);
+    text-transform:uppercase;
+  }
+  .status-chip .dot{ width:6px; height:6px; border-radius:50%; }
+  .status-chip.running{ color:var(--status-running); background:rgba(91,141,214,0.12); }
+  .status-chip.running .dot{ background:var(--status-running); animation:pulse 1.4s ease-in-out infinite; }
+  .status-chip.waiting{ color:var(--status-waiting); background:rgba(214,169,91,0.12); }
+  .status-chip.waiting .dot{ background:var(--status-waiting); }
+  .status-chip.succeeded{ color:var(--status-succeeded); background:rgba(107,168,91,0.12); }
+  .status-chip.succeeded .dot{ background:var(--status-succeeded); }
+  .status-chip.failed{ color:var(--status-failed); background:rgba(214,91,91,0.12); }
+  .status-chip.failed .dot{ background:var(--status-failed); }
+  .status-chip.queued{ color:var(--status-queued); background:rgba(107,109,115,0.12); }
+  .status-chip.queued .dot{ background:var(--status-queued); }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+  .run-meta{
+    font-family:var(--font-mono); font-size:11px; color:var(--text-secondary);
+    display:flex; flex-wrap:wrap; gap:4px 10px;
+  }
+  .run-meta span{ display:flex; align-items:center; gap:4px; }
+  .run-meta .muted{ color:var(--text-tertiary); }
+  .run-ticket{
+    margin-top:6px; font-family:var(--font-mono); font-size:10.5px;
+    color:var(--accent); display:flex; align-items:center; gap:6px;
+  }
+  .run-ticket .branch{ color:var(--text-tertiary); }
+
+  /* ---------- execution graph ---------- */
+  .graph-canvas{ background:var(--bg-sunken); height:100%; padding:24px 0; }
+  .graph-node{
+    width:180px; margin:0 auto; position:relative;
+    background:var(--bg-raised); border:1px solid var(--border-strong);
+    border-left:3px solid var(--status-succeeded);
+    border-radius:var(--radius);
+    padding:9px 11px; text-align:left;
+    font-family:var(--font-mono); font-size:11.5px;
+    cursor:pointer;
+  }
+  .graph-node .role{ font-weight:600; color:var(--text-primary); font-size:12.5px; margin-bottom:3px; }
+  .graph-node .sub{ color:var(--text-tertiary); font-size:10.5px; }
+  .graph-node.current{
+    border-left-color:var(--status-running);
+    border-style:dashed;
+    border-color:var(--status-running);
+    animation:marchborder 8s linear infinite;
+  }
+  .graph-node.failed{ border-left-color:var(--status-failed); }
+  .graph-node.selected{ box-shadow:0 0 0 1px var(--accent); }
+  @keyframes marchborder{
+    0%{ border-image: repeating-linear-gradient(90deg, var(--status-running) 0 6px, transparent 6px 10px) 1; }
+    100%{ border-image: repeating-linear-gradient(90deg, var(--status-running) 0 6px, transparent 6px 10px) 1; }
+  }
+  .graph-connector{ width:180px; margin:0 auto; height:26px; position:relative; }
+  .graph-connector svg{ position:absolute; top:0; left:0; }
+
+  /* ---------- inspector ---------- */
+  .tabs{
+    display:flex; overflow-x:auto;
+    border-bottom:1px solid var(--border);
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.3px;
+    flex-shrink:0;
+  }
+  .tab{
+    padding:8px 11px; color:var(--text-tertiary);
+    border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap;
+    text-transform:uppercase;
+  }
+  .tab.active{ color:var(--text-primary); border-bottom-color:var(--accent); }
+  .tab:hover:not(.active){ color:var(--text-secondary); }
+
+  .insp-section{ padding:14px 16px; border-bottom:1px solid var(--border); }
+  .insp-label{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:0.6px;
+    text-transform:uppercase; color:var(--text-tertiary); margin-bottom:8px;
+  }
+  .kv{ display:flex; justify-content:space-between; padding:3px 0; font-size:12px; }
+  .kv .k{ color:var(--text-secondary); }
+  .kv .v{ font-family:var(--font-mono); color:var(--text-primary); }
+  .kv .v.accent{ color:var(--accent); }
+
+  .provenance-chain{ display:flex; flex-direction:column; gap:0; }
+  .prov-item{
+    display:flex; align-items:center; gap:8px;
+    padding:6px 0; font-family:var(--font-mono); font-size:11.5px;
+    color:var(--accent); cursor:pointer;
+  }
+  .prov-item .arrow{ color:var(--text-tertiary); }
+  .prov-item:hover{ text-decoration:underline; }
+
+  .summary-text{ font-size:12.5px; color:var(--text-secondary); line-height:1.55; }
+
+  /* ---------- status bar ---------- */
+  .statusbar{
+    display:flex; align-items:center; gap:16px;
+    padding:0 14px; background:var(--bg-raised); border-top:1px solid var(--border);
+    font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary);
+  }
+  .statusbar .hi{ color:var(--text-secondary); }
+  .statusbar .conn{ display:flex; align-items:center; gap:5px; margin-left:auto; }
+  .statusbar .conn .dot{ width:6px; height:6px; border-radius:50%; background:var(--status-succeeded); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- TOP NAVIGATION -->
+  <div class="topnav">
+    <div class="logo">
+      <svg class="logo-mark" viewBox="0 0 64 64">
+        <path d="M14 46 L28 22" stroke="var(--text-primary)" stroke-width="7" stroke-linecap="round" fill="none"/>
+        <path d="M36 22 L50 46" stroke="var(--text-primary)" stroke-width="7" stroke-linecap="round" fill="none"/>
+        <rect x="27.5" y="16.5" width="9" height="9" fill="var(--accent)" transform="rotate(45 32 21)"/>
+      </svg>
+      battalion
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-item"><span class="k">project</span> battalion</div>
+    <div class="nav-item"><span class="k">branch</span> feature/btn-52-ui-tokens</div>
+    <div class="nav-item"><span class="k">session</span> #71</div>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn" disabled>search (soon)</button>
+    <button class="nav-btn">settings</button>
+  </div>
+
+  <!-- THREE PANE MAIN -->
+  <div class="main">
+
+    <!-- RUN LIST -->
+    <div class="pane">
+      <div class="pane-header"><span>Runs — newest first</span><span>6</span></div>
+      <div class="pane-body">
+        <div class="run-card selected">
+          <div class="run-card-top">
+            <span class="run-role">Driver</span>
+            <span class="status-chip running">
+              <svg class="formation-spinner" viewBox="0 0 24 24">
+                <rect class="c0" x="1" y="1" width="9" height="9" rx="2"/>
+                <rect class="c1" x="14" y="1" width="9" height="9" rx="2"/>
+                <rect class="c2" x="1" y="14" width="9" height="9" rx="2"/>
+                <rect class="c3" x="14" y="14" width="9" height="9" rx="2"/>
+              </svg>
+              running
+            </span>
+          </div>
+          <div class="run-meta">
+            <span>Claude Sonnet 5</span>
+            <span class="muted">·</span>
+            <span>2m 14s</span>
+            <span class="muted">·</span>
+            <span>18,441 tok</span>
+            <span class="muted">·</span>
+            <span>$0.21</span>
+          </div>
+          <div class="run-ticket">BTN-52 <span class="branch">feature/btn-52-ui-tokens</span></div>
+        </div>
+
+        <div class="run-card">
+          <div class="run-card-top">
+            <span class="run-role">Reviewer</span>
+            <span class="status-chip waiting"><span class="dot"></span>waiting</span>
+          </div>
+          <div class="run-meta">
+            <span>Claude Opus 4.8</span>
+            <span class="muted">·</span>
+            <span>41s</span>
+            <span class="muted">·</span>
+            <span>6,120 tok</span>
+            <span class="muted">·</span>
+            <span>$0.09</span>
+          </div>
+          <div class="run-ticket">BTN-51 <span class="branch">codex/btn-51-nicegui</span></div>
+        </div>
+
+        <div class="run-card">
+          <div class="run-card-top">
+            <span class="run-role">Architect</span>
+            <span class="status-chip succeeded"><span class="dot"></span>succeeded</span>
+          </div>
+          <div class="run-meta">
+            <span>Claude Opus 4.8</span>
+            <span class="muted">·</span>
+            <span>38s</span>
+            <span class="muted">·</span>
+            <span>9,884 tok</span>
+            <span class="muted">·</span>
+            <span>$0.14</span>
+          </div>
+          <div class="run-ticket">BTN-41 <span class="branch">main</span></div>
+        </div>
+
+        <div class="run-card">
+          <div class="run-card-top">
+            <span class="run-role">Refactorer</span>
+            <span class="status-chip failed"><span class="dot"></span>failed</span>
+          </div>
+          <div class="run-meta">
+            <span>Claude Sonnet 5</span>
+            <span class="muted">·</span>
+            <span>1m 02s</span>
+            <span class="muted">·</span>
+            <span>11,003 tok</span>
+            <span class="muted">·</span>
+            <span>$0.16</span>
+          </div>
+          <div class="run-ticket">BTN-49 <span class="branch">feature/btn-49-scope-enforce</span></div>
+        </div>
+
+        <div class="run-card">
+          <div class="run-card-top">
+            <span class="run-role">Driver</span>
+            <span class="status-chip succeeded"><span class="dot"></span>succeeded</span>
+          </div>
+          <div class="run-meta">
+            <span>Claude Sonnet 5</span>
+            <span class="muted">·</span>
+            <span>3m 55s</span>
+            <span class="muted">·</span>
+            <span>21,207 tok</span>
+            <span class="muted">·</span>
+            <span>$0.27</span>
+          </div>
+          <div class="run-ticket">BTN-49 <span class="branch">feature/btn-49-scope-enforce</span></div>
+        </div>
+
+        <div class="run-card">
+          <div class="run-card-top">
+            <span class="run-role">Reviewer</span>
+            <span class="status-chip queued"><span class="dot"></span>queued</span>
+          </div>
+          <div class="run-meta">
+            <span>Claude Opus 4.8</span>
+            <span class="muted">·</span>
+            <span>—</span>
+            <span class="muted">·</span>
+            <span>—</span>
+            <span class="muted">·</span>
+            <span>—</span>
+          </div>
+          <div class="run-ticket">BTN-50 <span class="branch">codex/btn-50-flutter</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXECUTION GRAPH -->
+    <div class="pane">
+      <div class="pane-header"><span>Execution graph</span><span>BTN-52</span></div>
+      <div class="pane-body graph-canvas">
+        <div class="graph-node">
+          <div class="role">Architect</div>
+          <div class="sub">succeeded · 38s</div>
+        </div>
+        <div class="graph-connector">
+          <svg width="180" height="26"><path d="M90,0 L90,26" stroke="#3a3c42" stroke-width="1.5" fill="none"/></svg>
+        </div>
+        <div class="graph-node selected current">
+          <div class="role" style="display:flex; align-items:center; gap:6px;">
+            <svg class="formation-spinner" viewBox="0 0 24 24">
+              <rect class="c0" x="1" y="1" width="9" height="9" rx="2"/>
+              <rect class="c1" x="14" y="1" width="9" height="9" rx="2"/>
+              <rect class="c2" x="1" y="14" width="9" height="9" rx="2"/>
+              <rect class="c3" x="14" y="14" width="9" height="9" rx="2"/>
+            </svg>
+            Driver (RED)
+          </div>
+          <div class="sub">running · 2m 14s</div>
+        </div>
+        <div class="graph-connector">
+          <svg width="180" height="26"><path d="M90,0 L90,26" stroke="#3a3c42" stroke-width="1.5" fill="none" stroke-dasharray="3,3"/></svg>
+        </div>
+        <div class="graph-node" style="opacity:0.45;">
+          <div class="role">Reviewer (RED)</div>
+          <div class="sub">queued</div>
+        </div>
+        <div class="graph-connector">
+          <svg width="180" height="26"><path d="M90,0 L90,26" stroke="#3a3c42" stroke-width="1.5" fill="none" stroke-dasharray="3,3"/></svg>
+        </div>
+        <div class="graph-node" style="opacity:0.3;">
+          <div class="role">Driver (GREEN)</div>
+          <div class="sub">queued</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INSPECTOR -->
+    <div class="pane">
+      <div class="pane-header"><span>Inspector</span></div>
+      <div class="tabs">
+        <div class="tab active">Overview</div>
+        <div class="tab">Timeline</div>
+        <div class="tab">Messages</div>
+        <div class="tab">Tool calls</div>
+        <div class="tab">Artifacts</div>
+        <div class="tab">Observability</div>
+        <div class="tab">Provenance</div>
+        <div class="tab">Raw trace</div>
+      </div>
+      <div class="pane-body">
+        <div class="insp-section">
+          <div class="insp-label">Objective</div>
+          <div class="summary-text">Implement typed intervention handling for the Driver node per RFC0004 Q6 — Correction and Design decision intent types, bounded-context queueing for next-attempt only.</div>
+        </div>
+        <div class="insp-section">
+          <div class="kv"><span class="k">Role</span><span class="v">Driver</span></div>
+          <div class="kv"><span class="k">Status</span><span class="v accent">Running</span></div>
+          <div class="kv"><span class="k">Provider</span><span class="v">Anthropic</span></div>
+          <div class="kv"><span class="k">Model</span><span class="v">claude-sonnet-5</span></div>
+          <div class="kv"><span class="k">Duration</span><span class="v">2m 14s</span></div>
+          <div class="kv"><span class="k">Tokens</span><span class="v">18,441</span></div>
+          <div class="kv"><span class="k">Est. cost</span><span class="v">$0.21</span></div>
+        </div>
+        <div class="insp-section">
+          <div class="insp-label">Provenance</div>
+          <div class="provenance-chain">
+            <div class="prov-item"><span class="arrow">←</span> spec.md</div>
+            <div class="prov-item"><span class="arrow">←</span> RFC0004 (Q6 resolved)</div>
+            <div class="prov-item"><span class="arrow">←</span> Architect Run #91</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <span>session <span class="hi">14m 02s</span></span>
+    <span>tokens <span class="hi">67,655</span></span>
+    <span>cost <span class="hi">$0.87</span></span>
+    <span>model <span class="hi">claude-sonnet-5</span></span>
+    <div class="conn"><span class="dot"></span>connected</div>
+  </div>
+
+</div>
+</body>
+</html>
