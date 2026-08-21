@@ -1435,6 +1435,761 @@
       "assignee_role": "driver",
       "source": "User backlog request 2026-08-20; BTN-18, BTN-42, BTN-43, BTN-56",
       "notes": "Completed on codex/BTN-57 on 2026-08-20; the live GitHub Pages site updates only after merge to main. The landing page reuses the BTN-56 mark and favicon, explains the shipped human-directed role loop, distinguishes roadmap behavior, and links the specification, plan, ADR index, and published operator documentation. Three reviewed production PySide6 captures cover Work plus human action, History execution evidence, and Intel review. scripts/capture_pages_screenshots.py renders fixed fictional in-memory projections with the public showcase-operator identity and no provider, credential, developer run-state, Git, or network access; docs/ui/showcase.md documents refresh and review. The explicit Pages allowlist stages the layout, stylesheet, operator documents, brand files, and optimized 1380x860 PNGs (each below 150 KB), with tests covering destinations, link rewriting, local references, dimensions, size, and fixture safety. Focused validation passed 22 tests; the complete offline suite passed 423 tests. The staged landing page was visually reviewed in the in-app browser at 1440x1000 and 390x844 with all images loaded, useful alt text, responsive one-column behavior, and no horizontal page overflow."
+    },
+    {
+      "id": "BTN-58",
+      "phase": "architecture",
+      "title": "Human identity, authority, assignment, and collaboration RFC",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Define Battalion's durable human identity and collaboration model before the existing actor evidence from human actions spreads into additional persistence, UI, assignment, or remote-client contracts. Separate identity, authentication, authorization, membership, assignment, and observed social or expertise evidence.",
+      "acceptance_criteria": [
+        "The RFC defines a stable Actor identity contract for humans and system actors without assuming that display name, GitHub login, email address, operating-system username, or authentication credential is the durable identity",
+        "Identity, authentication, and authorization are explicitly separate concepts: Battalion can identify a local actor before remote authentication exists, and authentication alone does not grant project authority",
+        "The RFC defines project membership and human capabilities such as inspect, operate, approve, assign, and administer without conflating them with Battalion AI roles such as Architect, Driver, Reviewer, and Refactorer",
+        "The RFC defines the distinction between actor, operator, assignee, owner, reviewer or approval authority, and observer where those concepts are materially different",
+        "Existing BTN-43 HumanActionRecord and HumanIntervention evidence is reconciled with the Actor model, including compatibility for historical string actor values",
+        "The RFC defines assignment and handoff semantics for Tickets and Runs, including assigned_by, assignment time, reassignment history, and what responsibility transfers versus what historical provenance remains immutable",
+        "Authorization rules are defined for existing human actions including interrupt resolution, resume, bounded Correction, Design decision, Recon promotion or rejection, cancellation, and future assignment operations",
+        "The design preserves the shared application boundary so CLI, desktop, future web or mobile clients cannot bypass authorization by mutating RunState, Intel, worker metadata, or project files directly",
+        "Authentication providers, accounts, hosted identity services, OAuth, remote session management, and organization administration remain implementation-deferred unless required to establish a stable boundary",
+        "Empirically inferred collaboration or expertise evidence is explicitly non-authoritative: social-graph evidence may recommend a person but cannot grant capabilities or approval authority",
+        "The RFC identifies migration, specification, ADR, persistence, application, desktop, authentication, and collaboration follow-up tickets without implementing them"
+      ],
+      "dependencies": [
+        "BTN-30",
+        "BTN-32",
+        "BTN-43"
+      ],
+      "blocks": [
+        "BTN-59",
+        "BTN-60",
+        "BTN-61",
+        "BTN-62"
+      ],
+      "assignee_role": "architect",
+      "source": "BTN-43 durable human-action evidence; collaboration requirements; future multi-client and remote-worker architecture",
+      "notes": "Architecture first. Battalion already persists human actor strings through BTN-43, so this ticket should establish the durable identity and authority contract before further UI or persistence assumes a single anonymous operator. Human capability roles must not be confused with AI execution roles. Social or expertise inference is evidence only and cannot create authority."
+    },
+    {
+      "id": "BTN-59",
+      "phase": "implementation",
+      "title": "Durable Actor identity and local operator provenance",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement the accepted Actor identity contract and migrate current human-action attribution from free-form actor strings to durable actor references while preserving local-first operation and historical compatibility.",
+      "acceptance_criteria": [
+        "Battalion defines a versioned Actor contract with a stable actor_id, actor kind, display name, creation provenance, and only the identity fields accepted by BTN-58",
+        "A project can establish or select a local human actor without OAuth, a hosted account service, or network access",
+        "HumanActionRecord, HumanIntervention, interrupt resolution, Recon review decisions, and other existing human-attributed evidence reference durable actor identity according to the BTN-58 migration contract",
+        "Historical records containing only the pre-BTN-59 string actor remain readable and are presented as legacy attribution without inventing a durable identity that was not recorded",
+        "Changing an actor's display name does not rewrite historical action evidence or change actor_id",
+        "System-generated actions can be attributed to explicitly typed system actors rather than masquerading as human users",
+        "Actor lookup and inspection are exposed through the shared application query boundary rather than direct presentation-layer persistence access",
+        "CLI and desktop source execution continue to work for a single local operator without requiring authentication infrastructure",
+        "Tests cover actor creation or selection, stable identity, display-name change, legacy attribution, system actors, malformed identity data, and persistence round trips"
+      ],
+      "dependencies": [
+        "BTN-58"
+      ],
+      "blocks": [
+        "BTN-60",
+        "BTN-61"
+      ],
+      "assignee_role": "driver",
+      "source": "BTN-58; BTN-43 HumanActionRecord and HumanIntervention provenance",
+      "notes": "Do not add OAuth, passwords, cloud accounts, or remote login here. The purpose is to stop durable evidence from assuming that a human actor is merely an arbitrary display string."
+    },
+    {
+      "id": "BTN-60",
+      "phase": "implementation",
+      "title": "Project membership and capability authorization",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement project-scoped membership and capability checks for human operations so durable actor identity is mechanically connected to the authority exercised through Battalion's application boundary.",
+      "acceptance_criteria": [
+        "Project membership binds an Actor to one project and grants only capabilities accepted by BTN-58, such as inspect, operate, approve, assign, and administer",
+        "Human capabilities are represented independently from AI execution roles and cannot cause a human to become an Architect, Driver, Reviewer, or Refactorer node",
+        "Every state-changing human application command identifies the requesting actor and mechanically checks the capability required for that action before mutation occurs",
+        "Existing BTN-43 operations including interrupt resolution, resume, Correction, Design decision, Recon review, and cancellation are mapped to explicit capability requirements",
+        "Denied actions produce typed application failures and durable security or operator evidence where required by BTN-58 without partially mutating RunState, Intel, worker state, or assignment state",
+        "Read-only inspection behavior for non-members, observers, or unauthorized actors follows the explicit BTN-58 policy rather than presentation-client assumptions",
+        "Membership or capability changes do not retroactively alter the authority evidence attached to prior human actions",
+        "The application boundary remains the single authorization enforcement point shared by CLI, desktop, and future presentation clients",
+        "A backwards-compatible single-local-operator configuration remains available without requiring an external identity provider",
+        "Tests cover permitted and denied actions, capability changes, cross-project isolation, legacy/local operation, and attempts to bypass authorization through presentation adapters"
+      ],
+      "dependencies": [
+        "BTN-58",
+        "BTN-59",
+        "BTN-43"
+      ],
+      "blocks": [
+        "BTN-61",
+        "BTN-62"
+      ],
+      "assignee_role": "driver",
+      "source": "BTN-58; BTN-30 application authority boundary; BTN-43 human actions",
+      "notes": "Prefer capability grants over a premature fixed RBAC hierarchy. Named human roles may later be convenience bundles of capabilities, but authorization must not depend on presentation-only labels."
+    },
+    {
+      "id": "BTN-61",
+      "phase": "implementation",
+      "title": "Ticket and Run assignment, reassignment, and handoff",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Add durable human assignment and handoff for Tickets and Runs so responsibility can transfer between authorized actors without transcript injection or loss of execution provenance.",
+      "acceptance_criteria": [
+        "Battalion represents current assignment separately from immutable assignment history for the target types accepted by BTN-58",
+        "An assignment records target identity, assignee actor_id, assigning actor_id, timestamp, and any bounded reason or handoff context accepted by the RFC",
+        "Only actors with the required assignment capability may assign or reassign work, and an assignee must satisfy the target project's membership requirements",
+        "Reassignment changes current responsibility but never rewrites the actor attribution of prior human actions, node executions, decisions, or earlier assignments",
+        "A Run can be handed from one actor to another while preserving its canonical run identity, durable RunState, execution evidence, pending interrupt, worker evidence, Intel references, and project identity",
+        "Opening an assigned Run does not require replaying or injecting another user's conversation history; the durable Run and repository evidence remain the handoff source of truth",
+        "The application layer exposes assignment inspection and mutation operations for presentation clients with typed authorization and conflict failures",
+        "Desktop presentation exposes current assignment and assignment history and provides assignment controls only where the active actor is authorized",
+        "Concurrent or stale reassignment attempts cannot silently overwrite a newer assignment and have an explicit conflict behavior",
+        "Tests cover initial assignment, reassignment, unauthorized assignment, invalid assignee, handoff of awaiting-human and inactive runs, assignment-history preservation, and stale-write conflicts"
+      ],
+      "dependencies": [
+        "BTN-59",
+        "BTN-60",
+        "BTN-32",
+        "BTN-43"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "BTN-58; collaboration handoff requirement; durable Run identity from BTN-32",
+      "notes": "This implements collaboration semantics, not networking. Bob and Alice may initially operate the same local/project storage. Cross-machine synchronization, hosted storage, notifications, and remote workers are separate future concerns."
+    },
+    {
+      "id": "BTN-62",
+      "phase": "architecture",
+      "title": "Authentication and remote identity boundary RFC",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Define how an external or remote presentation client proves that it represents a durable Battalion Actor without coupling Actor identity or project authorization to any one authentication provider.",
+      "acceptance_criteria": [
+        "The RFC defines the trust boundary between an authenticated session or credential and Battalion's durable Actor identity",
+        "External identities such as GitHub, Microsoft or Entra, operating-system identity, and future Battalion-hosted accounts are evaluated as identity links rather than replacements for actor_id",
+        "The design defines account linking, unlinking, duplicate or conflicting external identities, disabled identities, actor deactivation, and credential rotation without rewriting historical provenance",
+        "Authentication success and authorization are explicitly separate; proving an identity does not grant project membership or capabilities",
+        "Desktop-local operation remains possible without requiring a remote authentication service",
+        "The RFC compares authentication needs for local desktop, web, mobile, remote worker, and shared-server deployment without requiring all of those deployment models to be implemented",
+        "Session lifetime, token or credential storage, logout or revocation, replay resistance, transport security, and secret boundaries are defined at the level necessary for future implementation",
+        "Machine and worker identities are distinguished from human Actor identity so a remote execution host cannot impersonate the human who authorized work",
+        "The design identifies any application protocol, server, persistence, UI, deployment, and security implementation tickets required for an accepted remote-client architecture",
+        "No authentication provider, Azure deployment, web client, mobile client, or remote worker implementation is authorized by this RFC ticket itself"
+      ],
+      "dependencies": [
+        "BTN-58",
+        "BTN-59",
+        "BTN-60"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "BTN-58; future web/mobile presentation clients and remote-worker deployment",
+      "notes": "Keep authentication provider-neutral. Local Actor identity should remain useful even if Battalion never gains a hosted account service. Azure, GitHub OAuth, Entra, passkeys, or another mechanism should be implementation choices behind the accepted identity boundary."
+    },
+    {
+      "id": "BTN-63",
+      "phase": "implementation",
+      "title": "Actor identity and external identity mappings",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Introduce Actor as a durable Battalion identity and model external identities as provider- and integration-scoped mappings so collaboration, assignment, notifications, authorization, and external-system identity can share one canonical domain identity.",
+      "acceptance_criteria": [
+        "Actors have stable canonical identity independent of usernames, email addresses, provider accounts, or external systems",
+        "An Actor may have zero or more external identities",
+        "Each external identity identifies an integration_id, provider, and external subject",
+        "The same Actor may have identities in multiple instances of the same provider, such as multiple Discord servers, GitHub organizations, or future Slack workspaces",
+        "An integration_id plus external subject cannot ambiguously resolve to multiple Actors",
+        "External identity records contain identifiers and metadata but never provider credentials or secrets",
+        "Linking, unlinking, malformed mappings, duplicate mappings, persistence, and migration behavior are covered by automated tests"
+      ],
+      "dependencies": [
+        "BTN-32"
+      ],
+      "blocks": [
+        "BTN-64",
+        "BTN-66",
+        "BTN-75",
+        "BTN-77",
+        "BTN-79",
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "User integration architecture discussion 2026-08-21",
+      "notes": "Actor is a Battalion domain identity, not an alias for a user account in any external provider. External identities are scoped to configured integration instances so provider identities remain unambiguous."
+    },
+    {
+      "id": "BTN-64",
+      "phase": "architecture",
+      "title": "Actor authorization and external-action authority",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Define and implement the authority boundary between resolved Actor identity and permitted Battalion operations, including human-controlled actions originating from desktop, CLI, REST, notifications, and future bidirectional integrations.",
+      "acceptance_criteria": [
+        "Resolving an external identity to an Actor does not itself authorize an operation",
+        "Operation-level authorization exists for human-controlled application commands including approve, resume, cancel, inspect, and reassign where those operations are supported",
+        "Authorization semantics are independent of whether an action originates from the desktop application, CLI, REST API, or an external integration",
+        "Project, Run, ownership, assignment, and role information may participate in authorization without provider-specific concepts entering the core domain model",
+        "Denied operations produce explicit inspectable outcomes and do not mutate Run state",
+        "The design defines future organization, project, and Actor policy precedence without requiring organization-level configuration in this ticket",
+        "Security-sensitive authority changes cannot be approved solely by an AI model or an external identity mapping"
+      ],
+      "dependencies": [
+        "BTN-30",
+        "BTN-58"
+      ],
+      "blocks": [
+        "BTN-63",
+        "BTN-80"
+      ],
+      "assignee_role": "architect",
+      "source": "Battalion AI philosophy; User integration architecture discussion 2026-08-21",
+      "notes": "Identity and authority are deliberately separate. External systems may establish who is acting, but Battalion remains responsible for deciding what that Actor is allowed to do."
+    },
+    {
+      "id": "BTN-65",
+      "phase": "architecture",
+      "title": "Transport-neutral integration capability architecture",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Define Battalion external integrations around bounded capability contracts rather than vendor APIs, MCP tools, or transport-specific clients, with providers and transports remaining interchangeable beneath Battalion-owned policy.",
+      "acceptance_criteria": [
+        "The architecture defines initial capability contracts for WorkSource, KnowledgeSource, SourceControl, Notification, OutboundEventSink, and HumanInteraction",
+        "Capability contracts contain no MCP-, REST-, GitHub-, Discord-, email-, Jira-, Slack-, or other provider-specific concepts",
+        "The architecture explicitly separates Battalion capability, provider adapter, transport, and external system",
+        "Initial transport taxonomy includes native or local, HTTP or REST, webhook, MCP, and protocol-specific transports such as SMTP",
+        "Graph nodes cannot obtain unrestricted raw external clients or arbitrary MCP tool collections through this architecture",
+        "Each capability defines allowed callers, data boundaries, side-effect semantics, failure semantics, and authority expectations",
+        "KnowledgeSource and SourceControl may remain unimplemented but their boundaries are defined sufficiently to prevent later architectural collision",
+        "BTN-46 is reconciled so future plugins may implement these contracts but plugin support is neither required nor privileged"
+      ],
+      "dependencies": [
+        "BTN-30"
+      ],
+      "blocks": [
+        "BTN-66",
+        "BTN-67",
+        "BTN-63",
+        "BTN-70",
+        "BTN-71",
+        "BTN-73",
+        "BTN-78"
+      ],
+      "assignee_role": "architect",
+      "source": "User integration architecture discussion 2026-08-21; BTN-46",
+      "notes": "MCP is an optional transport, not Battalion's integration model. Built-in deterministic integrations such as REST, SMTP, and webhooks must remain first-class."
+    },
+    {
+      "id": "BTN-66",
+      "phase": "implementation",
+      "title": "Portable integration configuration and secret indirection",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Add portable configuration for named integrations, providers, transports, capability assignments, and non-secret settings while keeping credentials outside repository-shareable configuration.",
+      "acceptance_criteria": [
+        "Configuration can assign named provider and transport combinations to Battalion capability surfaces",
+        "Integration instances have stable integration_id values suitable for Actor external identity mappings and durable provenance",
+        "Non-secret integration configuration may be checked into or passed with a Battalion project",
+        "Credentials and secrets are represented only by approved references and are resolved outside repository configuration",
+        "Configuration supports future organization, project, and Actor precedence while implementing only currently required layers",
+        "Actor-level preferences cannot enable providers or capabilities forbidden by higher-level project policy",
+        "Existing Battalion configuration remains backwards-compatible",
+        "Configuration export and sharing exclude secret material"
+      ],
+      "dependencies": [
+        "BTN-58",
+        "BTN-65"
+      ],
+      "blocks": [
+        "BTN-67",
+        "BTN-69",
+        "BTN-72",
+        "BTN-74",
+        "BTN-75",
+        "BTN-76",
+        "BTN-77"
+      ],
+      "assignee_role": "driver",
+      "source": "User integration architecture discussion 2026-08-21",
+      "notes": "A portable configuration should communicate which integrations a project expects without carrying credentials required to access them."
+    },
+    {
+      "id": "BTN-67",
+      "phase": "implementation",
+      "title": "Integration adapter runtime and transport boundary",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Implement the runtime boundary that resolves configured Battalion capabilities to approved provider adapters and transports without exposing unrestricted external clients to graph nodes or application callers.",
+      "acceptance_criteria": [
+        "Application and graph code request external behavior only through Battalion capability interfaces",
+        "Provider adapters receive only explicitly bound transport capabilities needed for their declared operation",
+        "Unsupported provider and transport combinations fail during validation where they can be detected before Run execution",
+        "Timeout, cancellation, transport failure, malformed responses, and unavailable integrations have typed failure semantics",
+        "Adapter or transport failure cannot silently corrupt graph or durable Run state",
+        "Transport implementations cannot broaden the authority of the capability operation invoking them",
+        "Automated tests use deterministic fakes and require no live provider credentials or network services"
+      ],
+      "dependencies": [
+        "BTN-65",
+        "BTN-66"
+      ],
+      "blocks": [
+        "BTN-63",
+        "BTN-69",
+        "BTN-70",
+        "BTN-71",
+        "BTN-78"
+      ],
+      "assignee_role": "driver",
+      "source": "BTN-60; User integration architecture discussion 2026-08-21",
+      "notes": "This runtime is the structural boundary that prevents integration transport details from leaking into graph logic."
+    },
+    {
+      "id": "BTN-68",
+      "phase": "implementation",
+      "title": "Integration operation policy enforcement",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Enforce Battalion-owned operation policy between capability requests and external side effects so provider and transport capabilities remain least-authority and external systems cannot bypass application authorization.",
+      "acceptance_criteria": [
+        "Policies operate on Battalion operations such as work.read, work.comment, notification.send, and event.publish rather than transport tool names",
+        "Policy enforcement is identical whether an operation is implemented through REST, MCP, SMTP, webhook, SDK, or another transport",
+        "Actor authorization is evaluated for externally originated commands before any Run mutation",
+        "Capability grants remain least-authority and adapters cannot invoke external operations outside the approved Battalion operation",
+        "Read authority and mutation or side-effect authority can be configured and evaluated independently",
+        "Policy denial is distinguishable from provider, authentication, and transport failure",
+        "No AI prompt or model instruction is relied upon as the enforcement mechanism",
+        "Automated tests demonstrate that raw provider capability cannot bypass denied Battalion operations"
+      ],
+      "dependencies": [
+        "BTN-64",
+        "BTN-65",
+        "BTN-67"
+      ],
+      "blocks": [
+        "BTN-72",
+        "BTN-75",
+        "BTN-78",
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "Battalion AI philosophy; BTN-2 structural scope pattern; User integration architecture discussion 2026-08-21",
+      "notes": "The policy boundary preserves the same structural-enforcement principle Battalion already uses for node write scopes."
+    },
+    {
+      "id": "BTN-69",
+      "phase": "implementation",
+      "title": "Integration health and capability validation",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Validate integration configuration, credentials, reachability, compatibility, and advertised capabilities before Runs depend upon external services, with typed health and degradation state.",
+      "acceptance_criteria": [
+        "Every configured integration exposes typed configuration and health status",
+        "Validation distinguishes configuration, authentication, connectivity, compatibility, and advertised-capability failures",
+        "MCP capability or tool drift can be detected without embedding static MCP tool names in graph-node prompts",
+        "Deterministic REST, webhook, SMTP, and similar integrations receive equivalent validation where practical",
+        "Integration health is inspectable through the shared application boundary for CLI and desktop consumers",
+        "Unavailable optional integrations can degrade independently rather than automatically failing unrelated Runs",
+        "Required integration failures block the dependent operation explicitly rather than surfacing as unrelated graph failures",
+        "Validation and health tests require no live credentials"
+      ],
+      "dependencies": [
+        "BTN-66",
+        "BTN-67"
+      ],
+      "blocks": [
+        "BTN-78",
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "Regiment MCP drift findings; User integration architecture discussion 2026-08-21",
+      "notes": "Generalizes Regiment's MCP drift lesson into transport-neutral Battalion health validation."
+    },
+    {
+      "id": "BTN-70",
+      "phase": "implementation",
+      "title": "External side-effect evidence and idempotent delivery",
+      "status": "not-started",
+      "priority": "P0",
+      "description": "Persist inspectable evidence for external operations and make side-effect delivery replay-safe across retries, resume, crashes, and duplicate event processing.",
+      "acceptance_criteria": [
+        "Every externally visible attempted side effect receives a stable logical operation or event ID",
+        "Durable records include Run identity, Actor identity where applicable, capability, integration, operation, timestamp, attempt information, and outcome",
+        "Retry and resume semantics prevent one logical operation from unintentionally producing duplicate Slack-like messages, emails, webhooks, GitHub comments, or equivalent external effects",
+        "Provider idempotency mechanisms are used when available but Battalion retains its own stable logical operation identity",
+        "Failed external delivery remains distinguishable from failed workflow execution",
+        "Audit records exclude secrets and avoid persisting unnecessary copies of external payload contents",
+        "Existing durable event identity and duplicate-delivery semantics are reused or reconciled rather than introducing a competing event model",
+        "Automated tests cover crash-before-response, timeout-after-remote-success, retry, resume, and duplicate-processing scenarios"
+      ],
+      "dependencies": [
+        "BTN-19",
+        "BTN-36",
+        "BTN-65",
+        "BTN-67"
+      ],
+      "blocks": [
+        "BTN-72",
+        "BTN-73",
+        "BTN-74",
+        "BTN-75",
+        "BTN-76",
+        "BTN-77",
+        "BTN-78",
+        "BTN-79",
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "BTN-19, BTN-36; User integration architecture discussion 2026-08-21",
+      "notes": "External side effects must remain auditable and safe to retry because Battalion Runs are durable and resumable."
+    },
+    {
+      "id": "BTN-71",
+      "phase": "implementation",
+      "title": "WorkSource abstraction and local backlog provider",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Decouple Run intake from Battalion's local backlog representation by introducing a normalized WorkSource and WorkItem contract, with the existing local backlog as the first backwards-compatible provider.",
+      "acceptance_criteria": [
+        "A Run can originate from a normalized WorkItem supplied through a configured WorkSource",
+        "The existing Battalion backlog remains usable through a local WorkSource provider without regressing current CLI or application behavior",
+        "Canonical Battalion Run identity remains separate from external work-item identity",
+        "Source integration, external identifier, source revision or update evidence when available, and retrieval provenance are retained durably",
+        "Work-item reads and external mutations are distinct WorkSource operations with separately enforceable authority",
+        "Graph nodes do not directly invoke GitHub, Jira, local-backlog, or other provider APIs",
+        "The contract supports future GitHub Issues, Jira, Azure DevOps, and other providers without provider-specific fields entering core graph state",
+        "Automated tests cover local WorkSource intake and source provenance"
+      ],
+      "dependencies": [
+        "BTN-30",
+        "BTN-65",
+        "BTN-67"
+      ],
+      "blocks": [
+        "BTN-72",
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "User integration architecture discussion 2026-08-21",
+      "notes": "The local backlog becomes a provider of Battalion's WorkSource contract rather than the universal definition of external work."
+    },
+    {
+      "id": "BTN-72",
+      "phase": "implementation",
+      "title": "GitHub Issues WorkSource adapter",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement GitHub Issues as Battalion's first external WorkSource so Battalion can consume and update real Issues from its own repository while preserving transport neutrality, policy, provenance, and idempotency.",
+      "acceptance_criteria": [
+        "A configured GitHub Issue can be normalized into a Battalion WorkItem and used to start a Run",
+        "Repository identity, issue number, external URL or reference, source update evidence, labels, assignee information where relevant, and retrieval provenance are retained without becoming provider-specific core Run fields",
+        "Battalion can use an Issue from the Battalion repository itself as a WorkSource input",
+        "Permitted GitHub comments, state changes, labels, or other accepted mutations pass through Battalion integration policy rather than direct graph-node GitHub access",
+        "External mutations participate in Battalion idempotency and side-effect evidence",
+        "Authentication uses the approved secret boundary and credentials are absent from portable integration configuration",
+        "The adapter boundary remains compatible with REST, GraphQL, SDK, or other deterministic GitHub transport implementation without changing WorkSource",
+        "Automated tests use deterministic fakes or mocked GitHub responses and require no live GitHub credentials"
+      ],
+      "dependencies": [
+        "BTN-66",
+        "BTN-63",
+        "BTN-70",
+        "BTN-71"
+      ],
+      "blocks": [
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "User dogfooding decision 2026-08-21; github.com/lrburkholder/battalion",
+      "notes": "GitHub Issues is intentionally the first external WorkSource because Battalion can immediately use its own repository issues to build Battalion. Jira remains a future second-provider validation."
+    },
+    {
+      "id": "BTN-73",
+      "phase": "implementation",
+      "title": "Versioned outbound event sink contract",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Define and implement a generic outbound event-sink capability so external automation can consume selected Battalion domain events without being treated as a human notification channel or gaining mutation authority.",
+      "acceptance_criteria": [
+        "Battalion can publish selected domain events through configured OutboundEventSink providers",
+        "Each outbound event envelope includes stable event ID, event type, schema version, occurrence timestamp, Run or project provenance where applicable, and bounded event data",
+        "Initial supported external events include human_interrupt, run_failed, and run_completed",
+        "Publishing an event does not grant the receiving system authority to mutate Battalion",
+        "Event schema evolution and compatibility rules are documented and tested",
+        "Payload minimization is explicit and arbitrary transcripts, prompts, source code, model context, and secrets are excluded by default",
+        "Outbound event delivery uses BTN-65 retry, audit, and idempotency semantics",
+        "Event consumers remain independent of any particular provider such as Zapier or Discord"
+      ],
+      "dependencies": [
+        "BTN-36",
+        "BTN-65",
+        "BTN-70"
+      ],
+      "blocks": [
+        "BTN-74",
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "User Zapier and notification architecture discussion 2026-08-21",
+      "notes": "OutboundEventSink is broader than Notification. Machine automation may consume Run events even when no human needs to be notified."
+    },
+    {
+      "id": "BTN-74",
+      "phase": "implementation",
+      "title": "Generic outbound HTTP webhook adapter",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement a generic HTTP webhook OutboundEventSink so Battalion can integrate with Zapier, internal automation, custom services, and similar systems without provider-specific application code.",
+      "acceptance_criteria": [
+        "Configured outbound events can be delivered as HTTP POST requests to a webhook endpoint",
+        "Endpoint URL and non-secret request configuration are portable while credentials and authorization material use approved secret indirection",
+        "Configuration can select which event types are delivered to a particular sink",
+        "Timeout, retry, non-success HTTP response, malformed configuration, unavailable endpoint, and cancellation behavior are explicit and tested",
+        "Retries retain the same logical Battalion event identity",
+        "Webhook payloads use the versioned outbound event envelope from BTN-68",
+        "No Zapier-specific or other automation-vendor-specific code is required",
+        "Automated tests use a local or fake HTTP endpoint and require no external network access"
+      ],
+      "dependencies": [
+        "BTN-66",
+        "BTN-70",
+        "BTN-73"
+      ],
+      "blocks": [
+        "BTN-79",
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "User Zapier discussion 2026-08-21",
+      "notes": "This should provide useful Zapier and internal-automation integration without a native Zapier application. Add provider-specific integration only when generic HTTP demonstrably fails a concrete use case."
+    },
+    {
+      "id": "BTN-75",
+      "phase": "implementation",
+      "title": "Actor-targeted notification routing",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Route human notifications by Battalion Actor identity rather than raw provider destinations, resolving configured external identities and channel policy only at the notification boundary.",
+      "acceptance_criteria": [
+        "Notification requests target Actor IDs or explicitly defined Actor groups rather than raw email addresses, Discord IDs, provider user IDs, or device tokens",
+        "The router resolves Actor destinations through external identity mappings and the selected configured integration",
+        "An Actor may have different destinations for multiple instances of the same provider",
+        "Missing destination, disabled channel, unavailable integration, policy denial, and failed delivery are distinct outcomes",
+        "One logical notification may fan out to multiple configured channels without creating unrelated notification identities",
+        "Project defaults and permitted Actor preferences can determine channel selection without allowing Actor preferences to bypass higher-level policy",
+        "Notification failure does not corrupt, dismiss, or silently resolve the underlying HumanInterrupt",
+        "Notification routing participates in BTN-65 audit and idempotency semantics"
+      ],
+      "dependencies": [
+        "BTN-58",
+        "BTN-66",
+        "BTN-63",
+        "BTN-70"
+      ],
+      "blocks": [
+        "BTN-76",
+        "BTN-77",
+        "BTN-79",
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "User actor-targeted notification discussion 2026-08-21",
+      "notes": "The graph should express notify Actor X, not send to provider destination Y."
+    },
+    {
+      "id": "BTN-76",
+      "phase": "implementation",
+      "title": "Deterministic email notification adapter",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Implement actor-targeted email as a deterministic notification provider using an explicitly configured mail transport without making email an interactive Run-control surface.",
+      "acceptance_criteria": [
+        "The adapter resolves an Actor's email identity through the external identity model",
+        "SMTP or another explicitly selected deterministic mail transport is configured beneath the Notification capability without email concepts entering graph logic",
+        "Credentials remain outside portable project configuration",
+        "HumanInterrupt notifications can include bounded Run identifier, work-item identifier, phase, reason, and a safe route back to Battalion",
+        "Email delivery is notification-only and cannot implicitly approve, resume, cancel, or mutate a Run",
+        "Duplicate suppression, missing recipient, authentication failure, timeout, unavailable transport, and retry behavior are tested",
+        "Email contents exclude unnecessary prompts, transcripts, source code, model context, and secrets",
+        "Delivery evidence uses BTN-65 semantics"
+      ],
+      "dependencies": [
+        "BTN-66",
+        "BTN-70",
+        "BTN-75"
+      ],
+      "blocks": [
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "User notification channel discussion 2026-08-21",
+      "notes": "Email is intentionally a notification surface, not a command or approval surface."
+    },
+    {
+      "id": "BTN-77",
+      "phase": "implementation",
+      "title": "Push notification provider contract and first adapter",
+      "status": "not-started",
+      "priority": "P2",
+      "description": "Define actor-targeted push notification semantics and implement one bounded provider or transport without coupling Battalion's domain model to a particular mobile notification vendor.",
+      "acceptance_criteria": [
+        "Push destinations are external Actor identities associated with a configured integration",
+        "The ticket documents and selects one bounded initial provider or transport rather than introducing a provider-neutral abstraction with no proof implementation",
+        "Device or provider tokens are treated as sensitive and are not stored in repository-shareable configuration",
+        "Push payloads are deliberately minimal and do not include arbitrary source, prompts, transcripts, secrets, or model context",
+        "Push notifications are outbound notification-only in the initial implementation",
+        "Multiple devices, stale endpoints, revoked destinations, partial fan-out failure, retry, and duplicate delivery are handled explicitly",
+        "Provider-specific concepts remain below the Notification capability boundary",
+        "Automated tests require no live push service credentials"
+      ],
+      "dependencies": [
+        "BTN-58",
+        "BTN-66",
+        "BTN-70",
+        "BTN-75"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "User notification channel discussion 2026-08-21",
+      "notes": "The implementation should select the simplest zero-cost provider suitable for Battalion dogfooding when this ticket is started. Do not invent a mobile dependency before a concrete client exists."
+    },
+    {
+      "id": "BTN-78",
+      "phase": "implementation",
+      "title": "MCP transport implementation",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement MCP as one optional transport beneath Battalion integration capability contracts, with capability discovery, validation, least-authority binding, failure handling, and audit semantics owned by Battalion.",
+      "acceptance_criteria": [
+        "Battalion can connect to explicitly configured MCP servers and inspect their advertised tools or capabilities",
+        "MCP tools are exposed only through approved Battalion provider adapters and graph nodes never receive an unrestricted MCP server tool collection",
+        "MCP server names and tool names do not leak into core capability interfaces or durable workflow semantics",
+        "Server connection, authentication, timeout, disconnect, malformed response, cancellation, and capability drift are handled through common integration runtime and health semantics",
+        "MCP cannot bypass BTN-63 operation policy or Actor authorization",
+        "MCP-backed side effects participate in BTN-65 audit and idempotency evidence",
+        "A deterministic fake MCP server validates connection, discovery, allowed-tool binding, denied-tool access, drift, failure, and retry without external credentials",
+        "No real provider integration is required merely to justify MCP's existence as a supported transport"
+      ],
+      "dependencies": [
+        "BTN-67",
+        "BTN-63",
+        "BTN-69",
+        "BTN-70"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "Regiment MCP experience; User integration architecture discussion 2026-08-21",
+      "notes": "MCP is intentionally optional and unprivileged. The first real MCP-backed provider should be added only when MCP is the appropriate transport for a concrete use case."
+    },
+    {
+      "id": "BTN-79",
+      "phase": "implementation",
+      "title": "Discord human-interrupt notification adapter",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Implement Discord as the first dogfood human-interrupt notification channel, initially using deterministic webhook-based delivery and preserving a path to Actor-targeted bot delivery only if needed later.",
+      "acceptance_criteria": [
+        "A configured Discord integration can receive HumanInterrupt notifications from Battalion",
+        "The initial implementation uses the simplest deterministic Discord webhook path that satisfies Battalion dogfooding rather than introducing MCP or a bot unnecessarily",
+        "Notifications include bounded Run identifier, work-item identifier, phase, interrupt reason, and a safe route back to Battalion",
+        "Discord notification delivery is outbound-only and Discord messages or replies cannot mutate a Run in this ticket",
+        "Discord-specific endpoint or destination information remains below the Notification or OutboundEventSink boundary and does not enter graph-node prompts or workflow state",
+        "Webhook authentication or secret URL material is handled through the approved secret boundary and is absent from shareable project configuration",
+        "Retry, duplicate delivery, unavailable Discord, invalid configuration, and delivery failure use common BTN-65 semantics",
+        "Automated tests use deterministic HTTP fakes and require no live Discord server"
+      ],
+      "dependencies": [
+        "BTN-70",
+        "BTN-74",
+        "BTN-75"
+      ],
+      "blocks": [
+        "BTN-80"
+      ],
+      "assignee_role": "driver",
+      "source": "User dogfooding decision 2026-08-21",
+      "notes": "Discord replaces Slack as the initial dogfood notification proof. This ticket does not depend on MCP; do not manufacture an MCP dependency where deterministic HTTP is sufficient."
+    },
+    {
+      "id": "BTN-80",
+      "phase": "testing",
+      "title": "External integration dogfood: Battalion builds Battalion",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Validate the external integration architecture end to end by using Battalion against a real Battalion GitHub Issue, delivering a real human-interrupt notification, resolving the interrupt through Battalion, and publishing configured completion evidence back to GitHub.",
+      "acceptance_criteria": [
+        "A real GitHub Issue from the Battalion repository is selected or created as the source work item for the dogfood scenario",
+        "Battalion imports the Issue through the GitHub Issues WorkSource rather than by manually copying its contents into Run state",
+        "The resulting Run preserves GitHub source identity and integration provenance",
+        "The Run reaches or deliberately invokes a real HumanInterrupt through Battalion's normal interrupt mechanism",
+        "The responsible Battalion Actor is resolved and receives the configured Discord and/or email notification through Actor-targeted notification routing",
+        "The human resolves the interrupt through Battalion's authoritative application surface rather than by treating an outbound notification as implicit approval",
+        "The Run resumes after the human decision and continues through its normal graph semantics",
+        "On configured completion, Battalion performs an authorized GitHub Issue update or comment through WorkSource policy rather than direct graph-node provider access",
+        "Run history contains inspectable external-operation evidence covering source retrieval, notification attempts and outcomes, human resolution, and GitHub mutation without exposing secrets",
+        "Repeating or resuming the scenario does not duplicate already-completed logical external side effects",
+        "Automated integration coverage remains credential-free and uses deterministic provider fakes, while this ticket's final acceptance exercise uses the real Battalion GitHub repository and at least one real configured notification channel",
+        "Any architectural special case required specifically for GitHub, Discord, email, REST, or MCP is treated as a design finding and reconciled before this ticket is marked done"
+      ],
+      "dependencies": [
+        "BTN-58",
+        "BTN-64",
+        "BTN-63",
+        "BTN-70",
+        "BTN-71",
+        "BTN-72",
+        "BTN-73",
+        "BTN-74",
+        "BTN-75",
+        "BTN-79"
+      ],
+      "blocks": [],
+      "assignee_role": "reviewer",
+      "source": "User dogfooding milestone decision 2026-08-21",
+      "notes": "This is the architecture proof, not merely a provider demo: Battalion should use its own GitHub Issues and its own human-interrupt machinery while building Battalion. Email may participate if BTN-71 has landed, but Discord is sufficient as the required first real notification channel."
+    },
+    {
+      "id": "BTN-81",
+      "phase": "implementation",
+      "title": "Actor notification availability and delivery policy",
+      "status": "not-started",
+      "priority": "P1",
+      "description": "Add timezone-aware Actor notification availability and do-not-disturb policy so Battalion can deterministically decide whether a notification should be delivered immediately, deferred, or suppressed, with configurable treatment by notification class and durable deferred delivery.",
+      "acceptance_criteria": [
+        "Each Actor may define notification availability or do-not-disturb windows using an explicitly configured timezone",
+        "Notification availability is evaluated before destination resolution and channel fan-out so Discord, email, push, and future notification providers honor the same Actor policy",
+        "DND behavior is configurable rather than implicitly meaning defer, with deliver, defer, and suppress supported as the initial policy actions",
+        "DND policy may select different actions by notification class, with initial support for informational, normal, and urgent classifications",
+        "Urgent notifications do not implicitly bypass DND; immediate delivery during DND must result from explicit configured policy",
+        "Deferred-delivery behavior is configurable, with next_available_window supported as the initial delivery mode and the configuration model allowing additional modes without redefining the notification policy contract",
+        "Deferred notifications are persisted durably and do not depend on an in-memory timer, continuously running desktop client, or continuously active Run",
+        "When a deferred notification becomes eligible for delivery, it retains its original logical notification identity and uses BTN-65 idempotency semantics",
+        "Suppressed notifications produce no external side effect but retain an inspectable durable policy outcome explaining why delivery was suppressed",
+        "DND and delivery policy affect notification delivery only and cannot resolve, cancel, approve, resume, or otherwise mutate the underlying HumanInterrupt or Run",
+        "Actor preferences cannot weaken mandatory higher-level project or future organization notification policy",
+        "Notification routing can distinguish delivered, deferred, suppressed, policy-blocked, and delivery-failed outcomes",
+        "Timezone changes, daylight-saving transitions, windows crossing midnight, overlapping windows, always-available Actors, Actors without explicit availability preferences, and malformed schedules are covered by automated tests",
+        "Policy evaluation and deferred-delivery tests are deterministic and do not require waiting for wall-clock time or accessing external notification providers"
+      ],
+      "dependencies": [
+        "BTN-58",
+        "BTN-66",
+        "BTN-70",
+        "BTN-75"
+      ],
+      "blocks": [
+        "BTN-76",
+        "BTN-72",
+        "BTN-74",
+        "BTN-75"
+      ],
+      "assignee_role": "driver",
+      "source": "User Actor notification availability and configurable deferral policy discussion 2026-08-21",
+      "notes": "Availability is an Actor-level Battalion policy evaluated before provider routing, not behavior implemented independently by notification adapters. Initial DND actions are deliver, defer, and suppress, and initial deferred-delivery mode is next_available_window. Digest delivery, fixed-time delivery, escalation, on-call routing, fallback Actors, and calendar-derived availability are future extensions rather than scope for this ticket."
     }
   ]
 }
