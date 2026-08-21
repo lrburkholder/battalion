@@ -66,6 +66,9 @@ dependencies, acceptance criteria, and current status.
   delivery remains BTN-52–55
 - ✅ **BTN-56**: Desktop visual system, IBM Plex typography, and brand assets
 - ✅ **BTN-57**: GitHub Pages product showcase and production screenshots
+- ✅ **BTN-58**: Accepted Actor identity, authority, assignment, ownership, and
+  collaboration architecture ([RFC-0007](docs/rfcs/rfc0007.md),
+  [ADR-0026](docs/adrs/adr0026.md)); implementation remains BTN-59–62
 
 ## Architecture
 
@@ -504,6 +507,12 @@ changes Battalion's current roles or authority until its RFC is accepted:
   BTN-52–55 deliver it.
 - **BTN-57:** Refresh the GitHub Pages landing experience with canonical brand
   assets and reproducible, accessible screenshots of shipped desktop workflows.
+- **BTN-58–62:** Define and implement durable Actor identity, project
+  capabilities, assignment and Ticket ownership, and provider-neutral
+  authentication. BTN-58 accepted
+  [RFC-0007](docs/rfcs/rfc0007.md) and
+  [ADR-0026](docs/adrs/adr0026.md); runtime behavior remains deferred to
+  BTN-59–62.
 - **BTN-65:** Define transport-neutral WorkSource, KnowledgeSource,
   RepositoryService, Notification, OutboundEventSink, and HumanInteraction
   capabilities above provider adapters and transports.
