@@ -17,9 +17,12 @@ human-action and next-attempt intervention contract in ADR-0023, including split
 desktop/worker packaging; analytics remain BTN-44 work.
 BTN-56 applies the supplied desktop visual tokens and bundled brand assets
 without changing application authority or workflow behavior.
-BTN-51 accepts the inference-target and zero-cost policy contract in RFC-0005
-and ADR-0024; endpoint configuration, FreeLLMAPI integration, provenance and
-diversity, and enforcement remain sequenced as BTN-52 through BTN-55.
+BTN-57 is complete on its feature branch: it adds a public Pages product
+introduction, reviewed production-client captures from deterministic
+credential-free demo projections, and an explicit publication and visual-QA
+path. The live Pages site updates only after merge to `main`. The fixture is
+presentation data only and does not change the application boundary, role
+authority, graph, interrupt semantics, or knowledge lifecycle.
 
 ## Architecture overview
 

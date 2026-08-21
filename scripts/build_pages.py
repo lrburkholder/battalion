@@ -14,7 +14,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 # Keep this list explicit. Adding a document to the repository must not make it
 # public automatically.
 PUBLISHED_DOCUMENTS = {
-    "README.md": "index.md",
+    ".github/pages/index.md": "index.md",
     "spec.md": "spec.md",
     "plan.md": "plan.md",
     "docs/adrs/README.md": "docs/adrs/index.md",
@@ -23,6 +23,9 @@ PUBLISHED_DOCUMENTS = {
         for number in range(1, 25)
     },
     "docs/rfcs/rfc0004.md": "docs/rfcs/rfc0004.md",
+    "docs/ui/workflow.md": "docs/operator/workflow.md",
+    "docs/ui/screen-runs.md": "docs/operator/screens.md",
+    "docs/ui/showcase.md": "docs/operator/showcase.md",
     "docs/rfcs/rfc0005.md": "docs/rfcs/rfc0005.md",
     "benchmarks/desktop/README.md": "benchmarks/desktop/index.md",
     "benchmarks/desktop/tauri/evidence/findings.md": "benchmarks/desktop/tauri/findings.md",
@@ -33,6 +36,13 @@ PUBLISHED_DOCUMENTS = {
 SUPPORTING_FILES = {
     "LICENSE": "LICENSE",
     ".github/pages/_config.yml": "_config.yml",
+    ".github/pages/_layouts/default.html": "_layouts/default.html",
+    ".github/pages/assets/site.css": "assets/site.css",
+    "battalion/desktop/assets/favicon.ico": "assets/favicon.ico",
+    "battalion/desktop/assets/mark-transparent.svg": "assets/mark-transparent.svg",
+    "docs/assets/screenshots/battalion-work.png": "assets/screenshots/battalion-work.png",
+    "docs/assets/screenshots/battalion-history.png": "assets/screenshots/battalion-history.png",
+    "docs/assets/screenshots/battalion-intel.png": "assets/screenshots/battalion-intel.png",
 }
 
 MARKDOWN_LINK = re.compile(r"(?P<prefix>\[[^]]+\]\()(?P<target>[^)#]+\.md)(?P<suffix>(?:#[^)]+)?\))")
@@ -74,9 +84,9 @@ def build(output: Path) -> None:
         content = _rewrite_markdown_links(content, source)
         destination_path = output / destination
         destination_path.parent.mkdir(parents=True, exist_ok=True)
-        destination_path.write_text(
-            f"---\nlayout: default\n---\n\n{content}", encoding="utf-8"
-        )
+        if not content.startswith("---\n"):
+            content = f"---\nlayout: default\n---\n\n{content}"
+        destination_path.write_text(content, encoding="utf-8")
 
     for source, destination in SUPPORTING_FILES.items():
         destination_path = output / destination

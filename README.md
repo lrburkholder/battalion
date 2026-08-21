@@ -10,7 +10,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 ## Status
 
-**Current Milestone**: desktop operator UI
+**Current Milestone**: desktop operator UI and public product showcase
 
 The v1 execution graph is complete. Durable execution evidence, the Recon and
 Intel knowledge lifecycle, deterministic context assembly, and the desktop
@@ -21,6 +21,9 @@ live-observation are also implemented. After equivalent desktop spikes,
 production read-only console is implemented and validated on its feature branch;
 state-changing desktop controls and the split runtime are implemented through
 BTN-43. BTN-56 applies the accepted visual mockup and bundled brand assets.
+BTN-57 adds a public Pages landing experience with reviewed production-client
+screenshots and a concise, truthful introduction to the shipped workflow. The
+feature is complete on its branch; the live site updates after merge to `main`.
 
 See the [canonical Battalion backlog](backlog.json) for ticket scope,
 dependencies, acceptance criteria, and current status.
@@ -62,6 +65,7 @@ dependencies, acceptance criteria, and current status.
   ([RFC-0005](docs/rfcs/rfc0005.md), [ADR-0024](docs/adrs/adr0024.md)); runtime
   delivery remains BTN-52–55
 - ✅ **BTN-56**: Desktop visual system, IBM Plex typography, and brand assets
+- ✅ **BTN-57**: GitHub Pages product showcase and production screenshots
 
 ## Architecture
 
@@ -252,6 +256,17 @@ surfaces, compact two-pixel geometry, and a restrained blue accent. The OFL
 font files and Battalion application icon are bundled in source distributions
 and frozen desktop builds; no system font installation or network access is
 required at runtime.
+
+### Preview the Production UI
+
+[![Battalion Work view showing an awaiting-human run and operator actions](docs/assets/screenshots/battalion-work.png)](https://lrburkholder.github.io/battalion/)
+
+The public showcase uses the real PySide6 client with deterministic fictional
+data. It does not read a developer's run state, provider configuration, or
+credentials. The [screenshot refresh procedure](docs/ui/showcase.md) documents
+how to reproduce and review the Work, History, and Intel captures. The
+[operator workflow](docs/ui/workflow.md) remains the complete text path through
+the same shipped functionality.
 
 ### Running Tests
 

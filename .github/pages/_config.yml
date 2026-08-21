@@ -2,6 +2,8 @@ title: Battalion
 description: A human-directed SDLC orchestrator
 theme: jekyll-theme-modernist
 repository: lrburkholder/battalion
+url: https://lrburkholder.github.io
+baseurl: /battalion
 
 exclude:
   - Gemfile

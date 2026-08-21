@@ -1,0 +1,129 @@
+:root {
+  color-scheme: dark;
+  --bg: #17181b;
+  --surface: #1d1f23;
+  --surface-2: #23252a;
+  --line: #34373e;
+  --text: #e4e6ea;
+  --muted: #9a9da5;
+  --blue: #6fa3ed;
+  --blue-soft: #263a58;
+  --max: 1180px;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+}
+a { color: var(--blue); text-underline-offset: 3px; }
+a:hover { color: #9bc2ff; }
+img { display: block; max-width: 100%; height: auto; }
+code { font-family: "IBM Plex Mono", Consolas, monospace; }
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  min-height: 70px;
+  padding: 12px max(24px, calc((100vw - var(--max)) / 2));
+  background: rgb(23 24 27 / 92%);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+}
+.brand { display: flex; align-items: center; gap: 11px; color: var(--text); font-family: "IBM Plex Mono", Consolas, monospace; font-weight: 700; letter-spacing: .08em; text-decoration: none; }
+.site-header nav { display: flex; align-items: center; gap: 22px; }
+.site-header nav a { color: var(--muted); font-size: .9rem; text-decoration: none; }
+.site-header nav a:hover { color: var(--text); }
+.site-header .nav-cta { padding: 6px 12px; border: 1px solid var(--line); border-radius: 2px; }
+
+main > section, main > h1, main > h2, main > h3, main > p, main > ul, main > ol, main > pre, main > table, main > blockquote {
+  width: min(var(--max), calc(100% - 48px));
+  margin-left: auto;
+  margin-right: auto;
+}
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(240px, .7fr);
+  align-items: center;
+  min-height: 650px;
+  padding: 90px 0;
+}
+.hero-copy { max-width: 810px; }
+.eyebrow { margin: 0 0 14px; color: var(--blue); font: 600 .75rem/1.2 "IBM Plex Mono", Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; }
+h1, h2, h3 { margin-top: 0; line-height: 1.14; }
+h1 { margin-bottom: 24px; font-size: clamp(2.8rem, 6.2vw, 5.5rem); letter-spacing: -.055em; }
+h1 span { color: var(--muted); }
+h2 { margin-bottom: 18px; font-size: clamp(2rem, 3.5vw, 3.2rem); letter-spacing: -.035em; }
+h3 { font-size: 1.1rem; }
+.lede { max-width: 720px; color: #bdc0c7; font-size: 1.18rem; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+.button { display: inline-block; padding: 11px 16px; color: var(--text); border: 1px solid var(--line); border-radius: 2px; font: 600 .85rem "IBM Plex Mono", Consolas, monospace; text-decoration: none; }
+.button.primary { background: var(--blue); color: #10151d; border-color: var(--blue); }
+.hero-mark { justify-self: end; opacity: .92; filter: drop-shadow(0 24px 65px rgb(53 105 175 / 28%)); }
+
+.pipeline, .showcase, .principles, .truth-panel { padding: 100px 0; border-top: 1px solid var(--line); }
+.section-heading { max-width: 800px; margin-bottom: 44px; }
+.section-heading > p:not(.eyebrow), .text-path { color: var(--muted); }
+.role-grid, .principle-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; padding: 1px; list-style: none; background: var(--line); border: 1px solid var(--line); }
+.role-grid li, .principle-grid article { min-height: 210px; padding: 24px; background: var(--surface); }
+.role-grid span { display: block; margin-bottom: 38px; color: #62656d; font: .75rem "IBM Plex Mono", Consolas, monospace; }
+.role-grid strong { font-size: 1.03rem; }
+.role-grid p, .principle-grid p { color: var(--muted); font-size: .92rem; }
+.loop-line { margin-top: 20px; padding: 16px 18px; overflow-x: auto; background: var(--blue-soft); border-left: 2px solid var(--blue); color: #c9dcfa; }
+
+figure { margin: 0; }
+figure a { display: block; background: #101114; border: 1px solid var(--line); }
+figure img { width: 100%; }
+figcaption { padding: 16px 2px 8px; color: var(--muted); }
+figcaption strong { color: var(--text); }
+.feature-shot { margin-bottom: 42px; }
+.shot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.text-path { margin-top: 28px; }
+.principle-grid { grid-template-columns: repeat(3, 1fr); }
+.principle-grid article { min-height: 180px; }
+
+.truth-panel { display: grid; grid-template-columns: 1.3fr .7fr; gap: 64px; }
+.truth-panel aside { align-self: start; padding: 24px; background: var(--surface); border: 1px solid var(--line); border-left: 2px solid #d5a34c; }
+.truth-panel aside p { margin-bottom: 0; color: var(--muted); }
+
+main > h1:first-child { margin-top: 76px; font-size: clamp(2.5rem, 5vw, 4.5rem); }
+main > p, main > ul, main > ol, main > pre, main > table, main > blockquote { max-width: 900px; }
+pre { padding: 18px; overflow-x: auto; background: #111215; border: 1px solid var(--line); }
+table { width: min(900px, calc(100% - 48px)); border-collapse: collapse; }
+th, td { padding: 10px; border: 1px solid var(--line); text-align: left; }
+
+footer { display: flex; justify-content: space-between; gap: 24px; padding: 34px max(24px, calc((100vw - var(--max)) / 2)); color: var(--muted); border-top: 1px solid var(--line); font-size: .85rem; }
+
+@media (max-width: 800px) {
+  .site-header { position: static; align-items: flex-start; }
+  .site-header nav { justify-content: flex-end; flex-wrap: wrap; gap: 8px 14px; }
+  .site-header nav a { font-size: .78rem; }
+  .hero { grid-template-columns: 1fr; min-height: auto; padding: 70px 0; }
+  .hero-mark { display: none; }
+  .role-grid { grid-template-columns: 1fr 1fr; }
+  .shot-grid, .truth-panel { grid-template-columns: 1fr; }
+  .truth-panel { gap: 28px; }
+}
+
+@media (max-width: 520px) {
+  main > section, main > h1, main > h2, main > h3, main > p, main > ul, main > ol, main > pre, main > table, main > blockquote { width: min(100% - 28px, var(--max)); }
+  .site-header { padding: 10px 14px; }
+  .brand span { display: none; }
+  .site-header nav a:nth-child(2), .site-header nav a:nth-child(3) { display: none; }
+  h1 { font-size: 2.65rem; }
+  .pipeline, .showcase, .principles, .truth-panel { padding: 70px 0; }
+  .role-grid, .principle-grid { grid-template-columns: 1fr; }
+  .role-grid li, .principle-grid article { min-height: 0; }
+  .role-grid span { margin-bottom: 18px; }
+  footer { flex-direction: column; padding: 28px 14px; }
+}
