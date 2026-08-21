@@ -61,6 +61,9 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-37–41**: Controlled desktop spikes and PySide6 framework selection
 - ✅ **BTN-42**: Read-only PySide6 operator console
 - ✅ **BTN-43**: Desktop interrupt, Recon review, and typed next-attempt actions
+- ✅ **BTN-51**: Accepted inference-target and zero-cost policy architecture
+  ([RFC-0005](docs/rfcs/rfc0005.md), [ADR-0024](docs/adrs/adr0024.md)); runtime
+  delivery remains BTN-52–55
 - ✅ **BTN-56**: Desktop visual system, IBM Plex typography, and brand assets
 - ✅ **BTN-57**: GitHub Pages product showcase and production screenshots
 
@@ -495,7 +498,12 @@ changes Battalion's current roles or authority until its RFC is accepted:
   documentation, license, and repository state.
 - **BTN-51–55:** Define transparent local and zero-cost inference policy, then
   add endpoint-aware setup, optional FreeLLMAPI support, resolved inference
-  provenance, and mechanical cost-policy enforcement.
+  provenance, and mechanical cost-policy enforcement. BTN-51 accepted
+  [RFC-0005](docs/rfcs/rfc0005.md) and
+  [ADR-0024](docs/adrs/adr0024.md); the runtime behavior remains unshipped until
+  BTN-52–55 deliver it.
+- **BTN-57:** Refresh the GitHub Pages landing experience with canonical brand
+  assets and reproducible, accessible screenshots of shipped desktop workflows.
 
 The former Teacher concept is no longer planned as a Battalion role. It is
 expected to evolve into **Dojo**, a separate future application. Researcher

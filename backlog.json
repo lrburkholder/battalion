@@ -1237,7 +1237,7 @@
       "id": "BTN-51",
       "phase": "architecture",
       "title": "Zero-cost inference and model-endpoint architecture RFC",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Define Battalion's inference-target model for local and zero-cost remote inference without replacing LiteLLM, weakening model-diversity guarantees, or allowing an external router to silently own Battalion's role or model-selection policy.",
       "acceptance_criteria": [

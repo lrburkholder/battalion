@@ -101,7 +101,7 @@ depend on a presentation transport.
 ## ADR log
 
 The canonical decision records live in [`docs/adrs/`](docs/adrs/README.md).
-The decisions implemented by the v1 architecture are:
+The architecture decisions and active proposals referenced by this plan are:
 
 | ADR | Decision |
 | --- | --- |
@@ -124,6 +124,7 @@ The decisions implemented by the v1 architecture are:
 | [ADR-0021](docs/adrs/adr0021.md) | Recover live observation from durable state |
 | [ADR-0022](docs/adrs/adr0022.md) | Use PySide6 for desktop presentation |
 | [ADR-0023](docs/adrs/adr0023.md) | Persist human actions with their existing authority |
+| [ADR-0024](docs/adrs/adr0024.md) | Keep inference identity and cost policy in Battalion |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human
@@ -221,12 +222,23 @@ credential-independent test workflow. It must not advertise packages,
 services, contribution policy, or repository health that Battalion cannot
 verify.
 
+BTN-57 is independent Pages presentation work built on BTN-18, BTN-42, BTN-43,
+and BTN-56. It adds canonical icons and deterministic, credential-free
+screenshots of shipped desktop workflows. It coordinates layout with BTN-50 but
+does not absorb badge or repository-health claims.
+
 BTN-51 through BTN-55 define an architecture-first inference-target and cost
 policy, then sequence endpoint-aware local setup, optional FreeLLMAPI support,
 resolved identity evidence, and zero-cost enforcement. FreeLLMAPI remains a
 replaceable OpenAI-compatible infrastructure option: its routing must not own
 Battalion's role, diversity, cost, graph, or failure policy, and an external
 free-tier claim is not itself durable zero-cost evidence.
+
+BTN-51 accepted [RFC-0005](docs/rfcs/rfc0005.md) and
+[ADR-0024](docs/adrs/adr0024.md). They separate requested and resolved identity,
+endpoint and inference location, canonical model family, and cost policy. They
+require fail-closed local-only and free-only modes while retaining LiteLLM and
+BTN-35 unknown-cost semantics. Runtime delivery remains BTN-52 through BTN-55.
 
 ## Risks and watch items
 
