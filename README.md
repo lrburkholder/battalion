@@ -504,6 +504,12 @@ changes Battalion's current roles or authority until its RFC is accepted:
   BTN-52–55 deliver it.
 - **BTN-57:** Refresh the GitHub Pages landing experience with canonical brand
   assets and reproducible, accessible screenshots of shipped desktop workflows.
+- **BTN-65:** Define transport-neutral WorkSource, KnowledgeSource,
+  RepositoryService, Notification, OutboundEventSink, and HumanInteraction
+  capabilities above provider adapters and transports.
+  [ADR-0025](docs/adrs/adr0025.md) and
+  [RFC-0006](docs/rfcs/rfc0006.md) are accepted. Runtime behavior remains
+  deferred to BTN-66–80.
 
 The former Teacher concept is no longer planned as a Battalion role. It is
 expected to evolve into **Dojo**, a separate future application. Researcher

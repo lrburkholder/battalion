@@ -3,7 +3,8 @@
 **Status:** Draft
 **Ticket:** BTN-46
 **Target:** Post-v2 architecture
-**Related:** `philosophy.md`, `spec.md`, ADR-0002, ADR-0003, RFC-0004
+**Related:** `philosophy.md`, `spec.md`, ADR-0002, ADR-0003, RFC-0004,
+RFC-0006, ADR-0025
 
 ## Question
 
@@ -13,6 +14,13 @@ second policy authority or weakening scoped execution?
 
 Plugins are not currently a shipped Battalion concept. A live JIRA or MCP
 integration is therefore an example use case, not the architecture itself.
+
+BTN-65 establishes six accepted Battalion-owned integration capability contracts in
+RFC-0006: WorkSource, KnowledgeSource, RepositoryService, Notification,
+OutboundEventSink, and HumanInteraction. Provider-adapter and transport
+plugins implement those contracts; they do not create peer
+capabilities or a privileged path around them. Built-in implementations remain
+equally valid and do not require the plugin lifecycle.
 
 ## Candidate contract
 
@@ -24,6 +32,9 @@ control, human decisions, and accepted Intel must keep one declared owner.
 ## Required decisions
 
 - Supported extension points and the boundaries that remain closed.
+- Provider-adapter and transport implementations beneath the accepted
+  Battalion capability contracts; plugin manifests cannot invent graph-facing
+  generic tool authority.
 - Manifest identity, versioning, compatibility, dependency, and provenance.
 - Discovery, installation, enablement, configuration, update, disablement,
   removal, and data-retention behavior.

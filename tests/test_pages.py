@@ -46,12 +46,13 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "plan.md",
             "spec.md",
             "docs/adrs/index.md",
-            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 25)},
+            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 26)},
             "docs/rfcs/rfc0004.md",
             "docs/operator/workflow.md",
             "docs/operator/screens.md",
             "docs/operator/showcase.md",
             "docs/rfcs/rfc0005.md",
+            "docs/rfcs/rfc0006.md",
             "benchmarks/desktop/index.md",
             "benchmarks/desktop/tauri/findings.md",
             "benchmarks/desktop/pyside6/findings.md",
@@ -87,6 +88,9 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         inference_rfc = (output / "docs" / "rfcs" / "rfc0005.md").read_text(
             encoding="utf-8"
         )
+        integration_rfc = (output / "docs" / "rfcs" / "rfc0006.md").read_text(
+            encoding="utf-8"
+        )
 
         assert index.startswith("---\ntitle: Human-directed software delivery\nlayout: default\n---")
         assert index.count("layout: default") == 1
@@ -106,8 +110,10 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "adr0022.html" in adr_index
         assert "adr0023.html" in adr_index
         assert "adr0024.html" in adr_index
+        assert "adr0025.html" in adr_index
         assert "../../benchmarks/desktop/index.html" in rfc
         assert "../adrs/adr0024.html" in inference_rfc
+        assert "../adrs/adr0025.html" in integration_rfc
         benchmark_index = (output / "benchmarks" / "desktop" / "index.md").read_text(
             encoding="utf-8"
         )
@@ -116,6 +122,7 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "electron/findings.html" in benchmark_index
         assert (output / "docs" / "rfcs" / "rfc0004.md").exists()
         assert (output / "docs" / "rfcs" / "rfc0005.md").exists()
+        assert (output / "docs" / "rfcs" / "rfc0006.md").exists()
         assert (output / "benchmarks" / "desktop" / "index.md").exists()
         assert (output / "docs" / "operator" / "showcase.md").exists()
         assert (output / "assets" / "favicon.ico").read_bytes() == (
