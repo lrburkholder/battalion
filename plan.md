@@ -23,6 +23,10 @@ credential-free demo projections, and an explicit publication and visual-QA
 path. The live Pages site updates only after merge to `main`. The fixture is
 presentation data only and does not change the application boundary, role
 authority, graph, interrupt semantics, or knowledge lifecycle.
+BTN-65 is complete with accepted RFC-0006 and ADR-0025. They separate Battalion
+capability contracts from provider adapters and transports and define the six
+initial capability boundaries. Runtime behavior remains deferred to follow-up
+implementation.
 
 ## Architecture overview
 
@@ -125,6 +129,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0022](docs/adrs/adr0022.md) | Use PySide6 for desktop presentation |
 | [ADR-0023](docs/adrs/adr0023.md) | Persist human actions with their existing authority |
 | [ADR-0024](docs/adrs/adr0024.md) | Keep inference identity and cost policy in Battalion |
+| [ADR-0025](docs/adrs/adr0025.md) | Put provider adapters and transports beneath Battalion capabilities |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human
@@ -239,6 +244,15 @@ BTN-51 accepted [RFC-0005](docs/rfcs/rfc0005.md) and
 endpoint and inference location, canonical model family, and cost policy. They
 require fail-closed local-only and free-only modes while retaining LiteLLM and
 BTN-35 unknown-cost semantics. Runtime delivery remains BTN-52 through BTN-55.
+
+BTN-65's accepted [ADR-0025](docs/adrs/adr0025.md) places transport-neutral
+Battalion capabilities above provider adapters and transports. Accepted
+[RFC-0006](docs/rfcs/rfc0006.md) defines WorkSource, KnowledgeSource,
+RepositoryService, Notification, OutboundEventSink, and HumanInteraction above
+interchangeable native/local, HTTP/REST, webhook, MCP, or protocol-specific
+transports. MCP and future plugins are optional implementation mechanisms, not
+competing policy or graph authorities. Runtime delivery remains BTN-66 through
+BTN-80.
 
 ## Risks and watch items
 

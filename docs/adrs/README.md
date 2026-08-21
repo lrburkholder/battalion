@@ -30,6 +30,7 @@ status states whether it is part of the shipped system.
 | [ADR-0022](adr0022.md) | Use PySide6 for desktop presentation | Accepted | BTN-41; production begins BTN-42 |
 | [ADR-0023](adr0023.md) | Persist human actions with their existing authority | Accepted | BTN-43 in progress |
 | [ADR-0024](adr0024.md) | Keep inference identity and cost policy in Battalion | Accepted | BTN-51; implementation deferred to BTN-52–55 |
+| [ADR-0025](adr0025.md) | Put provider adapters and transports beneath Battalion capabilities | Accepted | BTN-65; runtime deferred to BTN-66–80 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique

@@ -1608,11 +1608,14 @@
         "Linking, unlinking, malformed mappings, duplicate mappings, persistence, and migration behavior are covered by automated tests"
       ],
       "dependencies": [
-        "BTN-32"
+        "BTN-58",
+        "BTN-59",
+        "BTN-64",
+        "BTN-65",
+        "BTN-66",
+        "BTN-67"
       ],
       "blocks": [
-        "BTN-64",
-        "BTN-66",
         "BTN-75",
         "BTN-77",
         "BTN-79",
@@ -1654,17 +1657,17 @@
       "id": "BTN-65",
       "phase": "architecture",
       "title": "Transport-neutral integration capability architecture",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Define Battalion external integrations around bounded capability contracts rather than vendor APIs, MCP tools, or transport-specific clients, with providers and transports remaining interchangeable beneath Battalion-owned policy.",
       "acceptance_criteria": [
-        "The architecture defines initial capability contracts for WorkSource, KnowledgeSource, SourceControl, Notification, OutboundEventSink, and HumanInteraction",
+        "The architecture defines initial capability contracts for WorkSource, KnowledgeSource, RepositoryService, Notification, OutboundEventSink, and HumanInteraction",
         "Capability contracts contain no MCP-, REST-, GitHub-, Discord-, email-, Jira-, Slack-, or other provider-specific concepts",
         "The architecture explicitly separates Battalion capability, provider adapter, transport, and external system",
         "Initial transport taxonomy includes native or local, HTTP or REST, webhook, MCP, and protocol-specific transports such as SMTP",
         "Graph nodes cannot obtain unrestricted raw external clients or arbitrary MCP tool collections through this architecture",
         "Each capability defines allowed callers, data boundaries, side-effect semantics, failure semantics, and authority expectations",
-        "KnowledgeSource and SourceControl may remain unimplemented but their boundaries are defined sufficiently to prevent later architectural collision",
+        "KnowledgeSource and RepositoryService may remain unimplemented but their boundaries are defined sufficiently to prevent later architectural collision, including with a future local VersionControl engine abstraction",
         "BTN-46 is reconciled so future plugins may implement these contracts but plugin support is neither required nor privileged"
       ],
       "dependencies": [
@@ -1681,7 +1684,7 @@
       ],
       "assignee_role": "architect",
       "source": "User integration architecture discussion 2026-08-21; BTN-46",
-      "notes": "MCP is an optional transport, not Battalion's integration model. Built-in deterministic integrations such as REST, SMTP, and webhooks must remain first-class."
+      "notes": "Completed 2026-08-21. Accepted RFC-0006 and ADR-0025 define WorkSource, KnowledgeSource, RepositoryService, Notification, OutboundEventSink, and HumanInteraction as Battalion-owned capability contracts above provider adapters and least-authority native/local, HTTP/REST, webhook, MCP, and protocol-specific transports. MCP and future plugins are optional and unprivileged. RepositoryService is deliberately separate from a future local VersionControl engine abstraction. No runtime integration behavior ships in this ticket; delivery remains BTN-66 through BTN-80. Focused Pages validation passed 6 tests and the complete offline suite passed 423 tests."
     },
     {
       "id": "BTN-66",
