@@ -54,9 +54,11 @@ def test_tauri_adapter_completes_shared_acceptance_contract(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is required for Tauri adapter tests")
-def test_tauri_adapter_failure_diagnostics_and_missed_event_recovery():
+def test_tauri_adapter_failure_diagnostics_and_missed_event_recovery(tmp_path):
+    input_path = tmp_path / "input"
+    prepare(input_path)
     completed = subprocess.run(
-        ["node", str(SPIKE_ROOT / "tests" / "run-failures.mjs")],
+        ["node", str(SPIKE_ROOT / "tests" / "run-failures.mjs"), str(input_path)],
         cwd=REPOSITORY_ROOT,
         check=True,
         capture_output=True,
