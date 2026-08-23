@@ -79,6 +79,7 @@ feature branch, and the live site updates after merge to `main`.
 
 | Ticket | Title | Status |
 | --- | --- | --- |
+| BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Review |
 | BTN-50 | Repository status badges and README trust signals | Wip |
 
 ### Cancelled

@@ -2199,32 +2199,10 @@
       "notes": "Availability is an Actor-level Battalion policy evaluated before provider routing, not behavior implemented independently by notification adapters. Initial DND actions are deliver, defer, and suppress, and initial deferred-delivery mode is next_available_window. Digest delivery, fixed-time delivery, escalation, on-call routing, fallback Actors, and calendar-derived availability are future extensions rather than scope for this ticket."
     },
     {
-      "id": "BTN-84",
-      "phase": "testing",
-      "title": "Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact",
-      "status": "in-review",
-      "priority": "P2",
-      "description": "benchmarks/desktop/tauri/tests/run-failures.mjs read the gitignored ui/benchmark-input/fixture.json, so the failure-diagnostics test only passed on machines with leftover generated artifacts and failed on fresh checkouts, including CI. Have the test accept an input directory argument (defaulting to the documented path) and prepare a hermetic bundle itself, matching the sibling contract test's pattern.",
-      "acceptance_criteria": [
-        "The Tauri failure-diagnostics test passes on a fresh checkout with no pre-existing generated artifacts",
-        "run-failures.mjs no longer depends on a gitignored fixture file being present ahead of time",
-        "The fixture-generation approach matches the pattern already used by the sibling contract test for consistency",
-        "The test continues to pass in CI across the supported Python/Node matrix"
-      ],
-      "dependencies": [
-        "BTN-37",
-        "BTN-38"
-      ],
-      "blocks": [],
-      "assignee_role": "driver",
-      "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
-      "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 9da6996, 'fix: refactor graph.py'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This commit was authored without the Mistral Vibe tool trailer; confirm authorship/tooling before review if that matters for review depth."
-    },
-    {
       "id": "BTN-82",
       "phase": "implementation",
       "title": "Consolidate role-node factories behind a shared graph scaffold",
-      "status": "in-review",
+      "status": "done",
       "priority": "P2",
       "description": "Replace the four near-duplicate _make_architect_node/_make_driver_node/_make_reviewer_node/_make_refactorer_node factories in battalion/graph.py with a single _scaffold_node higher-order function parameterized by node name, LLM role fallback chain, runner, input-builder, Instinct audience, and phase/resume routing, so the shared per-attempt sequence (execution capture, intervention delivery, budget increment, context assembly, node_start event, error/interrupt routing) is defined once.",
       "acceptance_criteria": [
@@ -2242,6 +2220,52 @@
       "assignee_role": "driver",
       "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
       "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 3ec42cd, 'fix: generate tauri fixture for failure-diagnostics test'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This is a CI-hygiene fix and has no dependency on the graph.py refactor (BTN-82) or the status-doc system (BTN-83)."
+    },
+    {
+      "id": "BTN-83",
+      "phase": "architecture",
+      "title": "Generate status documentation from the canonical backlog (ADR-0027)",
+      "status": "done",
+      "priority": "P2",
+      "description": "Stop hand-maintaining ticket status in four places (README Status/Roadmap sections, plan.md, ADR index, backlog.json) by making docs/status.md the single human-readable status document, mechanically generating its 'Delivered work' region from backlog.json via scripts/sync_status.py, and splicing that document verbatim into README.md between marker comments, with drift caught by tests/CI instead of trusted to hand edits.",
+      "acceptance_criteria": [
+        "backlog.json remains the sole machine-readable source of truth for ticket identity and status",
+        "docs/status.md contains authored narrative (current milestone, roadmap themes) plus a generated 'Delivered work' region produced by scripts/sync_status.py from backlog.json",
+        "scripts/sync_status.py splices docs/status.md into README.md between HTML comment markers, and its --check mode fails on drift without writing",
+        "Authored ticket citations in docs/status.md are validated against backlog.json (tests/test_docs_status.py) so 'Complete' claims must cite done tickets",
+        "docs/status.md and backlog.json are added to the PUBLISHED_DOCUMENTS set in scripts/build_pages.py so publication stays explicit",
+        "AGENTS.md documents the sync_status.py workflow and the requirement to keep --check clean before handoff",
+        "The first reconciliation pass corrects any already-stale status references (e.g. the ADR-0023 index entry) and replaces the README's hand-written checklist with the generated projection"
+      ],
+      "dependencies": [
+        "BTN-50"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
+      "notes": "Implemented and accepted already on branch codex/btn-50-repo-badges (commit 16029bd, 'docs: refactor status docs', with ADR-0027 authored and marked Accepted in the same commit). Splitting into its own ticket/PR per no-scope-bundling convention -- an ADR that changes how backlog status is published should get independent review rather than ride along with a P3 badges ticket. Depends on BTN-50: this branch is built on top of BTN-50's badge/workflow commits because the generated status region and the badge row share README.md, and the ADR-0027 commit was authored after BTN-50 landed on the source branch. Merge BTN-50 first. This commit was authored without the Mistral Vibe tool trailer; confirm authorship/tooling before review."
+    },
+    {
+      "id": "BTN-84",
+      "phase": "testing",
+      "title": "Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact",
+      "status": "done",
+      "priority": "P2",
+      "description": "benchmarks/desktop/tauri/tests/run-failures.mjs read the gitignored ui/benchmark-input/fixture.json, so the failure-diagnostics test only passed on machines with leftover generated artifacts and failed on fresh checkouts, including CI. Have the test accept an input directory argument (defaulting to the documented path) and prepare a hermetic bundle itself, matching the sibling contract test's pattern.",
+      "acceptance_criteria": [
+        "The Tauri failure-diagnostics test passes on a fresh checkout with no pre-existing generated artifacts",
+        "run-failures.mjs no longer depends on a gitignored fixture file being present ahead of time",
+        "The fixture-generation approach matches the pattern already used by the sibling contract test for consistency",
+        "The test continues to pass in CI across the supported Python/Node matrix"
+      ],
+      "dependencies": [
+        "BTN-37",
+        "BTN-38"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
+      "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 9da6996, 'fix: refactor graph.py'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This commit was authored without the Mistral Vibe tool trailer; confirm authorship/tooling before review if that matters for review depth."
     }
   ]
 }
