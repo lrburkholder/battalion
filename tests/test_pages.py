@@ -42,11 +42,12 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "assets/screenshots/battalion-work.png",
             "assets/screenshots/battalion-history.png",
             "assets/screenshots/battalion-intel.png",
+            "backlog.json",
             "index.md",
             "plan.md",
             "spec.md",
             "docs/adrs/index.md",
-            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 27)},
+            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 28)},
             "docs/rfcs/rfc0004.md",
             "docs/operator/workflow.md",
             "docs/operator/screens.md",
@@ -58,6 +59,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "benchmarks/desktop/tauri/findings.md",
             "benchmarks/desktop/pyside6/findings.md",
             "benchmarks/desktop/electron/findings.md",
+            "docs/status.md",
         }
         assert all(
             not ({"recon", "intel", "ui"} & set(Path(path).parts))
@@ -120,6 +122,13 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "../adrs/adr0024.html" in inference_rfc
         assert "../adrs/adr0025.html" in integration_rfc
         assert "../adrs/adr0026.html" in actor_rfc
+        assert "adr0027.html" in adr_index
+        status_page = (output / "docs" / "status.md").read_text(encoding="utf-8")
+        assert "BEGIN GENERATED:backlog-delivery" in status_page
+        assert "| BTN-1 |" in status_page
+        landing = (output / "index.md").read_text(encoding="utf-8")
+        assert "docs/status.html" in landing
+        assert (output / "backlog.json").exists()
         benchmark_index = (output / "benchmarks" / "desktop" / "index.md").read_text(
             encoding="utf-8"
         )

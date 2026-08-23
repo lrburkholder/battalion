@@ -15,28 +15,22 @@ from battalion.nodes.refactorer import (
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig, call_llm
 from battalion.scope.tool_binding import ScopeViolationError
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunStatus
 
 
 # --- Fixtures / Helpers ---
 
+from conftest import make_run_state
+
+
 def make_state(write_scope=None, **overrides):
-    defaults = dict(
-        schema_version="1.0",
-        run_id="run-001",
-        ticket_id="BTN-13-test",
-        status=RunStatus.IN_PROGRESS,
-        phase="refactorer",
-        write_scope=write_scope if write_scope is not None else {
-            "architect": ["plan.md"],
-            "driver": ["src/"],
-            "reviewer": [],
-        },
-        retry_bound=2,
-        budget=Budget(limit=100, used=0),
+    fields = dict(
+        ticket_id="BTN-13-test", run_id="run-001",
+        status=RunStatus.IN_PROGRESS, phase="refactorer",
+        write_scope=write_scope,
     )
-    defaults.update(overrides)
-    return RunState(**defaults)
+    fields.update(overrides)
+    return make_run_state(**fields)
 
 
 def files_response(files: dict) -> dict:
