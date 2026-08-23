@@ -2199,6 +2199,28 @@
       "notes": "Availability is an Actor-level Battalion policy evaluated before provider routing, not behavior implemented independently by notification adapters. Initial DND actions are deliver, defer, and suppress, and initial deferred-delivery mode is next_available_window. Digest delivery, fixed-time delivery, escalation, on-call routing, fallback Actors, and calendar-derived availability are future extensions rather than scope for this ticket."
     },
     {
+      "id": "BTN-84",
+      "phase": "testing",
+      "title": "Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact",
+      "status": "in-review",
+      "priority": "P2",
+      "description": "benchmarks/desktop/tauri/tests/run-failures.mjs read the gitignored ui/benchmark-input/fixture.json, so the failure-diagnostics test only passed on machines with leftover generated artifacts and failed on fresh checkouts, including CI. Have the test accept an input directory argument (defaulting to the documented path) and prepare a hermetic bundle itself, matching the sibling contract test's pattern.",
+      "acceptance_criteria": [
+        "The Tauri failure-diagnostics test passes on a fresh checkout with no pre-existing generated artifacts",
+        "run-failures.mjs no longer depends on a gitignored fixture file being present ahead of time",
+        "The fixture-generation approach matches the pattern already used by the sibling contract test for consistency",
+        "The test continues to pass in CI across the supported Python/Node matrix"
+      ],
+      "dependencies": [
+        "BTN-37",
+        "BTN-38"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
+      "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 9da6996, 'fix: refactor graph.py'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This commit was authored without the Mistral Vibe tool trailer; confirm authorship/tooling before review if that matters for review depth."
+    },
+    {
       "id": "BTN-82",
       "phase": "implementation",
       "title": "Consolidate role-node factories behind a shared graph scaffold",
@@ -2219,7 +2241,7 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
-      "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 9da6996, 'fix: refactor graph.py'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This commit was authored without the Mistral Vibe tool trailer; confirm authorship/tooling before review if that matters for review depth."
+      "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 3ec42cd, 'fix: generate tauri fixture for failure-diagnostics test'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This is a CI-hygiene fix and has no dependency on the graph.py refactor (BTN-82) or the status-doc system (BTN-83)."
     }
   ]
 }

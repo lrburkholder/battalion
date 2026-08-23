@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { TauriBenchmarkAdapter } from "../ui/scenario-adapter.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const root = join(here, "..");
+const input = process.argv[2] ? resolve(process.argv[2]) : join(root, "ui", "benchmark-input");
 const fixture = JSON.parse(
-  await readFile(join(here, "..", "ui", "benchmark-input", "fixture.json"), "utf8"),
+  await readFile(join(input, "fixture.json"), "utf8"),
 );
 
 const durableOnly = structuredClone(fixture);
