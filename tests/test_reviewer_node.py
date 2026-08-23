@@ -18,27 +18,22 @@ from battalion.nodes.reviewer import (
     run_reviewer,
     run_tests_via_subprocess,
 )
-from battalion.state.models import Budget, CheckpointType, RejectionRecord, RunState, RunStatus
+from battalion.state.models import CheckpointType, RejectionRecord, RunStatus
+
+
+from conftest import make_run_state
 
 
 def make_state(write_scope=None, rejection_history=None, **overrides):
-    defaults = dict(
+    fields = dict(
+        ticket_id="BTN-12-test", run_id="run-001",
+        status=RunStatus.IN_PROGRESS, phase="reviewer",
+        write_scope=write_scope,
+        rejection_history=rejection_history,
         schema_version="1.1",
-        run_id="run-001",
-        ticket_id="BTN-12-test",
-        status=RunStatus.IN_PROGRESS,
-        phase="reviewer",
-        write_scope=write_scope if write_scope is not None else {
-            "architect": ["plan.md"],
-            "driver": ["src/"],
-            "reviewer": [],
-        },
-        reviewer_rejection_history=rejection_history or [],
-        retry_bound=2,
-        budget=Budget(limit=100, used=0),
     )
-    defaults.update(overrides)
-    return RunState(**defaults)
+    fields.update(overrides)
+    return make_run_state(**fields)
 
 
 def litellm_response(text: str) -> dict:

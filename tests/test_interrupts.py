@@ -47,6 +47,8 @@ from battalion.state.models import (
 
 # --- Fixtures ---
 
+from conftest import make_run_state
+
 def make_state(
     budget_used: int = 0,
     budget_limit: int = 100,
@@ -55,25 +57,16 @@ def make_state(
     manual_checkpoints: list | None = None,
     **overrides,
 ) -> RunState:
-    defaults = dict(
-        schema_version="1.0",
-        run_id="run-001",
-        ticket_id="BTN-7-test",
-        status=RunStatus.IN_PROGRESS,
-        phase="architect",
-        write_scope=write_scope if write_scope is not None else {
-            "architect": ["plan.md"],
-            "driver": ["src/"],
-            "reviewer": [],
-        },
-        retry_bound=2,
-        budget=Budget(limit=budget_limit, used=budget_used),
-        reviewer_rejection_history=rejection_history if rejection_history is not None else [],
-        interrupt_log=[],
-        manual_checkpoints=manual_checkpoints if manual_checkpoints is not None else [],
+    fields = dict(
+        ticket_id="BTN-7-test", run_id="run-001",
+        status=RunStatus.IN_PROGRESS, phase="architect",
+        write_scope=write_scope,
+        budget_used=budget_used, budget_limit=budget_limit,
+        rejection_history=rejection_history,
+        manual_checkpoints=manual_checkpoints,
     )
-    defaults.update(overrides)
-    return RunState(**defaults)
+    fields.update(overrides)
+    return make_run_state(**fields)
 
 
 # =============================================================================
