@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from uuid import UUID
 
 import typer
 
@@ -232,7 +233,11 @@ def resume(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to battalion.config.yaml"),
     base_dir: str = typer.Option(".", "--base-dir", help="Base directory for file operations"),
     prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
-    actor: str = typer.Option("operator", "--actor", help="Identity recorded for the human action"),
+    actor_id: UUID | None = typer.Option(
+        None,
+        "--actor-id",
+        help="Durable Actor ID; defaults to the selected local human Actor",
+    ),
     resolution: str = typer.Option(
         "authorized resume", "--resolution", help="Durable resolution for the latest interrupt"
     ),
@@ -247,7 +252,7 @@ def resume(
                 ResumeRun(
                     run_id=run_id,
                     config=cfg,
-                    actor=actor,
+                    actor_id=actor_id,
                     resolution=resolution,
                 ),
                 state_dir=STATE_DIR,

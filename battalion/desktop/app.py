@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import sys
 from pathlib import Path
 
@@ -230,10 +229,7 @@ class BattalionWindow(QMainWindow):
         layout.addWidget(heading)
 
         identity = QHBoxLayout()
-        identity.addWidget(QLabel("Actor"))
-        self.actor_edit = QLineEdit(getpass.getuser() or "operator")
-        self.actor_edit.setAccessibleName("Human action actor")
-        identity.addWidget(self.actor_edit)
+        identity.addWidget(QLabel("Actor: selected local identity"))
         identity.addWidget(QLabel("Interrupt resolution"))
         self.resolution_edit = QLineEdit("Reviewed and authorized to resume")
         self.resolution_edit.setAccessibleName("Interrupt resolution")
@@ -279,10 +275,7 @@ class BattalionWindow(QMainWindow):
         panel = QFrame()
         panel.setObjectName("actionPanel")
         layout = QHBoxLayout(panel)
-        layout.addWidget(QLabel("Review actor"))
-        self.intel_actor_edit = QLineEdit(getpass.getuser() or "operator")
-        self.intel_actor_edit.setAccessibleName("Recon review actor")
-        layout.addWidget(self.intel_actor_edit, 1)
+        layout.addWidget(QLabel("Review actor: selected local identity"), 1)
         self.accept_candidate_button = QPushButton("Promote")
         self.accept_candidate_button.setAccessibleName("Promote selected Recon candidate")
         self.edit_candidate_button = QPushButton("Edit and promote")
@@ -528,7 +521,6 @@ class BattalionWindow(QMainWindow):
             return
         self.controller.resolve_and_resume(
             self.selected_run.inspection.run_id,
-            self.actor_edit.text(),
             self.resolution_edit.text(),
         )
 
@@ -540,7 +532,6 @@ class BattalionWindow(QMainWindow):
             self.intervention_kind.currentData(),
             self.intervention_target.currentData(),
             self.intervention_text.text(),
-            self.actor_edit.text(),
         )
 
     def _review_selected_candidate(self, action: ReviewAction) -> None:
@@ -549,7 +540,6 @@ class BattalionWindow(QMainWindow):
         self.controller.review_candidate(
             self.selected_candidate.instinct_id,
             action,
-            self.intel_actor_edit.text(),
         )
 
     def _edit_selected_candidate(self) -> None:
@@ -565,7 +555,6 @@ class BattalionWindow(QMainWindow):
             self.controller.review_candidate(
                 self.selected_candidate.instinct_id,
                 ReviewAction.EDIT_AND_ACCEPT,
-                self.intel_actor_edit.text(),
                 {"recommendation": recommendation.strip()},
             )
 

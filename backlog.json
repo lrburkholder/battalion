@@ -1440,7 +1440,7 @@
       "id": "BTN-58",
       "phase": "architecture",
       "title": "Human identity, authority, assignment, and collaboration RFC",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Define Battalion's durable human identity and collaboration model before the existing actor evidence from human actions spreads into additional persistence, UI, assignment, or remote-client contracts. Separate identity, authentication, authorization, membership, assignment, and observed social or expertise evidence.",
       "acceptance_criteria": [
@@ -1469,18 +1469,19 @@
       ],
       "assignee_role": "architect",
       "source": "BTN-43 durable human-action evidence; collaboration requirements; future multi-client and remote-worker architecture",
-      "notes": "Architecture first. Battalion already persists human actor strings through BTN-43, so this ticket should establish the durable identity and authority contract before further UI or persistence assumes a single anonymous operator. Human capability roles must not be confused with AI execution roles. Social or expertise inference is evidence only and cannot create authority."
+      "notes": "Completed 2026-08-21. The human operator accepted RFC-0007 and ADR-0026. They define opaque durable human and system Actor identity; separate authentication, membership, authorization, assignment, Ticket ownership, and non-authoritative collaboration evidence; preserve literal legacy actor strings; require a distinct resolve-interrupt capability; establish an Actor-credited one-time FTUE bootstrap; and retain the shared application boundary. Runtime implementation remains BTN-59 through BTN-62. Validation on the BTN-58 feature branch: 6 focused Pages tests and the complete offline suite of 423 tests passed."
     },
     {
       "id": "BTN-59",
       "phase": "implementation",
       "title": "Durable Actor identity and local operator provenance",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Implement the accepted Actor identity contract and migrate current human-action attribution from free-form actor strings to durable actor references while preserving local-first operation and historical compatibility.",
       "acceptance_criteria": [
         "Battalion defines a versioned Actor contract with a stable actor_id, actor kind, display name, creation provenance, and only the identity fields accepted by BTN-58",
         "A project can establish or select a local human actor without OAuth, a hosted account service, or network access",
+        "Project first-time-use creates or selects the first local human Actor and durably credits the one-time bootstrap membership and administration event to that Actor without treating an operating-system username as actor identity",
         "HumanActionRecord, HumanIntervention, interrupt resolution, Recon review decisions, and other existing human-attributed evidence reference durable actor identity according to the BTN-58 migration contract",
         "Historical records containing only the pre-BTN-59 string actor remain readable and are presented as legacy attribution without inventing a durable identity that was not recorded",
         "Changing an actor's display name does not rewrite historical action evidence or change actor_id",
@@ -1498,7 +1499,7 @@
       ],
       "assignee_role": "driver",
       "source": "BTN-58; BTN-43 HumanActionRecord and HumanIntervention provenance",
-      "notes": "Do not add OAuth, passwords, cloud accounts, or remote login here. The purpose is to stop durable evidence from assuming that a human actor is merely an arbitrary display string."
+      "notes": "Completed 2026-08-21. Added the versioned project-local human/system Actor contract, atomic one-time offline FTUE bootstrap evidence, durable local selection, shared application bootstrap/inspection queries, and actor_id attribution for RunState human actions, interventions, interrupt resolution, Recon decisions, and accepted Intel. Literal pre-BTN-59 strings remain readable and render as legacy attribution; display snapshots remain immutable when Actor names change. CLI, desktop, and detached workers use the selected local Actor without OS usernames or authentication infrastructure. Validation: complete offline suite of 434 tests passed. OAuth, passwords, cloud accounts, remote login, capability enforcement, assignment, and ownership remain outside BTN-59."
     },
     {
       "id": "BTN-60",
@@ -1508,12 +1509,13 @@
       "priority": "P1",
       "description": "Implement project-scoped membership and capability checks for human operations so durable actor identity is mechanically connected to the authority exercised through Battalion's application boundary.",
       "acceptance_criteria": [
-        "Project membership binds an Actor to one project and grants only capabilities accepted by BTN-58, such as inspect, operate, approve, assign, and administer",
+        "Project membership binds an Actor to one project and grants only capabilities accepted by BTN-58, including inspect, operate, resolve-interrupt, approve, assign, and administer",
         "Human capabilities are represented independently from AI execution roles and cannot cause a human to become an Architect, Driver, Reviewer, or Refactorer node",
         "Every state-changing human application command identifies the requesting actor and mechanically checks the capability required for that action before mutation occurs",
         "Existing BTN-43 operations including interrupt resolution, resume, Correction, Design decision, Recon review, and cancellation are mapped to explicit capability requirements",
         "Denied actions produce typed application failures and durable security or operator evidence where required by BTN-58 without partially mutating RunState, Intel, worker state, or assignment state",
         "Read-only inspection behavior for non-members, observers, or unauthorized actors follows the explicit BTN-58 policy rather than presentation-client assumptions",
+        "Configured local unauthenticated read-only inspection runs as an explicit inspect-only system Actor and is never attributed to the human operator",
         "Membership or capability changes do not retroactively alter the authority evidence attached to prior human actions",
         "The application boundary remains the single authorization enforcement point shared by CLI, desktop, and future presentation clients",
         "A backwards-compatible single-local-operator configuration remains available without requiring an external identity provider",
@@ -1535,21 +1537,23 @@
     {
       "id": "BTN-61",
       "phase": "implementation",
-      "title": "Ticket and Run assignment, reassignment, and handoff",
+      "title": "Ticket and Run assignment, ownership, reassignment, and handoff",
       "status": "not-started",
       "priority": "P1",
-      "description": "Add durable human assignment and handoff for Tickets and Runs so responsibility can transfer between authorized actors without transcript injection or loss of execution provenance.",
+      "description": "Add durable human assignment and handoff for Tickets and Runs plus durable Ticket ownership so responsibility and accountability can transfer between authorized actors without transcript injection or loss of execution provenance.",
       "acceptance_criteria": [
         "Battalion represents current assignment separately from immutable assignment history for the target types accepted by BTN-58",
+        "Battalion represents current Ticket ownership separately from immutable ownership history and separately from Ticket or Run assignment",
         "An assignment records target identity, assignee actor_id, assigning actor_id, timestamp, and any bounded reason or handoff context accepted by the RFC",
         "Only actors with the required assignment capability may assign or reassign work, and an assignee must satisfy the target project's membership requirements",
         "Reassignment changes current responsibility but never rewrites the actor attribution of prior human actions, node executions, decisions, or earlier assignments",
+        "Ticket ownership transfer records the owner actor_id, authorizing actor_id, timestamp, bounded reason, and superseded ownership event without granting capabilities, implying assignment, or rewriting prior ownership",
         "A Run can be handed from one actor to another while preserving its canonical run identity, durable RunState, execution evidence, pending interrupt, worker evidence, Intel references, and project identity",
         "Opening an assigned Run does not require replaying or injecting another user's conversation history; the durable Run and repository evidence remain the handoff source of truth",
-        "The application layer exposes assignment inspection and mutation operations for presentation clients with typed authorization and conflict failures",
-        "Desktop presentation exposes current assignment and assignment history and provides assignment controls only where the active actor is authorized",
-        "Concurrent or stale reassignment attempts cannot silently overwrite a newer assignment and have an explicit conflict behavior",
-        "Tests cover initial assignment, reassignment, unauthorized assignment, invalid assignee, handoff of awaiting-human and inactive runs, assignment-history preservation, and stale-write conflicts"
+        "The application layer exposes assignment and Ticket ownership inspection and mutation operations for presentation clients with typed authorization and conflict failures",
+        "Desktop presentation exposes current assignment, Ticket ownership, and their histories and provides mutation controls only where the active actor is authorized",
+        "Concurrent or stale reassignment and ownership-transfer attempts cannot silently overwrite a newer responsibility record and have explicit conflict behavior",
+        "Tests cover initial assignment, reassignment, unauthorized assignment, invalid assignee, handoff of awaiting-human and inactive runs, assignment-history preservation, initial Ticket ownership, ownership transfer and history, assignment-independent ownership, unauthorized ownership transfer, and stale-write conflicts"
       ],
       "dependencies": [
         "BTN-59",

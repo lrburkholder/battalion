@@ -8,9 +8,11 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
+from battalion.actors import Actor
 from battalion.intel.models import (
     AcceptedInstinct,
     AcceptanceProvenance,
@@ -39,6 +41,7 @@ class InstinctReviewDecision(BaseModel):
     action: ReviewAction
     decided_at: datetime
     decided_by: str = Field(min_length=1, max_length=500)
+    decided_by_actor_id: UUID | None = None
     accepted_instinct_id: InstinctId | None = None
 
     @model_validator(mode="after")
@@ -152,7 +155,7 @@ class InstinctReviewWorkflow:
         self,
         candidate: CandidateInstinct,
         *,
-        decided_by: str,
+        decided_by: Actor | str,
         decided_at: datetime | None = None,
     ) -> InstinctReviewDecision:
         return self._promote(
@@ -167,7 +170,7 @@ class InstinctReviewWorkflow:
         self,
         candidate: CandidateInstinct,
         *,
-        decided_by: str,
+        decided_by: Actor | str,
         edits: Mapping[str, Any],
         decided_at: datetime | None = None,
     ) -> InstinctReviewDecision:
@@ -189,16 +192,18 @@ class InstinctReviewWorkflow:
         self,
         candidate: CandidateInstinct,
         *,
-        decided_by: str,
+        decided_by: Actor | str,
         decided_at: datetime | None = None,
     ) -> InstinctReviewDecision:
         self._require_candidate(candidate)
         self.decision_repository.ensure_unrecorded(candidate.instinct_id)
+        actor_name, actor_id = _actor_evidence(decided_by)
         decision = InstinctReviewDecision(
             candidate_id=candidate.instinct_id,
             action=ReviewAction.REJECT,
             decided_at=decided_at or self._clock(),
-            decided_by=decided_by,
+            decided_by=actor_name,
+            decided_by_actor_id=actor_id,
         )
         self.decision_repository.store(decision)
         return decision
@@ -208,7 +213,7 @@ class InstinctReviewWorkflow:
         candidate: CandidateInstinct,
         *,
         action: ReviewAction,
-        decided_by: str,
+        decided_by: Actor | str,
         decided_at: datetime | None,
         edits: Mapping[str, Any] | None,
     ) -> InstinctReviewDecision:
@@ -218,19 +223,22 @@ class InstinctReviewWorkflow:
         content = candidate.model_dump(exclude={"lifecycle"})
         if edits:
             content.update(dict(edits))
+        actor_name, actor_id = _actor_evidence(decided_by)
         accepted = AcceptedInstinct.model_validate({
             **content,
             "lifecycle": "accepted",
             "acceptance_provenance": AcceptanceProvenance(
                 accepted_at=timestamp,
-                accepted_by=decided_by,
+                accepted_by=actor_name,
+                accepted_by_actor_id=actor_id,
             ),
         })
         decision = InstinctReviewDecision(
             candidate_id=candidate.instinct_id,
             action=action,
             decided_at=timestamp,
-            decided_by=decided_by,
+            decided_by=actor_name,
+            decided_by_actor_id=actor_id,
             accepted_instinct_id=accepted.instinct_id,
         )
         self.intel_repository.store(accepted)
@@ -241,3 +249,10 @@ class InstinctReviewWorkflow:
     def _require_candidate(candidate: CandidateInstinct) -> None:
         if not isinstance(candidate, CandidateInstinct):
             raise TypeError("the review workflow accepts CandidateInstinct values only")
+
+
+def _actor_evidence(actor: Actor | str) -> tuple[str, UUID | None]:
+    """Keep literal legacy strings while new callers provide durable identity."""
+    if isinstance(actor, Actor):
+        return actor.display_name, actor.actor_id
+    return actor, None

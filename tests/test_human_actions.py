@@ -17,7 +17,9 @@ from battalion.application import (
     resume_run,
     review_candidate,
 )
+from battalion.actors import bootstrap_local_actor
 from battalion.config import BattalionConfig
+from battalion.identity import load_project_identity
 from battalion.context import driver_context, reviewer_context
 from battalion.graph import _deliver_interventions, _make_driver_node
 from battalion.intel import CandidateInstinct, ReviewAction
@@ -84,16 +86,22 @@ def _candidate(instinct_id: str = "INS-BTN-43") -> CandidateInstinct:
     })
 
 
+def _actor_id(project_root):
+    load_project_identity(project_root, create=True)
+    return bootstrap_local_actor(project_root, "Human Operator").local_actor_id
+
+
 def test_resume_records_actor_resolution_target_and_durable_state(tmp_path):
     state = _state()
     path = tmp_path / f"{state.run_id}.json"
     path.write_text(state.model_dump_json(), encoding="utf-8")
+    actor_id = _actor_id(tmp_path)
 
     result = resume_run(
         ResumeRun(
             run_id=state.run_id,
-            config=BattalionConfig(),
-            actor="human@example.com",
+            config=BattalionConfig(base_dir=str(tmp_path)),
+            actor_id=actor_id,
             resolution="Proceed with the approved GREEN correction.",
         ),
         state_dir=tmp_path,
@@ -102,8 +110,8 @@ def test_resume_records_actor_resolution_target_and_durable_state(tmp_path):
 
     assert result.state.interrupt_log[-1].resolution.startswith("Proceed")
     action = result.state.human_action_log[-1]
-    assert (action.actor, action.target, action.disposition) == (
-        "human@example.com", "interrupt:0", "applied"
+    assert (action.actor, action.actor_id, action.target, action.disposition) == (
+        "Human Operator", actor_id, "interrupt:0", "applied"
     )
     assert load_state(path).human_action_log[-1] == action
 
@@ -112,13 +120,15 @@ def test_correction_is_queued_only_when_no_worker_is_active(tmp_path, monkeypatc
     state = _state()
     path = tmp_path / f"{state.run_id}.json"
     path.write_text(state.model_dump_json(), encoding="utf-8")
+    actor_id = _actor_id(tmp_path)
     result = queue_intervention(
         QueueIntervention(
             run_id=state.run_id,
             kind=InterventionKind.CORRECTION,
             target=InterventionTarget.DRIVER_GREEN,
             text="Reuse the existing application operation.",
-            actor="human@example.com",
+            project_root=tmp_path,
+            actor_id=actor_id,
         ),
         state_dir=tmp_path,
         worker_dir=tmp_path / "workers",
@@ -148,7 +158,8 @@ def test_correction_is_queued_only_when_no_worker_is_active(tmp_path, monkeypatc
                 kind=InterventionKind.DESIGN_DECISION,
                 target=InterventionTarget.ARCHITECT,
                 text="Use the accepted ADR.",
-                actor="human@example.com",
+                project_root=tmp_path,
+                actor_id=actor_id,
             ),
             state_dir=tmp_path,
             worker_dir=worker_dir,
@@ -160,6 +171,7 @@ def test_reviewer_target_and_kind_mismatches_are_rejected(tmp_path):
     (tmp_path / f"{state.run_id}.json").write_text(
         state.model_dump_json(), encoding="utf-8"
     )
+    actor_id = _actor_id(tmp_path)
     with pytest.raises(HumanActionRejected):
         queue_intervention(
             QueueIntervention(
@@ -167,7 +179,8 @@ def test_reviewer_target_and_kind_mismatches_are_rejected(tmp_path):
                 kind=InterventionKind.CORRECTION,
                 target="reviewer",  # type: ignore[arg-type]
                 text="Override the verdict.",
-                actor="human@example.com",
+                    project_root=tmp_path,
+                    actor_id=actor_id,
             ),
             state_dir=tmp_path,
         )
@@ -178,7 +191,8 @@ def test_reviewer_target_and_kind_mismatches_are_rejected(tmp_path):
                 kind=InterventionKind.DESIGN_DECISION,
                 target=InterventionTarget.DRIVER_RED,
                 text="Wrong authority.",
-                actor="human@example.com",
+                project_root=tmp_path,
+                actor_id=actor_id,
             ),
             state_dir=tmp_path,
         )
@@ -285,6 +299,7 @@ def test_driver_attempt_checkpoints_delivery_before_model_generation(tmp_path):
 
 
 def test_candidate_review_promotes_or_rejects_without_mutating_evidence(tmp_path):
+    actor_id = _actor_id(tmp_path)
     candidate = _candidate()
     repository = CandidateRepository(tmp_path / ".battalion/recon/candidates")
     repository.store(candidate)
@@ -294,18 +309,28 @@ def test_candidate_review_promotes_or_rejects_without_mutating_evidence(tmp_path
         project_root=tmp_path,
         candidate_id=candidate.instinct_id,
         action=ReviewAction.ACCEPT,
-        actor="human@example.com",
+        actor_id=actor_id,
     ))
 
     assert promoted.disposition == "promoted"
+    assert promoted.decision.decided_by_actor_id == actor_id
     assert repository.get(candidate.instinct_id) == original
+    accepted = promoted.decision.accepted_instinct_id
+    assert accepted is not None
+    from battalion.intel.repository import IntelRepository
+    assert (
+        IntelRepository(tmp_path / ".battalion/intel")
+        .get(accepted)
+        .acceptance_provenance.accepted_by_actor_id
+        == actor_id
+    )
     rejected_candidate = _candidate("INS-BTN-43-REJECT")
     repository.store(rejected_candidate)
     rejected = review_candidate(ReviewCandidate(
         project_root=tmp_path,
         candidate_id=rejected_candidate.instinct_id,
         action=ReviewAction.REJECT,
-        actor="human@example.com",
+        actor_id=actor_id,
     ))
     assert rejected.disposition == "rejected"
     assert repository.get(rejected_candidate.instinct_id) == rejected_candidate
@@ -314,5 +339,5 @@ def test_candidate_review_promotes_or_rejects_without_mutating_evidence(tmp_path
             project_root=tmp_path,
             candidate_id=candidate.instinct_id,
             action=ReviewAction.REJECT,
-            actor="human@example.com",
+            actor_id=actor_id,
         ))

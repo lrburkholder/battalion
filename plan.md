@@ -27,6 +27,15 @@ BTN-65 is complete with accepted RFC-0006 and ADR-0025. They separate Battalion
 capability contracts from provider adapters and transports and define the six
 initial capability boundaries. Runtime behavior remains deferred to follow-up
 implementation.
+BTN-58 is complete on its feature branch with accepted
+[RFC-0007](docs/rfcs/rfc0007.md) and
+[ADR-0026](docs/adrs/adr0026.md). They define durable Actor identity, explicit
+project capabilities, FTUE bootstrap provenance, assignment and Ticket
+ownership history, and non-authoritative collaboration evidence. Runtime
+BTN-59 now implements the durable project-local Actor registry, offline FTUE
+bootstrap evidence, local human selection, application queries, and compatible
+Actor attribution for run and Recon evidence. Capability enforcement,
+assignment/ownership, and authentication remain BTN-60 through BTN-62.
 
 ## Architecture overview
 
@@ -57,6 +66,7 @@ resume through the same graph path.
 ```text
 battalion/
   application.py          # shared typed commands, queries, and domain failures
+  actors.py               # durable Actor contract, bootstrap, and local registry
   identity.py             # canonical UUIDs, project markers, and run catalogs
   workers.py              # detached per-run process supervision and recovery
   observation.py          # typed live events, ordering, and reconnect cursors
@@ -130,6 +140,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0023](docs/adrs/adr0023.md) | Persist human actions with their existing authority |
 | [ADR-0024](docs/adrs/adr0024.md) | Keep inference identity and cost policy in Battalion |
 | [ADR-0025](docs/adrs/adr0025.md) | Put provider adapters and transports beneath Battalion capabilities |
+| [ADR-0026](docs/adrs/adr0026.md) | Separate Actor identity, authority, and responsibility |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human

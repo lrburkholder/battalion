@@ -132,7 +132,7 @@ class DesktopController(QObject):
             {"base_dir": str(self.project_root)},
         )
 
-    def resolve_and_resume(self, run_id: str, actor: str, resolution: str) -> None:
+    def resolve_and_resume(self, run_id: str, resolution: str) -> None:
         """Resolve and resume through the same worker/application path as CLI."""
         def command() -> None:
             try:
@@ -140,7 +140,6 @@ class DesktopController(QObject):
                     StartWorker(ResumeRun(
                         run_id=run_id,
                         config=self._config(),
-                        actor=actor,
                         resolution=resolution,
                     )),
                     state_dir=self.project_root / ".battalion" / "state",
@@ -160,12 +159,17 @@ class DesktopController(QObject):
         kind: InterventionKind,
         target: InterventionTarget,
         text: str,
-        actor: str,
     ) -> None:
         def command() -> None:
             try:
                 result = queue_intervention(
-                    QueueIntervention(run_id, kind, target, text, actor),
+                    QueueIntervention(
+                        run_id,
+                        kind,
+                        target,
+                        text,
+                        project_root=self.project_root,
+                    ),
                     state_dir=self.project_root / ".battalion" / "state",
                     worker_dir=self.project_root / ".battalion" / "workers",
                 )
@@ -183,7 +187,6 @@ class DesktopController(QObject):
         self,
         candidate_id: str,
         action: ReviewAction,
-        actor: str,
         edits: dict[str, object] | None = None,
     ) -> None:
         def command() -> None:
@@ -192,14 +195,13 @@ class DesktopController(QObject):
                     project_root=self.project_root,
                     candidate_id=candidate_id,
                     action=action,
-                    actor=actor,
                     edits=edits,
                 ))
             except (ApplicationError, OSError, TypeError, ValueError) as exc:
                 self.action_failed.emit(str(exc))
                 return
             self.action_completed.emit(
-                f"{candidate_id} {result.disposition} by {actor}"
+                f"{candidate_id} {result.disposition} by {result.decision.decided_by}"
             )
             self.refresh()
 

@@ -105,11 +105,14 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `retry_bound` (configurable per ticket, per open decision)
 - `budget` (tracked per graph run, not per node)
 - `interrupt_log` (list of {trigger, timestamp, resolution})
-- `interventions` (bounded typed human context with action ID, actor, time,
+- `interventions` (bounded typed human context with action ID, durable Actor
+  ID plus immutable display snapshot, time,
   exact Architect/Driver RED/Driver GREEN/Refactorer target, queued/delivered
   disposition, and the sole receiving node-attempt ID)
-- `human_action_log` (append-only run-action evidence with actor, time, target,
-  disposition, detail, and resulting durable state version/status/phase)
+- `human_action_log` (append-only run-action evidence with durable Actor ID
+  plus immutable display snapshot, time, target, disposition, detail, and
+  resulting durable state version/status/phase; legacy entries may contain
+  only their literal pre-BTN-59 actor string)
 - `manual_checkpoints` (list of phase names the user has declared a mandatory
   pause after — supports interrupt trigger #6)
 - `execution_record` (a separately versioned, validated history of node
@@ -122,10 +125,43 @@ catalog whose references use canonical run IDs. Moving a repository with its
 `.battalion` directory preserves project identity. Legacy files are discovered
 under their original IDs without rewriting historical provenance (ADR-0020).
 
+### Actor identity and local provenance
+
+Actor identity is a versioned, project-local contract persisted in
+`.battalion/actors.json`. `actor_id` is an opaque UUID owned by Battalion and
+never derived from a display name, operating-system username, email address,
+provider login, or authentication subject. Each Actor records `kind` (`human`
+or `system`), mutable `display_name`, `status`, timezone-aware creation time,
+creating Actor reference, and bounded creation provenance. Authentication,
+credentials, project authorization, assignment, and ownership are separate
+contracts and are not Actor identity.
+
+Project first use atomically creates the first local human Actor and a one-time
+bootstrap event credited to that Actor. The event binds the Actor to the
+project and records the accepted initial capability vocabulary; mechanical
+capability enforcement remains BTN-60. The ceremony needs no network or hosted
+account and does not inspect the operating-system username. Later local Actor
+selection uses `actor_id`, so duplicate or changed display names cannot change
+identity.
+
+New interrupt resolutions, interventions, Recon decisions, and accepted-Intel
+provenance record the durable `actor_id` together with an immutable display
+snapshot. Renaming an Actor changes only the Actor projection, not historical
+evidence. Pre-BTN-59 evidence containing only a string remains readable and is
+rendered explicitly as legacy attribution; Battalion never matches it to a new
+Actor by name or other mutable text. System activity may reference an Actor
+whose kind is explicitly `system`, and human application operations reject
+system or disabled Actors.
+
+Actor establishment and inspection are shared application operations. CLI and
+desktop source execution select the project's local human Actor and create the
+default local trust root on first use without authentication infrastructure.
+
 ### Human actions and next-attempt context
 
-Interrupt resolution is persisted before resume and records the human actor,
-time, interrupt target, resolution, disposition, and resulting durable state.
+Interrupt resolution is persisted before resume and records the human Actor
+ID, immutable display snapshot, time, interrupt target, resolution,
+disposition, and resulting durable state.
 CLI and desktop clients submit the same `ResumeRun` application command; graph
 resume inference and execution remain canonical.
 

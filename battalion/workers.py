@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, BinaryIO
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from battalion.config import BattalionConfig
 from battalion.state.models import RunState, RunStatus
@@ -124,7 +124,7 @@ def launch_worker(
     config: BattalionConfig,
     state_dir: str | Path,
     worker_dir: str | Path = DEFAULT_WORKER_DIR,
-    resume_actor: str | None = None,
+    resume_actor_id: UUID | None = None,
     resume_resolution: str | None = None,
 ) -> WorkerRecord:
     """Launch one detached Python worker after durably reserving ``run_id``."""
@@ -187,7 +187,7 @@ def launch_worker(
         "config": config.model_dump(mode="json"),
         "state_dir": str(state_dir),
         "worker_dir": str(directory),
-        "resume_actor": resume_actor,
+        "resume_actor_id": str(resume_actor_id) if resume_actor_id is not None else None,
         "resume_resolution": resume_resolution,
     }
     try:
@@ -323,7 +323,11 @@ def _worker_main(stdin: BinaryIO) -> int:
                 ResumeRun(
                     run_id=run_id,
                     config=config,
-                    actor=request.get("resume_actor") or "operator",
+                    actor_id=(
+                        UUID(request["resume_actor_id"])
+                        if request.get("resume_actor_id")
+                        else None
+                    ),
                     resolution=request.get("resume_resolution") or "authorized resume",
                 ),
                 state_dir=request["state_dir"],
