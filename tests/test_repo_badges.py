@@ -13,7 +13,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 README_PATH = REPOSITORY_ROOT / "README.md"
 LICENSE_PATH = REPOSITORY_ROOT / "LICENSE"
 WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "test.yml"
-PAGES_CONFIG = REPOSITORY_ROOT / ".pages-source" / "_config.yml"
+PAGES_CONFIG = REPOSITORY_ROOT / ".github" / "pages" / "_config.yml"
 
 
 class TestReadmeBadges:
