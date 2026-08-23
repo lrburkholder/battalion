@@ -15,103 +15,163 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 ## Status
 
-**Current Milestone**: desktop operator UI and public product showcase
+<!-- battalion:status:start -->
+
+Battalion status at a glance. `backlog.json` is the machine-readable source of
+truth for ticket identity, scope, dependencies, and status; this
+page is its human-readable projection and is embedded verbatim into
+`README.md`. Regenerate after backlog changes with
+`python scripts/sync_status.py`.
+
+## Current milestone
+
+**Current Milestone**: desktop operator UI and public product showcase.
 
 The v1 execution graph is complete. Durable execution evidence, the Recon and
-Intel knowledge lifecycle, deterministic context assembly, and the desktop
+Intel knowledge lifecycle, deterministic context assembly, the desktop
 operator architecture, shared application boundary, isolated active-run worker
-supervision, durable run/project identity, operator evidence, and typed
-live-observation are also implemented. After equivalent desktop spikes,
-[ADR-0022](docs/adrs/adr0022.md) selects PySide6 with Qt Widgets. BTN-42's
-production read-only console is implemented and validated on its feature branch;
-state-changing desktop controls and the split runtime are implemented through
-BTN-43. BTN-56 applies the accepted visual mockup and bundled brand assets.
-BTN-57 adds a public Pages landing experience with reviewed production-client
-screenshots and a concise, truthful introduction to the shipped workflow. The
-feature is complete on its branch; the live site updates after merge to `main`.
+supervision, durable run/project identity, durable Actor identity and local
+bootstrap, operator evidence, typed live-observation, and the PySide6 console
+with human-action surfaces (BTN-42–43, BTN-56, BTN-59) are implemented.
+BTN-50 repository badges are in flight. BTN-57 adds the public Pages landing
+experience with reviewed production-client screenshots; it is complete on its
+feature branch, and the live site updates after merge to `main`.
 
-See the [canonical Battalion backlog](backlog.json) for ticket scope,
-dependencies, acceptance criteria, and current status.
+## Delivered work
 
-- ✅ **BTN-1**: State models + persistence layer
-- ✅ **BTN-2**: Per-node write-scope tool binding
-- ✅ **BTN-3**: LiteLLM client wrapper
-- ✅ **BTN-4**: Architect node
-- ✅ **BTN-5**: Driver node
-- ✅ **BTN-6**: Reviewer node
-- ✅ **BTN-7**: Graph wiring with interrupt points
-- ✅ **BTN-8**: Interrupt triggers (1-6) + budget tracking
-- ✅ **BTN-9**: CLI (Typer) - run/resume/status
-- ✅ **BTN-10**: End-to-end acceptance criteria validation
-- ✅ **BTN-11**: Driver RED/GREEN mode support
-- ✅ **BTN-12**: Reviewer expect_pass parameter + per-checkpoint rejection counters
-- ✅ **BTN-13**: Refactorer node
-- ✅ **BTN-14**: Model-diversity constraint (Reviewer must differ from Driver)
-- ✅ **BTN-15**: CLI setup command for LLM configuration and validation
-- ✅ **BTN-16**: Per-call LLM cost capture and per-phase reporting
-- ❌ **BTN-17**: Narrow interrupt/checkpoint web UI (cancelled and superseded by [RFC-0004](docs/rfcs/rfc0004.md))
-- ✅ **BTN-18**: Public GitHub Pages documentation
-- ✅ **BTN-19**: Durable execution records and artifact provenance
-- ✅ **BTN-20–23**: Instinct contracts, immutable persistence, Recon generation, and audited operator promotion
-- ✅ **BTN-24**: Deterministic, role-specific Instinct retrieval and injection
-- ✅ **BTN-25–28**: Role contracts, bounded context assembly, caller-owned run configuration, and layout-aware write scopes
-- ✅ **BTN-29**: Desktop operator interface architecture ([RFC-0004](docs/rfcs/rfc0004.md))
-- ✅ **BTN-30**: Shared application command and query boundary
-- ✅ **BTN-31**: Active-run worker supervision
-- ✅ **BTN-32**: Durable UUID run identity, display aliases, and project catalogs
-- ✅ **BTN-33**: Operator summaries and revision evidence
-- ✅ **BTN-34**: Immutable persisted Recon candidate inbox
-- ✅ **BTN-35**: Exact, sourced, currency-aware usage evidence
-- ✅ **BTN-36**: Typed live observation and durable-first reconnect contract
-- ✅ **BTN-37–41**: Controlled desktop spikes and PySide6 framework selection
-- ✅ **BTN-42**: Read-only PySide6 operator console
-- ✅ **BTN-43**: Desktop interrupt, Recon review, and typed next-attempt actions
-- ✅ **BTN-51**: Accepted inference-target and zero-cost policy architecture
-  ([RFC-0005](docs/rfcs/rfc0005.md), [ADR-0024](docs/adrs/adr0024.md)); runtime
-  delivery remains BTN-52–55
-- ✅ **BTN-56**: Desktop visual system, IBM Plex typography, and brand assets
-- ✅ **BTN-57**: GitHub Pages product showcase and production screenshots
-- ✅ **BTN-58**: Accepted Actor identity, authority, assignment, ownership, and
-  collaboration architecture ([RFC-0007](docs/rfcs/rfc0007.md),
-  [ADR-0026](docs/adrs/adr0026.md))
-- ✅ **BTN-59**: Durable project-local Actor identity, offline local bootstrap,
-  Actor queries, and legacy-compatible human-action and Recon provenance
+<!-- BEGIN GENERATED:backlog-delivery (regenerate with: python scripts/sync_status.py) -->
 
-## Architecture
+### Shipped
 
-### Core Components
+| Ticket | Title | Status |
+| --- | --- | --- |
+| BTN-1 | State models + persistence layer | Yes |
+| BTN-2 | Per-node write-scope tool binding | Yes |
+| BTN-3 | LiteLLM client wrapper | Yes |
+| BTN-4 | Architect node | Yes |
+| BTN-5 | Driver node | Yes |
+| BTN-6 | Reviewer node | Yes |
+| BTN-7 | Graph wiring — StateGraph, edges, interrupt points | Yes |
+| BTN-8 | Interrupt triggers (1-6) + budget tracking | Yes |
+| BTN-9 | CLI (Typer) — run / resume / status | Yes |
+| BTN-10 | End-to-end acceptance criteria validation | Yes |
+| BTN-11 | Driver RED/GREEN mode support | Yes |
+| BTN-12 | Reviewer expect_pass parameter + per-checkpoint rejection counters | Yes |
+| BTN-13 | Refactorer node | Yes |
+| BTN-14 | Model-diversity constraint: Reviewer must differ from Driver | Yes |
+| BTN-15 | CLI setup command for LLM configuration and validation | Yes |
+| BTN-16 | Cost/budget reporting granularity | Yes |
+| BTN-18 | Public GitHub Pages site | Yes |
+| BTN-19 | Durable execution record and artifact provenance | Yes |
+| BTN-20 | Instinct data contract | Yes |
+| BTN-21 | Immutable Intel repository | Yes |
+| BTN-22 | Recon candidate generation | Yes |
+| BTN-23 | Operator review and Instinct promotion workflow | Yes |
+| BTN-24 | Deterministic retrieval and node-specific Instinct injection | Yes |
+| BTN-25 | Align role prompts with node contracts | Yes |
+| BTN-26 | Persist and assemble node execution context | Yes |
+| BTN-27 | Preserve caller-supplied run configuration | Yes |
+| BTN-28 | Project-layout-aware scoped writes | Yes |
+| BTN-29 | Desktop operator interface architecture RFC | Yes |
+| BTN-30 | Application command and query boundary | Yes |
+| BTN-31 | Active-run worker supervision | Yes |
+| BTN-32 | Run and project identity | Yes |
+| BTN-33 | Operator summaries and revision evidence | Yes |
+| BTN-34 | Recon candidate persistence | Yes |
+| BTN-35 | Usage evidence revision | Yes |
+| BTN-36 | Live observation contract | Yes |
+| BTN-37 | Desktop framework benchmark fixture | Yes |
+| BTN-38 | Tauri desktop architecture spike | Yes |
+| BTN-39 | PySide6 desktop architecture spike | Yes |
+| BTN-40 | Electron desktop architecture spike | Yes |
+| BTN-41 | Desktop framework selection ADR | Yes |
+| BTN-42 | Read-only desktop operator console | Yes |
+| BTN-43 | Desktop human-action surfaces | Yes |
+| BTN-51 | Zero-cost inference and model-endpoint architecture RFC | Yes |
+| BTN-56 | Desktop visual system and brand assets | Yes |
+| BTN-57 | GitHub Pages product showcase and visual assets | Yes |
+| BTN-58 | Human identity, authority, assignment, and collaboration RFC | Yes |
+| BTN-59 | Durable Actor identity and local operator provenance | Yes |
+| BTN-65 | Transport-neutral integration capability architecture | Yes |
+
+### In flight
+
+| Ticket | Title | Status |
+| --- | --- | --- |
+| BTN-50 | Repository status badges and README trust signals | Wip |
+
+### Cancelled
+
+| Ticket | Title | Status |
+| --- | --- | --- |
+| BTN-17 | Interrupt/checkpoint web UI | No |
+
+Ticket scope, dependencies, acceptance criteria, and the 31 planned (not-started) tickets live in the canonical [backlog.json](backlog.json).
+
+<!-- END GENERATED:backlog-delivery -->
+
+## Component readiness
 
 | Component | Purpose | Status |
 |-----------|---------|--------|
-| `battalion.state.models` | Versioned state contract (Pydantic models) | ✅ Complete |
-| `battalion.state.persistence` | Local JSON load/save | ✅ Complete |
-| `battalion.intel.models` | Versioned candidate/accepted Instinct contract | ✅ Complete (BTN-20) |
-| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | ✅ Complete (BTN-34) |
-| `battalion.intel.repository` | Immutable accepted-Instinct persistence | ✅ Complete (BTN-21) |
-| `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
-| `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
-| `battalion.application` | Typed run, resume, inspection, human-action, Intel-review, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-43) |
-| `battalion.actors` | Durable human/system Actor identity, offline FTUE bootstrap, selection, and project-local persistence | ✅ Complete (BTN-59) |
-| `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
-| `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
-| `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | ✅ Complete (BTN-36) |
-| `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | ✅ Complete (BTN-42–43) |
-| `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | ✅ Complete (BTN-16, BTN-19, BTN-35) |
-| `battalion.context` | Bounded role context assembly and Instinct injection | ✅ Complete (BTN-26) |
-| `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | ✅ Complete |
-| `battalion.llm.litellm_client` | Per-node model configuration | ✅ Complete |
-| `battalion.nodes.architect` | Architecture planning node | ✅ Complete |
-| `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | ✅ Complete |
-| `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | ✅ Complete |
-| `battalion.nodes.refactorer` | Refactor node sharing Driver's write scope (ADR-008) | ✅ Complete |
-| `battalion.nodes.recon` | Post-completion candidate Instinct generation | ✅ Complete (BTN-22) |
-| `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | ✅ Complete |
-| `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | ✅ Complete |
-| `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | ✅ Complete |
-| `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | ✅ Complete |
-| `battalion.setup` | Provider discovery, configuration, and connectivity checks | ✅ Complete (BTN-15) |
-| `battalion.progress` | Human-readable CLI progress events | ✅ Complete |
-| `battalion.cli` | Typer CLI - run/resume/status/setup | ✅ Complete (BTN-9, BTN-15) |
+| `battalion.state.models` | Versioned state contract (Pydantic models) | Complete |
+| `battalion.state.persistence` | Local JSON load/save | Complete |
+| `battalion.intel.models` | Versioned candidate/accepted Instinct contract | Complete (BTN-20) |
+| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | Complete (BTN-34) |
+| `battalion.intel.repository` | Immutable accepted-Instinct persistence | Complete (BTN-21) |
+| `battalion.intel.review` | Audited operator review and promotion boundary | Complete (BTN-23) |
+| `battalion.intel.retrieval` | Deterministic active-Instinct selection | Complete (BTN-24) |
+| `battalion.application` | Typed run, resume, inspection, human-action, Intel-review, identity, and worker boundary shared by presentation clients | Complete (BTN-43) |
+| `battalion.actors` | Durable human/system Actor identity, offline FTUE bootstrap, selection, and project-local persistence | Complete (BTN-59) |
+| `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | Complete (BTN-32) |
+| `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | Complete (BTN-31) |
+| `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | Complete (BTN-36) |
+| `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | Complete (BTN-42–43) |
+| `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | Complete (BTN-16, BTN-19, BTN-35) |
+| `battalion.context` | Bounded role context assembly and Instinct injection | Complete (BTN-26) |
+| `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | Complete |
+| `battalion.llm.litellm_client` | Per-node model configuration | Complete |
+| `battalion.nodes.architect` | Architecture planning node | Complete |
+| `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | Complete |
+| `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | Complete |
+| `battalion.nodes.refactorer` | Refactor node sharing Driver's write scope (ADR-008) | Complete |
+| `battalion.nodes.recon` | Post-completion candidate Instinct generation | Complete (BTN-22) |
+| `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | Complete |
+| `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | Complete |
+| `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Complete |
+| `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | Complete |
+| `battalion.setup` | Provider discovery, configuration, and connectivity checks | Complete (BTN-15) |
+| `battalion.progress` | Human-readable CLI progress events | Complete |
+| `battalion.cli` | Typer CLI - run/resume/status/setup | Complete (BTN-9, BTN-15) |
+
+## Roadmap
+
+The v1 milestone (graph, interrupts, CLI, acceptance testing, documentation)
+is complete. Remaining work, by theme:
+
+- **Desktop v2:** history search and model-by-role analytics remain
+  (BTN-44).
+- **Accepted architecture awaiting runtime delivery:** endpoint-aware
+  inference identity and zero-cost policy (BTN-52–55, per RFC-0005 /
+  ADR-0024); Actor capability enforcement, assignment/ownership, and
+  authentication (BTN-60–62, per RFC-0007 / ADR-0026); transport-neutral
+  integration capabilities (BTN-66–80, per RFC-0006 / ADR-0025), including
+  the WorkSource abstraction (BTN-71) and GitHub Issues adapter (BTN-72)
+  that would let GitHub Issues become a Battalion ticket source.
+- **Future direction RFCs:** Specifier role (BTN-45), plugin architecture
+  (BTN-46), severity-based review and a possible Guardian role (BTN-47),
+  bounded self-modification safety (BTN-48), and pluggable repository quality
+  gates (BTN-49). Draft briefs live under `docs/future/`; none changes
+  Battalion's roles or authority until its RFC is accepted.
+
+The former Teacher concept is no longer planned as a Battalion role. It is
+expected to evolve into **Dojo**, a separate future application. Researcher
+workflows may likewise belong in a separate application; that product boundary
+is still unresolved and is not part of Battalion's current roadmap.
+
+<!-- battalion:status:end -->
+
+## Architecture
 
 ### State Schema
 
@@ -456,83 +516,6 @@ ownership policy first; otherwise the two trackers could silently disagree.
 MIT License - Copyright (c) 2026 Luke Burkholder
 
 See [LICENSE](LICENSE) for full license text.
-
-## Roadmap
-
-### v1 Milestone (Complete)
-- ✅ Driver, Reviewer, and Refactorer nodes complete
-- ✅ Full graph wiring with LangGraph (RED → Reviewer → GREEN → Reviewer → Refactorer → Reviewer loop)
-- ✅ All 6 interrupt trigger implementations + budget tracking
-- ✅ Build CLI entry points (BTN-9)
-- ✅ End-to-end acceptance testing (BTN-10)
-- ✅ Model-diversity constraint between Driver and Reviewer (BTN-14)
-- ✅ [Public documentation site](https://lrburkholder.github.io/battalion/) (BTN-18)
-
-### v2 Milestone — Desktop Operator UI
-
-v2 is the desktop user-interface release. Its goal is to make Battalion's
-existing human-directed workflow observable and operable without moving graph,
-persistence, scope, or interrupt authority into the presentation client.
-
-- **UI foundations (BTN-29–36, complete):** accepted operator architecture,
-  shared application commands, isolated workers, durable run/project identity,
-  operator evidence, candidate persistence, usage semantics, and a live
-  observation contract are all merged.
-- **Framework selection (BTN-37–41, complete):** the shared fixture and
-  [measurement procedure](benchmarks/desktop/README.md) drove equivalent Tauri,
-  PySide6, and Electron release prototypes. [ADR-0022](docs/adrs/adr0022.md)
-  selects PySide6 with Qt Widgets and carries its packaging, accessibility,
-  recovery, and ambient-authority risks into production acceptance.
-- **Production UI:** BTN-42 implements the read-only operator console. BTN-43
-  adds human-action surfaces, and BTN-44 adds history search and descriptive
-  model-by-role analytics.
-
-The production PySide6 client is separate from the disposable benchmark code
-and depends on `battalion.application` rather than LangGraph or persistence.
-
-### Future Architecture Planning
-
-These directions now have bounded architecture tickets and draft planning
-briefs under `docs/future/`. They are not implementation commitments, and none
-changes Battalion's current roles or authority until its RFC is accepted:
-
-- **BTN-45:** Decide whether and where a human-reviewed Specifier role belongs.
-- **BTN-46:** Specify a permissioned plugin architecture and integration
-  lifecycle without creating a second policy or persistence authority.
-- **BTN-47:** Decide whether severity-based review needs a Guardian role or a
-  narrower extension of existing Reviewer and interrupt policy.
-- **BTN-48:** Define safety invariants and staged evidence for bounded,
-  human-authorized self-modification proposals.
-- **BTN-49:** Decide where deterministic repository quality gates belong and
-  evaluate a language-neutral contract using anti-slop and Python fixtures.
-- **BTN-50:** Add a restrained README badge set backed by real CI,
-  documentation, license, and repository state.
-- **BTN-51–55:** Define transparent local and zero-cost inference policy, then
-  add endpoint-aware setup, optional FreeLLMAPI support, resolved inference
-  provenance, and mechanical cost-policy enforcement. BTN-51 accepted
-  [RFC-0005](docs/rfcs/rfc0005.md) and
-  [ADR-0024](docs/adrs/adr0024.md); the runtime behavior remains unshipped until
-  BTN-52–55 deliver it.
-- **BTN-57:** Refresh the GitHub Pages landing experience with canonical brand
-  assets and reproducible, accessible screenshots of shipped desktop workflows.
-- **BTN-58–62:** Define and implement durable Actor identity, project
-  capabilities, assignment and Ticket ownership, and provider-neutral
-  authentication. BTN-58 accepted
-  [RFC-0007](docs/rfcs/rfc0007.md) and
-  [ADR-0026](docs/adrs/adr0026.md). BTN-59 delivers Actor persistence, local
-  bootstrap and selection, application queries, and compatible attribution;
-  authorization, assignment/ownership, and authentication remain BTN-60–62.
-- **BTN-65:** Define transport-neutral WorkSource, KnowledgeSource,
-  RepositoryService, Notification, OutboundEventSink, and HumanInteraction
-  capabilities above provider adapters and transports.
-  [ADR-0025](docs/adrs/adr0025.md) and
-  [RFC-0006](docs/rfcs/rfc0006.md) are accepted. Runtime behavior remains
-  deferred to BTN-66–80.
-
-The former Teacher concept is no longer planned as a Battalion role. It is
-expected to evolve into **Dojo**, a separate future application. Researcher
-workflows may likewise belong in a separate application; that product boundary
-is still unresolved and is not part of Battalion's current roadmap.
 
 ---
 

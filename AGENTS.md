@@ -61,6 +61,11 @@ dependency already solves the problem.
   behavior; Architect plans and records decisions.
 - Never place API keys or secrets in tracked configuration, fixtures, logs, or
   documentation.
+- Ticket status changes flow from `backlog.json` through
+  `python scripts/sync_status.py`, which regenerates the "Delivered work"
+  region of `docs/status.md` and the embedded copy inside `README.md`.
+  Do not hand-edit those generated regions, and keep
+  `python scripts/sync_status.py --check` clean before handoff (ADR-0027).
 
 ## Setup and validation
 
