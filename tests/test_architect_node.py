@@ -8,26 +8,18 @@ from battalion.nodes.architect import (
     extract_content,
     run_architect,
 )
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunStatus
+
+
+from conftest import make_run_state
 
 
 def make_state(write_scope=None, **overrides):
-    defaults = dict(
-        schema_version="1.0",
-        run_id="run-001",
-        ticket_id="BTN-4-test",
-        status=RunStatus.NOT_STARTED,
-        phase="architect",
-        write_scope=write_scope if write_scope is not None else {
-            "architect": ["plan.md"],
-            "driver": ["src/"],
-            "reviewer": [],
-        },
-        retry_bound=2,
-        budget=Budget(limit=100, used=0),
+    return make_run_state(
+        ticket_id="BTN-4-test", run_id="run-001",
+        status=RunStatus.NOT_STARTED, phase="architect",
+        write_scope=write_scope, **overrides,
     )
-    defaults.update(overrides)
-    return RunState(**defaults)
 
 
 def litellm_style_response(text: str) -> dict:

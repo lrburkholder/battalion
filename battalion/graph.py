@@ -129,11 +129,6 @@ NEXT_NODE_ON_PAUSE = {
 }
 
 
-def _configured_model(llm_configs: dict[str, Any], role: str) -> str:
-    config = llm_configs.get(role, llm_configs.get("default"))
-    return getattr(config, "model", "unconfigured")
-
-
 def _deliver_interventions(
     state: RunState,
     target: str,
@@ -213,6 +208,161 @@ def _handle_node_error(
     raise error
 
 
+def _resolve_llm_config(llm_configs: dict[str, Any], roles: tuple[str, ...]) -> Any:
+    """Resolve per-role LLM configuration through nested fallbacks.
+
+    Roles are tried left to right against ``llm_configs``; when none is
+    present, the ``"default"`` entry wins. This reproduces the historical
+    per-factory chains (for example Refactorer's
+    ``get("refactorer", get("driver", get("default")))``) in one place.
+    """
+    config = llm_configs.get("default")
+    for role in roles:
+        config = llm_configs.get(role, config)
+    return config
+
+
+def _next_phase_value(
+    value: str | Callable[[RunState], str], state: RunState
+) -> str:
+    return value if isinstance(value, str) else value(state)
+
+
+def _scaffold_node(
+    *,
+    node_name: str,
+    llm_roles: tuple[str, ...],
+    runner: Callable[..., RunState],
+    build_inputs: Callable[
+        [RunState, tuple[AcceptedInstinct, ...], str], dict[str, Any]
+    ],
+    audience: InstinctAudience | None,
+    llm_configs: dict[str, Any],
+    base_dir: str,
+    prompts_dir: str | None,
+    on_node_event: Callable[[dict], None] | None,
+    on_token: Callable[[dict], None] | None,
+    instinct_retriever: InstinctRetriever | None,
+    on_state_checkpoint: Callable[[RunState], None] | None,
+    delivers_interventions: bool = True,
+    static_kwargs: dict[str, Any] | None = None,
+    finish_checkpoint: CheckpointType | None = None,
+    error_next_phase: str | Callable[[RunState], str],
+    error_resume_node: str,
+    check_next_phase: str | Callable[[RunState], str],
+    pause_resume_node: str,
+) -> Callable[[RunState], RunState]:
+    """Build one graph node around the shared per-attempt scaffolding.
+
+    Every role node follows the same sequence: open an execution capture,
+    deliver queued human interventions bound to this attempt, increment the
+    run budget, assemble deterministic bounded context, emit node_start,
+    call the role runner, then either pause on an interrupt trigger or hand
+    off to the next phase. The per-role differences are exactly the
+    parameters above:
+
+      runner:                 node implementation (run_architect, ...)
+      build_inputs:           dynamic runner kwargs from state/instincts/attempt
+      audience:               Instinct retrieval audience; None disables it
+      delivers_interventions: whether queued interventions may target this node
+      static_kwargs:          fixed runner kwargs (Driver mode, Reviewer
+                              checkpoint)
+      finish_checkpoint:      checkpoint recorded on Reviewer executions
+      error_/check_/pause_resume_node: routing values for the failure,
+                              interrupt-check, and paused-resume paths
+
+    InfraFailure (trigger #5) and ScopeViolationError (trigger #2) route to
+    an AWAITING_HUMAN pause through _handle_node_error; any other exception
+    is a bug and propagates unchanged.
+    """
+    def node(state: RunState) -> RunState:
+        entered_state = state
+        model_config = _resolve_llm_config(llm_configs, llm_roles)
+        capture = ExecutionCapture.start(
+            state, node_name, getattr(model_config, "model", "unconfigured"),
+            base_dir, prompts_dir=prompts_dir, model_configuration=model_config,
+        )
+        if delivers_interventions:
+            state = _deliver_interventions(
+                state, node_name, capture.execution_id, on_state_checkpoint
+            )
+            capture.include_human_interventions(state)
+        # Increment budget for this LLM call.
+        state = increment_budget(state)
+
+        instincts = (
+            _role_instincts(instinct_retriever, state, audience)
+            if instinct_retriever is not None and audience is not None
+            else ()
+        )
+        inputs = build_inputs(state, instincts, capture.execution_id)
+
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_start",
+                "node": node_name,
+                "budget": {"used": state.budget.used, "limit": state.budget.limit},
+            })
+        try:
+            # on_stream is passed only when a token callback exists, matching
+            # the historical per-factory call shape (mocked runners in tests
+            # bind narrow signatures).
+            call_kwargs: dict[str, Any] = {
+                "state": state,
+                "llm_config": model_config,
+                "base_dir": base_dir,
+                "prompts_dir": prompts_dir,
+                **(static_kwargs or {}),
+                **inputs,
+            }
+            if on_token is not None:
+                call_kwargs["on_stream"] = on_token
+            new_state = runner(**call_kwargs)
+        except (InfraFailure, ScopeViolationError) as exc:
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "node_error",
+                    "node": node_name,
+                    "error": str(exc),
+                })
+            paused = _handle_node_error(
+                state, exc,
+                next_phase=_next_phase_value(error_next_phase, state),
+                resume_node=error_resume_node,
+                node_name=node_name,
+                on_node_event=on_node_event,
+            )
+            return capture.finish(entered_state, paused, checkpoint=finish_checkpoint)
+
+        # Check interrupts after successful node execution.
+        should_pause, trigger_id, context = check_any_trigger(
+            new_state, old_state=state,
+            next_phase=_next_phase_value(check_next_phase, new_state),
+        )
+        if should_pause:
+            context = {**context, "next_phase": pause_resume_node}
+            new_state = log_interrupt(new_state, trigger_id, context)
+            new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
+            if on_node_event is not None:
+                on_node_event({
+                    "type": "interrupt",
+                    "node": node_name,
+                    "trigger": trigger_id,
+                    "context": context,
+                })
+
+        if on_node_event is not None:
+            on_node_event({
+                "type": "node_end",
+                "node": node_name,
+                "phase": new_state.phase,
+                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
+            })
+        return capture.finish(entered_state, new_state, checkpoint=finish_checkpoint)
+
+    return node
+
+
 def _make_architect_node(
     llm_configs: dict[str, Any],
     base_dir: str,
@@ -224,91 +374,36 @@ def _make_architect_node(
 ) -> Callable[[RunState], RunState]:
     """Create the Architect node function for the graph."""
     from battalion.nodes.architect import run_architect
-    from battalion.prompts.loader import load_system_prompt
-    
-    def node(state: RunState) -> RunState:
-        entered_state = state
-        model_config = llm_configs.get("architect", llm_configs.get("default"))
-        capture = ExecutionCapture.start(
-            state, NODE_ARCHITECT, _configured_model(llm_configs, "architect"), base_dir,
-            prompts_dir=prompts_dir, model_configuration=model_config,
-        )
-        state = _deliver_interventions(
-            state, NODE_ARCHITECT, capture.execution_id, on_state_checkpoint
-        )
-        capture.include_human_interventions(state)
-        # Increment budget for this LLM call
-        state = increment_budget(state)
-        
-        # Run Architect node
-        instincts = (
-            _role_instincts(instinct_retriever, state, InstinctAudience.ARCHITECT)
-            if instinct_retriever is not None
-            else ()
-        )
-        spec_text = architect_context(
-            state, instincts=instincts, node_execution_id=capture.execution_id
-        )
-        
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_start",
-                "node": NODE_ARCHITECT,
-                "budget": {"used": state.budget.used, "limit": state.budget.limit},
-            })
-        try:
-            node_kwargs = {"on_stream": on_token} if on_token is not None else {}
-            new_state = run_architect(
-                state=state,
-                spec_text=spec_text,
-                llm_config=model_config,
-                base_dir=base_dir,
-                prompts_dir=prompts_dir,
-                **node_kwargs,
+
+    def build_inputs(
+        state: RunState,
+        instincts: tuple[AcceptedInstinct, ...],
+        execution_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "spec_text": architect_context(
+                state, instincts=instincts, node_execution_id=execution_id
             )
-        except (InfraFailure, ScopeViolationError) as exc:
-            if on_node_event is not None:
-                on_node_event({
-                    "type": "node_error",
-                    "node": NODE_ARCHITECT,
-                    "error": str(exc),
-                })
-            paused = _handle_node_error(
-                state, exc,
-                next_phase=NODE_TO_PHASE[NODE_ARCHITECT],
-                resume_node=NEXT_NODE_ON_PAUSE[NODE_ARCHITECT],
-                node_name=NODE_ARCHITECT,
-                on_node_event=on_node_event,
-            )
-            return capture.finish(entered_state, paused)
-        
-        # Check interrupts after node execution
-        should_pause, trigger_id, context = check_any_trigger(
-            new_state, old_state=state, next_phase=NODE_TO_PHASE[NODE_ARCHITECT]
-        )
-        
-        if should_pause:
-            context = {**context, "next_phase": NEXT_NODE_ON_PAUSE[NODE_ARCHITECT]}
-            new_state = log_interrupt(new_state, trigger_id, context)
-            new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
-            if on_node_event is not None:
-                on_node_event({
-                    "type": "interrupt",
-                    "node": NODE_ARCHITECT,
-                    "trigger": trigger_id,
-                    "context": context,
-                })
-        
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_end",
-                "node": NODE_ARCHITECT,
-                "phase": new_state.phase,
-                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
-            })
-        return capture.finish(entered_state, new_state)
-    
-    return node
+        }
+
+    return _scaffold_node(
+        node_name=NODE_ARCHITECT,
+        llm_roles=("architect",),
+        runner=run_architect,
+        build_inputs=build_inputs,
+        audience=InstinctAudience.ARCHITECT,
+        llm_configs=llm_configs,
+        base_dir=base_dir,
+        prompts_dir=prompts_dir,
+        on_node_event=on_node_event,
+        on_token=on_token,
+        instinct_retriever=instinct_retriever,
+        on_state_checkpoint=on_state_checkpoint,
+        error_next_phase=NODE_TO_PHASE[NODE_ARCHITECT],
+        error_resume_node=NEXT_NODE_ON_PAUSE[NODE_ARCHITECT],
+        check_next_phase=NODE_TO_PHASE[NODE_ARCHITECT],
+        pause_resume_node=NEXT_NODE_ON_PAUSE[NODE_ARCHITECT],
+    )
 
 
 def _make_driver_node(
@@ -322,106 +417,48 @@ def _make_driver_node(
     on_state_checkpoint: Callable[[RunState], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Driver node function for the graph.
-    
+
     Args:
         mode: "red" or "green" for BTN-11 RED/GREEN mode support
     """
     from battalion.nodes.driver import run_driver
-    from battalion.prompts.loader import load_system_prompt
-    
+
     node_name = NODE_DRIVER_RED if mode == "red" else NODE_DRIVER_GREEN
-    
-    def node(state: RunState) -> RunState:
-        entered_state = state
-        model_config = llm_configs.get("driver", llm_configs.get("default"))
-        capture = ExecutionCapture.start(
-            state, node_name, _configured_model(llm_configs, "driver"), base_dir,
-            prompts_dir=prompts_dir, model_configuration=model_config,
-        )
-        state = _deliver_interventions(
-            state, node_name, capture.execution_id, on_state_checkpoint
-        )
-        capture.include_human_interventions(state)
-        # Increment budget for this LLM call
-        state = increment_budget(state)
-        
-        instincts = (
-            _role_instincts(instinct_retriever, state, InstinctAudience.DRIVER)
-            if instinct_retriever is not None
-            else ()
-        )
-        ticket_text = driver_context(
-            state,
-            base_dir,
-            mode,
-            instincts=instincts,
-            node_execution_id=capture.execution_id,
-        )
-        
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_start",
-                "node": node_name,
-                "budget": {"used": state.budget.used, "limit": state.budget.limit},
-            })
-        try:
-            node_kwargs = {"on_stream": on_token} if on_token is not None else {}
-            new_state = run_driver(
-                state=state,
-                ticket_text=ticket_text,
-                llm_config=model_config,
-                base_dir=base_dir,
-                mode=mode,
-                prompts_dir=prompts_dir,
-                **node_kwargs,
+
+    def build_inputs(
+        state: RunState,
+        instincts: tuple[AcceptedInstinct, ...],
+        execution_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "ticket_text": driver_context(
+                state, base_dir, mode,
+                instincts=instincts, node_execution_id=execution_id,
             )
-        except (InfraFailure, ScopeViolationError) as exc:
-            if on_node_event is not None:
-                on_node_event({
-                    "type": "node_error",
-                    "node": node_name,
-                    "error": str(exc),
-                })
-            paused = _handle_node_error(
-                state, exc,
-                next_phase=NODE_TO_PHASE.get(f"driver_{mode}", "reviewer"),
-                resume_node=node_name,
-                node_name=node_name,
-                on_node_event=on_node_event,
-            )
-            return capture.finish(entered_state, paused)
-        
-        # Driver always transitions to reviewer
-        # The specific reviewer checkpoint is determined by the graph edges
-        next_phase = NODE_TO_PHASE.get(f"driver_{mode}", "reviewer")
-        
-        # Check interrupts
-        should_pause, trigger_id, context = check_any_trigger(
-            new_state, old_state=state, next_phase=next_phase
-        )
-        
-        if should_pause:
-            context = {**context, "next_phase": NEXT_NODE_ON_PAUSE[node_name]}
-            new_state = log_interrupt(new_state, trigger_id, context)
-            new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
-            if on_node_event is not None:
-                on_node_event({
-                    "type": "interrupt",
-                    "node": node_name,
-                    "trigger": trigger_id,
-                    "context": context,
-                })
-        
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_end",
-                "node": node_name,
-                "phase": new_state.phase,
-                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
-            })
-        return capture.finish(entered_state, new_state)
-    
-    return node
+        }
+
+    driver_next_phase = NODE_TO_PHASE.get(f"driver_{mode}", "reviewer")
+    return _scaffold_node(
+        node_name=node_name,
+        llm_roles=("driver",),
+        runner=run_driver,
+        build_inputs=build_inputs,
+        audience=InstinctAudience.DRIVER,
+        static_kwargs={"mode": mode},
+        llm_configs=llm_configs,
+        base_dir=base_dir,
+        prompts_dir=prompts_dir,
+        on_node_event=on_node_event,
+        on_token=on_token,
+        instinct_retriever=instinct_retriever,
+        on_state_checkpoint=on_state_checkpoint,
+        # A failed Driver attempt resumes at itself so the retry re-runs the
+        # same RED/GREEN phase rather than skipping ahead.
+        error_next_phase=driver_next_phase,
+        error_resume_node=node_name,
+        check_next_phase=driver_next_phase,
+        pause_resume_node=NEXT_NODE_ON_PAUSE[node_name],
+    )
 
 
 def _make_reviewer_node(
@@ -434,97 +471,50 @@ def _make_reviewer_node(
     instinct_retriever: InstinctRetriever | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Reviewer node function for the graph.
-    
+
     Args:
         checkpoint: The checkpoint type (RED_CHECK, GREEN_CHECK, REFACTOR_CHECK)
+
+    Reviewer runs tests mechanically and only calls the LLM to articulate a
+    rejection cause. It never receives write tools, queued interventions do
+    not target it, and its verdict evidence is recorded through the
+    checkpoint handed to the execution-capture finish path.
     """
     from battalion.nodes.reviewer import run_reviewer
-    from battalion.prompts.loader import load_system_prompt
-    
+
     node_name = _reviewer_node_name(checkpoint)
-    
-    def node(state: RunState) -> RunState:
-        entered_state = state
-        model_config = llm_configs.get("reviewer", llm_configs.get("default"))
-        capture = ExecutionCapture.start(
-            state, node_name, _configured_model(llm_configs, "reviewer"), base_dir,
-            prompts_dir=prompts_dir, model_configuration=model_config,
-        )
-        # Reviewer doesn't call LLM for the actual test run, but does for
-        # rejection cause articulation. Budget increment for the LLM call.
-        state = increment_budget(state)
-        
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_start",
-                "node": node_name,
-                "budget": {"used": state.budget.used, "limit": state.budget.limit},
-            })
-        try:
-            node_kwargs = {"on_stream": on_token} if on_token is not None else {}
-            if instinct_retriever is not None:
-                instincts = _role_instincts(
-                    instinct_retriever, state, InstinctAudience.REVIEWER
-                )
-                if instincts:
-                    node_kwargs["instinct_context"] = reviewer_context(
-                        state, instincts=instincts
-                    )
-            new_state = run_reviewer(
-                state=state,
-                base_dir=base_dir,
-                llm_config=model_config,
-                checkpoint=checkpoint,
-                prompts_dir=prompts_dir,
-                **node_kwargs,
-            )
-        except (InfraFailure, ScopeViolationError) as exc:
-            if on_node_event is not None:
-                on_node_event({
-                    "type": "node_error",
-                    "node": node_name,
-                    "error": str(exc),
-                })
-            paused = _handle_node_error(
-                state, exc,
-                next_phase=state.phase,
-                resume_node=CHECKPOINT_TO_RESUME_NODE[checkpoint],
-                node_name=node_name,
-                on_node_event=on_node_event,
-            )
-            return capture.finish(entered_state, paused, checkpoint=checkpoint)
-        
-        # Reviewer sets the next phase based on accept/reject
-        # But we need to check interrupts first
-        next_phase = new_state.phase
-        
-        # Check interrupts
-        should_pause, trigger_id, context = check_any_trigger(
-            new_state, old_state=state, next_phase=next_phase
-        )
-        
-        if should_pause:
-            context = {**context, "next_phase": CHECKPOINT_TO_RESUME_NODE[checkpoint]}
-            new_state = log_interrupt(new_state, trigger_id, context)
-            new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
-            if on_node_event is not None:
-                on_node_event({
-                    "type": "interrupt",
-                    "node": node_name,
-                    "trigger": trigger_id,
-                    "context": context,
-                })
-        
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_end",
-                "node": node_name,
-                "phase": new_state.phase,
-                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
-            })
-        return capture.finish(entered_state, new_state, checkpoint=checkpoint)
-    
-    return node
+
+    def build_inputs(
+        state: RunState,
+        instincts: tuple[AcceptedInstinct, ...],
+        execution_id: str,
+    ) -> dict[str, Any]:
+        if instincts:
+            return {"instinct_context": reviewer_context(state, instincts=instincts)}
+        return {}
+
+    resume_node = CHECKPOINT_TO_RESUME_NODE[checkpoint]
+    return _scaffold_node(
+        node_name=node_name,
+        llm_roles=("reviewer",),
+        runner=run_reviewer,
+        build_inputs=build_inputs,
+        audience=InstinctAudience.REVIEWER,
+        delivers_interventions=False,
+        static_kwargs={"checkpoint": checkpoint},
+        finish_checkpoint=checkpoint,
+        llm_configs=llm_configs,
+        base_dir=base_dir,
+        prompts_dir=prompts_dir,
+        on_node_event=on_node_event,
+        on_token=on_token,
+        instinct_retriever=instinct_retriever,
+        on_state_checkpoint=None,
+        error_next_phase=lambda state: state.phase,
+        error_resume_node=resume_node,
+        check_next_phase=lambda state: state.phase,
+        pause_resume_node=resume_node,
+    )
 
 
 def _make_refactorer_node(
@@ -538,99 +528,38 @@ def _make_refactorer_node(
 ) -> Callable[[RunState], RunState]:
     """Create the Refactorer node function for the graph."""
     from battalion.nodes.refactorer import run_refactorer
-    from battalion.prompts.loader import load_system_prompt
-    
-    def node(state: RunState) -> RunState:
-        entered_state = state
-        model_config = llm_configs.get(
-            "refactorer", llm_configs.get("driver", llm_configs.get("default"))
-        )
-        capture = ExecutionCapture.start(
-            state, NODE_REFACTORER,
-            _configured_model(llm_configs, "refactorer")
-            if "refactorer" in llm_configs
-            else _configured_model(llm_configs, "driver"),
-            base_dir, prompts_dir=prompts_dir, model_configuration=model_config,
-        )
-        state = _deliver_interventions(
-            state, NODE_REFACTORER, capture.execution_id, on_state_checkpoint
-        )
-        capture.include_human_interventions(state)
-        # Increment budget for this LLM call
-        state = increment_budget(state)
-        
-        instincts = (
-            _role_instincts(instinct_retriever, state, InstinctAudience.REFACTORER)
-            if instinct_retriever is not None
-            else ()
-        )
-        refactor_text = refactorer_context(
-            state,
-            base_dir,
-            instincts=instincts,
-            node_execution_id=capture.execution_id,
-        )
-        
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_start",
-                "node": NODE_REFACTORER,
-                "budget": {"used": state.budget.used, "limit": state.budget.limit},
-            })
-        try:
-            node_kwargs = {"on_stream": on_token} if on_token is not None else {}
-            new_state = run_refactorer(
-                state=state,
-                refactor_text=refactor_text,
-                llm_config=model_config,
-                base_dir=base_dir,
-                prompts_dir=prompts_dir,
-                **node_kwargs,
+
+    def build_inputs(
+        state: RunState,
+        instincts: tuple[AcceptedInstinct, ...],
+        execution_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "refactor_text": refactorer_context(
+                state, base_dir,
+                instincts=instincts, node_execution_id=execution_id,
             )
-        except (InfraFailure, ScopeViolationError) as exc:
-            if on_node_event is not None:
-                on_node_event({
-                    "type": "node_error",
-                    "node": NODE_REFACTORER,
-                    "error": str(exc),
-                })
-            paused = _handle_node_error(
-                state, exc,
-                next_phase=NODE_TO_PHASE[NODE_REFACTORER],
-                resume_node=NEXT_NODE_ON_PAUSE[NODE_REFACTORER],
-                node_name=NODE_REFACTORER,
-                on_node_event=on_node_event,
-            )
-            return capture.finish(entered_state, paused)
-        
-        # Check interrupts
-        next_phase = NODE_TO_PHASE[NODE_REFACTORER]
-        should_pause, trigger_id, context = check_any_trigger(
-            new_state, old_state=state, next_phase=next_phase
-        )
-        
-        if should_pause:
-            context = {**context, "next_phase": NEXT_NODE_ON_PAUSE[NODE_REFACTORER]}
-            new_state = log_interrupt(new_state, trigger_id, context)
-            new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
-            if on_node_event is not None:
-                on_node_event({
-                    "type": "interrupt",
-                    "node": NODE_REFACTORER,
-                    "trigger": trigger_id,
-                    "context": context,
-                })
-        
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_end",
-                "node": NODE_REFACTORER,
-                "phase": new_state.phase,
-                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
-            })
-        return capture.finish(entered_state, new_state)
-    
-    return node
+        }
+
+    refactorer_next_phase = NODE_TO_PHASE[NODE_REFACTORER]
+    return _scaffold_node(
+        node_name=NODE_REFACTORER,
+        llm_roles=("driver", "refactorer"),
+        runner=run_refactorer,
+        build_inputs=build_inputs,
+        audience=InstinctAudience.REFACTORER,
+        llm_configs=llm_configs,
+        base_dir=base_dir,
+        prompts_dir=prompts_dir,
+        on_node_event=on_node_event,
+        on_token=on_token,
+        instinct_retriever=instinct_retriever,
+        on_state_checkpoint=on_state_checkpoint,
+        error_next_phase=refactorer_next_phase,
+        error_resume_node=NEXT_NODE_ON_PAUSE[NODE_REFACTORER],
+        check_next_phase=refactorer_next_phase,
+        pause_resume_node=NEXT_NODE_ON_PAUSE[NODE_REFACTORER],
+    )
 
 
 def _make_done_node() -> Callable[[RunState], RunState]:

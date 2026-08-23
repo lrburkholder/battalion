@@ -2218,6 +2218,29 @@
       "blocks": [],
       "assignee_role": "driver",
       "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
+      "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 9da6996, 'fix: refactor graph.py'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This commit was authored without the Mistral Vibe tool trailer; confirm authorship/tooling before review if that matters for review depth."
+    },
+    {
+      "id": "BTN-82",
+      "phase": "implementation",
+      "title": "Consolidate role-node factories behind a shared graph scaffold",
+      "status": "in-review",
+      "priority": "P2",
+      "description": "Replace the four near-duplicate _make_architect_node/_make_driver_node/_make_reviewer_node/_make_refactorer_node factories in battalion/graph.py with a single _scaffold_node higher-order function parameterized by node name, LLM role fallback chain, runner, input-builder, Instinct audience, and phase/resume routing, so the shared per-attempt sequence (execution capture, intervention delivery, budget increment, context assembly, node_start event, error/interrupt routing) is defined once.",
+      "acceptance_criteria": [
+        "battalion/graph.py contains one node-construction path (_scaffold_node) instead of four parallel factories with duplicated control flow",
+        "Per-role differences (LLM config fallback chain, runner function, dynamic input builder, Instinct audience, static kwargs, finish checkpoint, error/check/pause routing) are expressed as explicit parameters rather than copy-pasted logic",
+        "Historical per-role LLM config fallback chains (e.g. Refactorer's refactorer -> driver -> default) are preserved exactly by the shared resolver",
+        "InfraFailure and ScopeViolationError routing to an AWAITING_HUMAN pause, and all other exceptions propagating unchanged, is unchanged for every role",
+        "tests/test_graph.py exercises the shared scaffold with the same behavioral coverage the four separate factories previously had, per role",
+        "Full test suite passes with no behavior change observable from outside battalion/graph.py"
+      ],
+      "dependencies": [
+        "BTN-7"
+      ],
+      "blocks": [],
+      "assignee_role": "driver",
+      "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
       "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 3ec42cd, 'fix: generate tauri fixture for failure-diagnostics test'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This is a CI-hygiene fix and has no dependency on the graph.py refactor (BTN-82) or the status-doc system (BTN-83)."
     }
   ]
