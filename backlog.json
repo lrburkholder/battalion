@@ -1475,7 +1475,7 @@
       "id": "BTN-59",
       "phase": "implementation",
       "title": "Durable Actor identity and local operator provenance",
-      "status": "not-started",
+      "status": "done",
       "priority": "P1",
       "description": "Implement the accepted Actor identity contract and migrate current human-action attribution from free-form actor strings to durable actor references while preserving local-first operation and historical compatibility.",
       "acceptance_criteria": [
@@ -1499,7 +1499,7 @@
       ],
       "assignee_role": "driver",
       "source": "BTN-58; BTN-43 HumanActionRecord and HumanIntervention provenance",
-      "notes": "Do not add OAuth, passwords, cloud accounts, or remote login here. The purpose is to stop durable evidence from assuming that a human actor is merely an arbitrary display string."
+      "notes": "Completed 2026-08-21. Added the versioned project-local human/system Actor contract, atomic one-time offline FTUE bootstrap evidence, durable local selection, shared application bootstrap/inspection queries, and actor_id attribution for RunState human actions, interventions, interrupt resolution, Recon decisions, and accepted Intel. Literal pre-BTN-59 strings remain readable and render as legacy attribution; display snapshots remain immutable when Actor names change. CLI, desktop, and detached workers use the selected local Actor without OS usernames or authentication infrastructure. Validation: complete offline suite of 434 tests passed. OAuth, passwords, cloud accounts, remote login, capability enforcement, assignment, and ownership remain outside BTN-59."
     },
     {
       "id": "BTN-60",

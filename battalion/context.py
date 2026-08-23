@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, Sequence
 
+from battalion.actors import format_actor_attribution
 from battalion.intel.models import AcceptedInstinct
 from battalion.state.models import InterventionDisposition, RunState
 
@@ -155,7 +156,8 @@ def _human_intervention_context(
         return None
     return "\n\n".join(
         f"### {item.kind.value} ({item.action_id})\n"
-        f"Actor: {item.actor}\nTarget: {item.target.value}\n{item.text}"
+        f"Actor: {format_actor_attribution(item.actor, item.actor_id)}\n"
+        f"Target: {item.target.value}\n{item.text}"
         for item in delivered
     )
 

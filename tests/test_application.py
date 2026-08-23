@@ -19,6 +19,7 @@ from battalion.application import (
     start_run,
     state_path,
 )
+from battalion.actors import load_actor_registry
 from battalion.config import BattalionConfig
 from battalion.state.models import Budget, RunState, RunStatus
 
@@ -105,6 +106,19 @@ def test_start_run_requires_explicit_overwrite_authorization(tmp_path):
     assert raised.value.path == path
 
 
+def test_new_project_state_establishes_offline_local_actor(tmp_path):
+    state = create_initial_state(
+        "BTN-59",
+        "Durable Actor identity",
+        BattalionConfig(base_dir=str(tmp_path)),
+    )
+
+    registry = load_actor_registry(tmp_path)
+    assert state.project_id == str(registry.project_id)
+    assert registry.local_actor_id == registry.actors[0].actor_id
+    assert registry.actors[0].display_name == "Local Operator"
+
+
 def test_resume_run_loads_canonical_state_and_persists_result(tmp_path):
     paused = make_state(status=RunStatus.AWAITING_HUMAN)
     path = tmp_path / f"{paused.run_id}.json"
@@ -118,7 +132,10 @@ def test_resume_run_loads_canonical_state_and_persists_result(tmp_path):
         )
 
     result = resume_run(
-        ResumeRun(run_id=paused.run_id, config=BattalionConfig()),
+        ResumeRun(
+            run_id=paused.run_id,
+            config=BattalionConfig(base_dir=str(tmp_path)),
+        ),
         state_dir=tmp_path,
         _execute=execute,
     )
@@ -138,7 +155,10 @@ def test_resume_run_reports_non_paused_status_without_changing_policy(tmp_path):
     )
 
     result = resume_run(
-        ResumeRun(run_id=state.run_id, config=BattalionConfig()),
+        ResumeRun(
+            run_id=state.run_id,
+            config=BattalionConfig(base_dir=str(tmp_path)),
+        ),
         state_dir=tmp_path,
         _execute=lambda **kwargs: kwargs["state"],
     )

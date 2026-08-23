@@ -266,14 +266,14 @@ class StubController(DesktopController):
     def worker_for(self, run_id: str) -> WorkerRecord | None:
         return self.worker
 
-    def resolve_and_resume(self, run_id, actor, resolution):
-        self.resumes.append((run_id, actor, resolution))
+    def resolve_and_resume(self, run_id, resolution):
+        self.resumes.append((run_id, resolution))
 
-    def queue_intervention(self, run_id, kind, target, text, actor):
-        self.interventions.append((run_id, kind, target, text, actor))
+    def queue_intervention(self, run_id, kind, target, text):
+        self.interventions.append((run_id, kind, target, text))
 
-    def review_candidate(self, candidate_id, action, actor, edits=None):
-        self.reviews.append((candidate_id, action, actor, edits))
+    def review_candidate(self, candidate_id, action, edits=None):
+        self.reviews.append((candidate_id, action, edits))
 
 
 def test_execution_inspector_exposes_provenance_verification_and_cost_semantics():
@@ -356,11 +356,10 @@ def test_work_actions_are_exact_targeted_and_resume_only_paused_runs(qt_app, tmp
     assert [window.intervention_target.itemText(index) for index in range(1)] == [
         "Architect"
     ]
-    window.actor_edit.setText("human@example.com")
     window.resolution_edit.setText("Approved after review")
     window.resume_button.click()
     assert controller.resumes == [
-        ("paused", "human@example.com", "Approved after review")
+        ("paused", "Approved after review")
     ]
     window.intervention_text.setText("Use ADR-0023")
     window.queue_button.click()
@@ -382,11 +381,10 @@ def test_pending_candidate_actions_use_canonical_review_intents(qt_app, tmp_path
 
     assert item.text(1) == "pending"
     assert window.accept_candidate_button.isEnabled()
-    window.intel_actor_edit.setText("human@example.com")
     window.accept_candidate_button.click()
 
     assert controller.reviews == [
-        (candidate.instinct_id, ReviewAction.ACCEPT, "human@example.com", None)
+        (candidate.instinct_id, ReviewAction.ACCEPT, None)
     ]
     window.close()
 

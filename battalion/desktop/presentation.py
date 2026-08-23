@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from decimal import Decimal
 
+from battalion.actors import format_actor_attribution
 from battalion.application import IntelInspection, ProjectRunInspection, RunInspection
 from battalion.intel.models import AcceptedInstinct, CandidateInstinct
 from battalion.state.models import LLMCallCost, NodeExecution, RunStatus
@@ -88,7 +89,8 @@ def render_run(run: ProjectRunInspection, worker: WorkerRecord | None = None) ->
     if state.human_action_log:
         lines.extend(("", "HUMAN ACTIONS"))
         lines.extend(
-            f"- {item.occurred_at.isoformat()} · {item.actor} · {item.kind} · "
+            f"- {item.occurred_at.isoformat()} · "
+            f"{format_actor_attribution(item.actor, item.actor_id)} · {item.kind} · "
             f"{item.target} · {item.disposition} · resulting "
             f"{item.resulting_status.value}/{item.resulting_phase}"
             for item in state.human_action_log
@@ -231,7 +233,7 @@ def render_intel_item(item: AcceptedInstinct | CandidateInstinct) -> str:
     else:
         lines.append(
             "Accepted by: "
-            f"{item.acceptance_provenance.accepted_by} at "
+            f"{format_actor_attribution(item.acceptance_provenance.accepted_by, item.acceptance_provenance.accepted_by_actor_id)} at "
             f"{item.acceptance_provenance.accepted_at.isoformat()}"
         )
     return "\n".join(lines)

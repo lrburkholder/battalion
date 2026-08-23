@@ -68,7 +68,9 @@ dependencies, acceptance criteria, and current status.
 - ✅ **BTN-57**: GitHub Pages product showcase and production screenshots
 - ✅ **BTN-58**: Accepted Actor identity, authority, assignment, ownership, and
   collaboration architecture ([RFC-0007](docs/rfcs/rfc0007.md),
-  [ADR-0026](docs/adrs/adr0026.md)); implementation remains BTN-59–62
+  [ADR-0026](docs/adrs/adr0026.md))
+- ✅ **BTN-59**: Durable project-local Actor identity, offline local bootstrap,
+  Actor queries, and legacy-compatible human-action and Recon provenance
 
 ## Architecture
 
@@ -84,6 +86,7 @@ dependencies, acceptance criteria, and current status.
 | `battalion.intel.review` | Audited operator review and promotion boundary | ✅ Complete (BTN-23) |
 | `battalion.intel.retrieval` | Deterministic active-Instinct selection | ✅ Complete (BTN-24) |
 | `battalion.application` | Typed run, resume, inspection, human-action, Intel-review, identity, and worker boundary shared by presentation clients | ✅ Complete (BTN-43) |
+| `battalion.actors` | Durable human/system Actor identity, offline FTUE bootstrap, selection, and project-local persistence | ✅ Complete (BTN-59) |
 | `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | ✅ Complete (BTN-32) |
 | `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | ✅ Complete (BTN-31) |
 | `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | ✅ Complete (BTN-36) |
@@ -511,8 +514,9 @@ changes Battalion's current roles or authority until its RFC is accepted:
   capabilities, assignment and Ticket ownership, and provider-neutral
   authentication. BTN-58 accepted
   [RFC-0007](docs/rfcs/rfc0007.md) and
-  [ADR-0026](docs/adrs/adr0026.md); runtime behavior remains deferred to
-  BTN-59–62.
+  [ADR-0026](docs/adrs/adr0026.md). BTN-59 delivers Actor persistence, local
+  bootstrap and selection, application queries, and compatible attribution;
+  authorization, assignment/ownership, and authentication remain BTN-60–62.
 - **BTN-65:** Define transport-neutral WorkSource, KnowledgeSource,
   RepositoryService, Notification, OutboundEventSink, and HumanInteraction
   capabilities above provider adapters and transports.

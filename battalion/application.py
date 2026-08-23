@@ -18,6 +18,17 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
+from battalion.actors import (
+    Actor,
+    ActorError,
+    ActorKind,
+    ActorRegistry,
+    ActorStatus,
+    bootstrap_local_actor,
+    get_actor,
+    get_local_actor,
+    load_actor_registry,
+)
 from battalion.config import BattalionConfig
 from battalion.execution import summarize_costs
 from battalion.identity import (
@@ -154,6 +165,15 @@ class IntelReadFailed(ApplicationError):
         super().__init__(f"Could not read Intel for {project_root}: {cause}")
 
 
+class ActorRegistryFailed(ApplicationError):
+    """Raised when project Actor identity cannot be created or inspected."""
+
+    def __init__(self, project_root: Path, cause: Exception) -> None:
+        self.project_root = project_root
+        self.cause = cause
+        super().__init__(f"Could not access Actors for {project_root}: {cause}")
+
+
 class HumanActionRejected(ApplicationError):
     """Raised when a requested human action violates durable authority policy."""
 
@@ -204,7 +224,7 @@ class ResumeRun:
 
     run_id: str
     config: BattalionConfig
-    actor: str = "operator"
+    actor_id: UUID | None = None
     resolution: str = "authorized resume"
 
 
@@ -216,7 +236,8 @@ class QueueIntervention:
     kind: InterventionKind
     target: InterventionTarget
     text: str
-    actor: str
+    project_root: str | Path = "."
+    actor_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -226,7 +247,7 @@ class ReviewCandidate:
     project_root: str | Path
     candidate_id: str
     action: ReviewAction
-    actor: str
+    actor_id: UUID | None = None
     edits: Mapping[str, Any] | None = None
 
 
@@ -247,6 +268,21 @@ class InspectProject:
 @dataclass(frozen=True)
 class InspectIntel:
     """Read-only request for accepted Intel and immutable Recon candidates."""
+
+    project_root: str | Path
+
+
+@dataclass(frozen=True)
+class BootstrapLocalActor:
+    """Establish the first explicit human Actor for a local project."""
+
+    project_root: str | Path
+    display_name: str
+
+
+@dataclass(frozen=True)
+class InspectActors:
+    """Read-only request for a project's durable Actor identities."""
 
     project_root: str | Path
 
@@ -348,6 +384,15 @@ class IntelInspection:
 
 
 @dataclass(frozen=True)
+class ActorInspection:
+    """Validated Actor projection exposed through the shared query boundary."""
+
+    actors: tuple[Actor, ...]
+    local_actor: Actor | None
+    registry: ActorRegistry
+
+
+@dataclass(frozen=True)
 class HumanActionResult:
     """Durable run state produced by an authorized human action."""
 
@@ -377,6 +422,7 @@ def create_initial_state(
     """Create one canonical new-run state through the application boundary."""
     try:
         project = load_project_identity(config.base_dir, create=True)
+        _resolve_human_actor(config.base_dir, None)
     except (IdentityError, OSError) as exc:
         raise IdentityApplicationError(str(exc)) from exc
     identity = generate_run_identity(ticket_id)
@@ -467,11 +513,12 @@ def resume_run(
 ) -> RunOperationResult:
     """Load, resume through the canonical graph behavior, and save one run."""
     state = _load_run(command.run_id, state_dir)
+    actor = _resolve_human_actor(command.config.base_dir, command.actor_id)
     warning = None
     if state.status == RunStatus.AWAITING_HUMAN:
         state = _resolve_latest_interrupt(
             state,
-            actor=command.actor,
+            actor=actor,
             resolution=command.resolution,
         )
         save_state(state, state_path(command.run_id, state_dir))
@@ -554,6 +601,26 @@ def inspect_project(query: InspectProject) -> ProjectInspection:
     return ProjectInspection(project_root=root, identity=identity, runs=runs)
 
 
+def establish_local_actor(command: BootstrapLocalActor) -> ActorInspection:
+    """Perform the one-time local Actor bootstrap through the application boundary."""
+    root = Path(command.project_root).resolve()
+    try:
+        registry = bootstrap_local_actor(root, command.display_name)
+    except (ActorError, IdentityError, OSError, ValueError, TypeError) as exc:
+        raise ActorRegistryFailed(root, exc) from exc
+    return _actor_inspection(registry)
+
+
+def inspect_actors(query: InspectActors) -> ActorInspection:
+    """Load Actors without exposing their project-local persistence path."""
+    root = Path(query.project_root).resolve()
+    try:
+        registry = load_actor_registry(root)
+    except (ActorError, IdentityError, OSError, ValueError, TypeError) as exc:
+        raise ActorRegistryFailed(root, exc) from exc
+    return _actor_inspection(registry)
+
+
 def inspect_intel(query: InspectIntel) -> IntelInspection:
     """Load local Intel and Recon evidence through a read-only application query."""
     root = Path(query.project_root).resolve()
@@ -575,6 +642,39 @@ def inspect_intel(query: InspectIntel) -> IntelInspection:
         candidates=tuple(entry.candidate for entry in entries),
         candidate_entries=tuple(entries),
     )
+
+
+def _actor_inspection(registry: ActorRegistry) -> ActorInspection:
+    local = next(
+        (actor for actor in registry.actors if actor.actor_id == registry.local_actor_id),
+        None,
+    )
+    return ActorInspection(
+        actors=registry.actors,
+        local_actor=local,
+        registry=registry,
+    )
+
+
+def _resolve_human_actor(
+    project_root: str | Path, actor_id: UUID | None
+) -> Actor:
+    """Resolve explicit identity or establish the offline local default once."""
+    root = Path(project_root).resolve()
+    try:
+        load_project_identity(root, create=True)
+        actor = get_actor(root, actor_id) if actor_id is not None else get_local_actor(root)
+    except ActorError:
+        if actor_id is not None:
+            raise HumanActionRejected(f"Unknown Actor {actor_id}") from None
+        try:
+            registry = bootstrap_local_actor(root, "Local Operator")
+            actor = registry.actors[0]
+        except (ActorError, IdentityError, OSError, ValueError, TypeError) as exc:
+            raise HumanActionRejected(f"No local human Actor is available: {exc}") from exc
+    if actor.kind is not ActorKind.HUMAN or actor.status is not ActorStatus.ACTIVE:
+        raise HumanActionRejected("Human actions require an active human Actor")
+    return actor
 
 
 def queue_intervention(
@@ -611,6 +711,7 @@ def _persist_intervention(
     action_id: str | None,
 ) -> HumanActionResult:
     state = _load_run(command.run_id, state_dir)
+    actor = _resolve_human_actor(command.project_root, command.actor_id)
     occurred_at = (clock or (lambda: datetime.now(timezone.utc)))()
     identifier = action_id or f"action-{uuid4()}"
     try:
@@ -621,7 +722,8 @@ def _persist_intervention(
             kind=kind,
             target=target,
             text=command.text,
-            actor=command.actor,
+            actor=actor.display_name,
+            actor_id=actor.actor_id,
             requested_at=occurred_at,
         )
     except (TypeError, ValueError) as exc:
@@ -629,7 +731,8 @@ def _persist_intervention(
     action = HumanActionRecord(
         action_id=identifier,
         kind=kind.value,
-        actor=command.actor,
+        actor=actor.display_name,
+        actor_id=actor.actor_id,
         occurred_at=occurred_at,
         target=target.value,
         disposition="queued",
@@ -650,6 +753,7 @@ def _persist_intervention(
 def review_candidate(command: ReviewCandidate) -> CandidateReviewResult:
     """Apply one candidate decision through the audited Intel workflow."""
     root = Path(command.project_root).resolve()
+    actor = _resolve_human_actor(root, command.actor_id)
     candidates = CandidateRepository(root / ".battalion" / "recon" / "candidates")
     workflow = InstinctReviewWorkflow(
         IntelRepository(root / ".battalion" / "intel"),
@@ -660,17 +764,17 @@ def review_candidate(command: ReviewCandidate) -> CandidateReviewResult:
         if command.action is ReviewAction.ACCEPT:
             if command.edits:
                 raise HumanActionRejected("accept does not permit candidate edits")
-            decision = workflow.accept(candidate, decided_by=command.actor)
+            decision = workflow.accept(candidate, decided_by=actor)
         elif command.action is ReviewAction.EDIT_AND_ACCEPT:
             decision = workflow.edit_then_accept(
                 candidate,
-                decided_by=command.actor,
+                decided_by=actor,
                 edits=command.edits or {},
             )
         else:
             if command.edits:
                 raise HumanActionRejected("reject does not permit candidate edits")
-            decision = workflow.reject(candidate, decided_by=command.actor)
+            decision = workflow.reject(candidate, decided_by=actor)
     except HumanActionRejected:
         raise
     except (
@@ -738,8 +842,7 @@ def start_worker(
 
     state_path(operation.run_id, state_dir)  # validate before using it as a filename
     state = _load_run(operation.run_id, state_dir)
-    if not operation.actor.strip():
-        raise HumanActionRejected("Human action actor must not be empty")
+    actor = _resolve_human_actor(operation.config.base_dir, operation.actor_id)
     if not operation.resolution.strip():
         raise HumanActionRejected("Interrupt resolution must not be empty")
     if state.status is RunStatus.AWAITING_HUMAN:
@@ -747,7 +850,7 @@ def start_worker(
         # the worker performs and persists the actual state transition.
         _resolve_latest_interrupt(
             state,
-            actor=operation.actor,
+            actor=actor,
             resolution=operation.resolution,
         )
     try:
@@ -759,7 +862,7 @@ def start_worker(
             config=operation.config,
             state_dir=state_dir,
             worker_dir=worker_dir,
-            resume_actor=operation.actor,
+            resume_actor_id=actor.actor_id,
             resume_resolution=operation.resolution,
         )
     except _WorkerAlreadyActive as exc:
@@ -830,7 +933,7 @@ def _live_callbacks(
 def _resolve_latest_interrupt(
     state: RunState,
     *,
-    actor: str,
+    actor: Actor,
     resolution: str,
     occurred_at: datetime | None = None,
     action_id: str | None = None,
@@ -862,7 +965,8 @@ def _resolve_latest_interrupt(
         action = HumanActionRecord(
             action_id=identifier,
             kind="interrupt-resolution",
-            actor=actor,
+            actor=actor.display_name,
+            actor_id=actor.actor_id,
             occurred_at=timestamp,
             target=target,
             disposition="applied",

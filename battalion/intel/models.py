@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -60,6 +61,7 @@ class AcceptanceProvenance(_ContractModel):
 
     accepted_at: datetime
     accepted_by: str = Field(min_length=1, max_length=500)
+    accepted_by_actor_id: UUID | None = None
 
 
 class InstinctBase(_ContractModel):

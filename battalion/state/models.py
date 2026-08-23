@@ -80,6 +80,7 @@ class HumanIntervention(BaseModel):
     target: InterventionTarget
     text: str = Field(min_length=1, max_length=4000)
     actor: str = Field(min_length=1, max_length=500)
+    actor_id: UUID | None = None
     requested_at: datetime
     disposition: InterventionDisposition = InterventionDisposition.QUEUED
     delivered_to_execution_id: str | None = Field(default=None, max_length=200)
@@ -105,6 +106,7 @@ class HumanActionRecord(BaseModel):
     action_id: str = Field(min_length=1, max_length=200)
     kind: Literal["interrupt-resolution", "correction", "design-decision"]
     actor: str = Field(min_length=1, max_length=500)
+    actor_id: UUID | None = None
     occurred_at: datetime
     target: str = Field(min_length=1, max_length=200)
     disposition: Literal["applied", "queued", "delivered", "rejected"]

@@ -32,7 +32,10 @@ BTN-58 is complete on its feature branch with accepted
 [ADR-0026](docs/adrs/adr0026.md). They define durable Actor identity, explicit
 project capabilities, FTUE bootstrap provenance, assignment and Ticket
 ownership history, and non-authoritative collaboration evidence. Runtime
-identity and authorization behavior remains deferred to BTN-59 through BTN-62.
+BTN-59 now implements the durable project-local Actor registry, offline FTUE
+bootstrap evidence, local human selection, application queries, and compatible
+Actor attribution for run and Recon evidence. Capability enforcement,
+assignment/ownership, and authentication remain BTN-60 through BTN-62.
 
 ## Architecture overview
 
@@ -63,6 +66,7 @@ resume through the same graph path.
 ```text
 battalion/
   application.py          # shared typed commands, queries, and domain failures
+  actors.py               # durable Actor contract, bootstrap, and local registry
   identity.py             # canonical UUIDs, project markers, and run catalogs
   workers.py              # detached per-run process supervision and recovery
   observation.py          # typed live events, ordering, and reconnect cursors
