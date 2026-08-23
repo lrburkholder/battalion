@@ -2197,6 +2197,30 @@
       "assignee_role": "driver",
       "source": "User Actor notification availability and configurable deferral policy discussion 2026-08-21",
       "notes": "Availability is an Actor-level Battalion policy evaluated before provider routing, not behavior implemented independently by notification adapters. Initial DND actions are deliver, defer, and suppress, and initial deferred-delivery mode is next_available_window. Digest delivery, fixed-time delivery, escalation, on-call routing, fallback Actors, and calendar-derived availability are future extensions rather than scope for this ticket."
+    },
+    {
+      "id": "BTN-83",
+      "phase": "architecture",
+      "title": "Generate status documentation from the canonical backlog (ADR-0027)",
+      "status": "in-review",
+      "priority": "P2",
+      "description": "Stop hand-maintaining ticket status in four places (README Status/Roadmap sections, plan.md, ADR index, backlog.json) by making docs/status.md the single human-readable status document, mechanically generating its 'Delivered work' region from backlog.json via scripts/sync_status.py, and splicing that document verbatim into README.md between marker comments, with drift caught by tests/CI instead of trusted to hand edits.",
+      "acceptance_criteria": [
+        "backlog.json remains the sole machine-readable source of truth for ticket identity and status",
+        "docs/status.md contains authored narrative (current milestone, roadmap themes) plus a generated 'Delivered work' region produced by scripts/sync_status.py from backlog.json",
+        "scripts/sync_status.py splices docs/status.md into README.md between HTML comment markers, and its --check mode fails on drift without writing",
+        "Authored ticket citations in docs/status.md are validated against backlog.json (tests/test_docs_status.py) so 'Complete' claims must cite done tickets",
+        "docs/status.md and backlog.json are added to the PUBLISHED_DOCUMENTS set in scripts/build_pages.py so publication stays explicit",
+        "AGENTS.md documents the sync_status.py workflow and the requirement to keep --check clean before handoff",
+        "The first reconciliation pass corrects any already-stale status references (e.g. the ADR-0023 index entry) and replaces the README's hand-written checklist with the generated projection"
+      ],
+      "dependencies": [
+        "BTN-50"
+      ],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
+      "notes": "Implemented and accepted already on branch codex/btn-50-repo-badges (commit 16029bd, 'docs: refactor status docs', with ADR-0027 authored and marked Accepted in the same commit). Splitting into its own ticket/PR per no-scope-bundling convention -- an ADR that changes how backlog status is published should get independent review rather than ride along with a P3 badges ticket. Depends on BTN-50: this branch is built on top of BTN-50's badge/workflow commits because the generated status region and the badge row share README.md, and the ADR-0027 commit was authored after BTN-50 landed on the source branch. Merge BTN-50 first. This commit was authored without the Mistral Vibe tool trailer; confirm authorship/tooling before review."
     }
   ]
 }

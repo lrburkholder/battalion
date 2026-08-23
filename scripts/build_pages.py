@@ -17,10 +17,12 @@ PUBLISHED_DOCUMENTS = {
     ".github/pages/index.md": "index.md",
     "spec.md": "spec.md",
     "plan.md": "plan.md",
+    "backlog.json": "backlog.json",
+    "docs/status.md": "docs/status.md",
     "docs/adrs/README.md": "docs/adrs/index.md",
     **{
         f"docs/adrs/adr{number:04d}.md": f"docs/adrs/adr{number:04d}.md"
-        for number in range(1, 27)
+        for number in range(1, 28)
     },
     "docs/rfcs/rfc0004.md": "docs/rfcs/rfc0004.md",
     "docs/ui/workflow.md": "docs/operator/workflow.md",
@@ -47,7 +49,9 @@ SUPPORTING_FILES = {
     "docs/assets/screenshots/battalion-intel.png": "assets/screenshots/battalion-intel.png",
 }
 
-MARKDOWN_LINK = re.compile(r"(?P<prefix>\[[^]]+\]\()(?P<target>[^)#]+\.md)(?P<suffix>(?:#[^)]+)?\))")
+MARKDOWN_LINK = re.compile(
+    r"(?P<prefix>\[[^]]+\]\()(?P<target>[^)#]+\.(?:md|json))(?P<suffix>(?:#[^)]+)?\))"
+)
 
 
 def _rewrite_markdown_links(content: str, source: str) -> str:
@@ -56,15 +60,26 @@ def _rewrite_markdown_links(content: str, source: str) -> str:
     source_directory = Path(source).parent
 
     def replace(match: re.Match[str]) -> str:
-        target = posixpath.normpath(
-            (source_directory / match.group("target")).as_posix()
+        raw_target = match.group("target")
+        source_relative = posixpath.normpath(
+            (source_directory / raw_target).as_posix()
         )
-        destination = PUBLISHED_DOCUMENTS.get(target)
+        destination = PUBLISHED_DOCUMENTS.get(source_relative)
+        if destination is None:
+            # Links may also reference published files from the repository
+            # root regardless of the referencing document's location.
+            root_relative = posixpath.normpath(raw_target)
+            destination = PUBLISHED_DOCUMENTS.get(root_relative)
         if destination is None:
             return match.group(0)
-        html_target = str(Path(destination).with_suffix(".html")).replace("\\", "/")
+        if destination.endswith(".md"):
+            link_target = str(Path(destination).with_suffix(".html"))
+        else:
+            link_target = destination
         current_destination = Path(PUBLISHED_DOCUMENTS[source]).parent.as_posix()
-        relative_target = posixpath.relpath(html_target, current_destination)
+        relative_target = posixpath.relpath(
+            link_target.replace("\\", "/"), current_destination
+        )
         return f'{match.group("prefix")}{relative_target}{match.group("suffix")}'
 
     return MARKDOWN_LINK.sub(replace, content)
