@@ -1213,7 +1213,7 @@
       "id": "BTN-50",
       "phase": "rollout",
       "title": "Repository status badges and README trust signals",
-      "status": "in-progress",
+      "status": "done",
       "priority": "P3",
       "description": "Add a compact, accessible badge row to the Battalion README that communicates verifiable repository health and project entry points without making unsupported package, service, or contribution claims.",
       "acceptance_criteria": [

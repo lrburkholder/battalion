@@ -5,6 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://lrburkholder.github.io/battalion)
 
+<!-- Badge candidates reviewed and omitted (BTN-50): stars (popularity, not
+health), contribution guidance (no CONTRIBUTING.md or contribution policy
+yet), container registry (no published images), API/DeepWiki-style services
+(third-party services Battalion has not adopted), and "PRs welcome" (no
+contribution policy to back the claim). Add a badge only when its target and
+claim become verifiable. -->
+
 A LangGraph-based orchestrator that runs parts of the SDLC as a connected graph with explicit, human-controlled interrupt points, replacing manual slash-command handoff with handoff-to-orchestrator while preserving human oversight at defined decision points.
 
 ## Overview
@@ -33,9 +40,11 @@ operator architecture, shared application boundary, isolated active-run worker
 supervision, durable run/project identity, durable Actor identity and local
 bootstrap, operator evidence, typed live-observation, and the PySide6 console
 with human-action surfaces (BTN-42–43, BTN-56, BTN-59) are implemented.
-BTN-50 repository badges are in flight. BTN-57 adds the public Pages landing
-experience with reviewed production-client screenshots; it is complete on its
-feature branch, and the live site updates after merge to `main`.
+Repository status badges with a credential-independent test workflow (BTN-50),
+the shared graph node scaffold (BTN-82), backlog-generated status
+documentation (BTN-83, ADR-0027), and the hermetic Tauri benchmark fixture
+(BTN-84) are shipped. The public Pages landing experience with reviewed
+production-client screenshots (BTN-57) is live.
 
 ## Delivered work
 
@@ -87,19 +96,22 @@ feature branch, and the live site updates after merge to `main`.
 | BTN-41 | Desktop framework selection ADR | Yes |
 | BTN-42 | Read-only desktop operator console | Yes |
 | BTN-43 | Desktop human-action surfaces | Yes |
+| BTN-50 | Repository status badges and README trust signals | Yes |
 | BTN-51 | Zero-cost inference and model-endpoint architecture RFC | Yes |
 | BTN-56 | Desktop visual system and brand assets | Yes |
 | BTN-57 | GitHub Pages product showcase and visual assets | Yes |
 | BTN-58 | Human identity, authority, assignment, and collaboration RFC | Yes |
 | BTN-59 | Durable Actor identity and local operator provenance | Yes |
 | BTN-65 | Transport-neutral integration capability architecture | Yes |
+| BTN-82 | Consolidate role-node factories behind a shared graph scaffold | Yes |
+| BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Yes |
+| BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
 
 ### In flight
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Review |
-| BTN-50 | Repository status badges and README trust signals | Wip |
+| — | Nothing currently in flight | — |
 
 ### Cancelled
 
