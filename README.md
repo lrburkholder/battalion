@@ -106,6 +106,7 @@ production-client screenshots (BTN-57) is live.
 | BTN-82 | Consolidate role-node factories behind a shared graph scaffold | Yes |
 | BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Yes |
 | BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
+| BTN-86 | Cartography persistence benchmark and selection spike | Yes |
 
 ### In flight
 

@@ -2266,6 +2266,26 @@
       "assignee_role": "driver",
       "source": "Split out of the codex/btn-50-repo-badges branch 2026-08-23; not in scope for BTN-50",
       "notes": "Implemented already on branch codex/btn-50-repo-badges (commit 9da6996, 'fix: refactor graph.py'), bundled alongside unrelated BTN-50 badge work. Splitting into its own ticket/PR per no-scope-bundling convention. This commit was authored without the Mistral Vibe tool trailer; confirm authorship/tooling before review if that matters for review depth."
+    },
+    {
+      "id": "BTN-86",
+      "phase": "architecture",
+      "title": "Cartography persistence benchmark and selection spike",
+      "status": "done",
+      "priority": "P1",
+      "description": "Benchmark candidate physical persistence approaches for RFC-0008's candidate-neutral Cartography contract, emphasizing the architectural simplicity and boundary integrity of integrating each approach into Battalion rather than raw throughput.",
+      "acceptance_criteria": [
+        "A deterministic, provider-free fixture exercises the same logical map, bounded retrieval, relationship traversal, revision diff, atomic publication failure recovery, and generated-projection semantics for every candidate",
+        "The comparison includes Markdown/Gator-style charters as a control, repository-native structured files, SQLite or equivalent zero-service embedded structured storage, one credible lightweight embedded graph-oriented representation, and a structured-canonical plus human-readable projection hybrid",
+        "Evidence measures integration simplicity: new dependencies, production interfaces, candidate-specific files and lines, schema/migration and recovery code, portability, inspectability, test diagnostics, projection authority, and any raw-store leakage past a Battalion-owned persistence/query contract",
+        "Execution roles receive no raw SQL, database handle, graph query, or arbitrary map-mutation capability in any candidate design",
+        "The spike remains isolated from production persistence and makes no storage selection; a later ADR compares measured evidence and records any selected storage/projection boundary"
+      ],
+      "dependencies": ["BTN-85"],
+      "blocks": [],
+      "assignee_role": "architect",
+      "source": "RFC-0008 persistence boundary and user direction 2026-08-25",
+      "notes": "Completed 2026-08-25 on codex/btn-86-persistence-spikes. The provider-free disposable harness compared Markdown charters, structured files, SQLite, graph-adjacency JSON, SQLite plus Markdown, and graph-JSON plus generated Markdown against a common logical map. Candidate-owned retrieval, traversal, revision diff, failed-publication recovery, and raw-store-boundary tests pass. The graph-JSON-plus-Markdown spike also proves rename lookup, added/deleted evidence, preservation of an authored governing constraint, readable generated revision diffs, and visible stale projection state after projection failure. This ticket makes no production selection or persistence-authority change; a later ADR must record any selected production storage/projection boundary. BTN-87 retains low-priority SQLite reconsideration if future measured needs justify it."
     }
   ]
 }
