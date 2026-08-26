@@ -262,7 +262,10 @@ Battalion capabilities above provider adapters and transports. Accepted
 RepositoryService, Notification, OutboundEventSink, and HumanInteraction above
 interchangeable native/local, HTTP/REST, webhook, MCP, or protocol-specific
 transports. MCP and future plugins are optional implementation mechanisms, not
-competing policy or graph authorities. Runtime delivery remains BTN-66 through
+competing policy or graph authorities. BTN-66 now provides portable,
+credential-free project integration configuration with stable IDs, provider /
+transport / capability declarations, symbolic secret references, and bounded
+organization/Actor precedence. Provider runtime delivery remains BTN-67 through
 BTN-80.
 
 ## Risks and watch items
