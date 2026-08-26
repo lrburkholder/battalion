@@ -113,7 +113,7 @@ production-client screenshots (BTN-57) is live.
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| — | Nothing currently in flight | — |
+| BTN-67 | Integration adapter runtime and transport boundary | Wip |
 
 ### Cancelled
 
@@ -121,7 +121,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, acceptance criteria, and the 30 planned (not-started) tickets live in the canonical [backlog.json](backlog.json).
+Ticket scope, dependencies, acceptance criteria, and the 29 planned (not-started) tickets live in the canonical [backlog.json](backlog.json).
 
 <!-- END GENERATED:backlog-delivery -->
 
@@ -156,6 +156,7 @@ Ticket scope, dependencies, acceptance criteria, and the 30 planned (not-started
 | `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Complete |
 | `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | Complete |
 | `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | Complete (BTN-66) |
+| `battalion.integrations.runtime` | Capability-to-adapter-to-bounded-transport resolution with typed failures | In progress (BTN-67) |
 | `battalion.setup` | Provider discovery, configuration, and connectivity checks | Complete (BTN-15) |
 | `battalion.progress` | Human-readable CLI progress events | Complete |
 | `battalion.cli` | Typer CLI - run/resume/status/setup | Complete (BTN-9, BTN-15) |
