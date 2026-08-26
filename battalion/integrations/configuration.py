@@ -1,9 +1,10 @@
 """Portable configuration models for Battalion-owned integrations.
 
-This module deliberately describes configuration only.  Provider adapters,
-transports, health checks, credential resolution, and operation policy are
-separate follow-up concerns.  Keeping the models here prevents shareable
-project configuration from becoming a source of ambient provider authority.
+This module deliberately describes configuration only.  BTN-67's runtime
+binds provider adapters and transports beneath these models; health checks,
+credential resolution, and operation policy remain separate follow-up
+concerns.  Keeping the models here prevents shareable project configuration
+from becoming a source of ambient provider authority.
 """
 
 from __future__ import annotations

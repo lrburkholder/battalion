@@ -104,6 +104,7 @@ production-client screenshots (BTN-57) is live.
 | BTN-59 | Durable Actor identity and local operator provenance | Yes |
 | BTN-65 | Transport-neutral integration capability architecture | Yes |
 | BTN-66 | Portable integration configuration and secret indirection | Yes |
+| BTN-67 | Integration adapter runtime and transport boundary | Yes |
 | BTN-82 | Consolidate role-node factories behind a shared graph scaffold | Yes |
 | BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Yes |
 | BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
@@ -121,7 +122,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, acceptance criteria, and the 30 planned (not-started) tickets live in the canonical [backlog.json](backlog.json).
+Ticket scope, dependencies, acceptance criteria, and the 29 planned (not-started) tickets live in the canonical [backlog.json](backlog.json).
 
 <!-- END GENERATED:backlog-delivery -->
 
@@ -156,6 +157,7 @@ Ticket scope, dependencies, acceptance criteria, and the 30 planned (not-started
 | `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Complete |
 | `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | Complete |
 | `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | Complete (BTN-66) |
+| `battalion.integrations.runtime` | Validated capability-to-adapter-to-bounded-transport resolution with typed failures | Complete (BTN-67) |
 | `battalion.setup` | Provider discovery, configuration, and connectivity checks | Complete (BTN-15) |
 | `battalion.progress` | Human-readable CLI progress events | Complete |
 | `battalion.cli` | Typer CLI - run/resume/status/setup | Complete (BTN-9, BTN-15) |
