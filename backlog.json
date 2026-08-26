@@ -1728,7 +1728,7 @@
       "id": "BTN-67",
       "phase": "implementation",
       "title": "Integration adapter runtime and transport boundary",
-      "status": "in-progress",
+      "status": "done",
       "priority": "P0",
       "description": "Implement the runtime boundary that resolves configured Battalion capabilities to approved provider adapters and transports without exposing unrestricted external clients to graph nodes or application callers.",
       "acceptance_criteria": [

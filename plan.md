@@ -25,7 +25,7 @@ presentation data only and does not change the application boundary, role
 authority, graph, interrupt semantics, or knowledge lifecycle.
 BTN-65 is complete with accepted RFC-0006 and ADR-0025. They separate Battalion
 capability contracts from provider adapters and transports and define the six
-initial capability boundaries. BTN-67 is implementing the validated,
+initial capability boundaries. BTN-67 now supplies the validated,
 least-authority capability-to-adapter-to-transport runtime; individual
 capability operations remain follow-up implementation work.
 BTN-58 is complete on its feature branch with accepted
@@ -266,10 +266,10 @@ transports. MCP and future plugins are optional implementation mechanisms, not
 competing policy or graph authorities. BTN-66 now provides portable,
 credential-free project integration configuration with stable IDs, provider /
 transport / capability declarations, symbolic secret references, and bounded
-organization/Actor precedence. BTN-67 is adding registered adapter and bounded
-transport resolution with deterministic typed failures. Operation policy, health
-validation, durable side-effect evidence, and individual provider operations
-remain BTN-68 through BTN-80.
+organization/Actor precedence. BTN-67 now resolves those bindings through
+registered adapters and bounded transports with deterministic typed failures.
+Operation policy, health validation, durable side-effect evidence, and
+individual provider operations remain BTN-68 through BTN-80.
 
 ## Risks and watch items
 
