@@ -117,6 +117,14 @@ Fields per ticket/run (draft — to be refined during Architect phase):
   pause after — supports interrupt trigger #6)
 - `execution_record` (a separately versioned, validated history of node
   attempts; see ADR-0014)
+- `side_effect_ledger` (a separately versioned, validated ledger of externally
+  visible side effects: stable Battalion logical operation IDs minted before
+  first delivery, ordered attempt evidence with typed succeeded/failed/
+  ambiguous outcomes, reconciliation records for unresolved operations, Run
+  identity plus Actor identity where applicable, capability/integration/
+  operation references, timestamps, bounded detail text, and optional SHA-256
+  request digests; never secrets or external payload contents — see
+  ADR-0029)
 
 New-run construction belongs to the shared application boundary. It generates
 the canonical run UUID and project marker before execution; graph nodes cannot

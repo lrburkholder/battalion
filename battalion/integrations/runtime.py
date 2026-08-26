@@ -6,9 +6,11 @@ application code receives capability-specific ports, provider adapters receive
 only a bounded transport facade, and neither layer receives a raw client
 registry.
 
-Individual capability operations and their policy/evidence semantics are
-delivered by later tickets.  This module establishes the structural binding
-needed for those operations without granting a generic external-tool API.
+Individual capability operations and their policy semantics are delivered by
+later tickets.  This module establishes the structural binding needed for
+those operations without granting a generic external-tool API.  Durable
+side-effect evidence and replay-safe delivery for externally visible
+operations live in :mod:`battalion.integrations.effects` (BTN-70).
 """
 
 from __future__ import annotations

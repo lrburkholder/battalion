@@ -34,6 +34,7 @@ status states whether it is part of the shipped system.
 | [ADR-0026](adr0026.md) | Separate Actor identity, authority, and responsibility | Accepted | BTN-58; implementation deferred to BTN-59–62 |
 | [ADR-0027](adr0027.md) | Generate status documentation from the canonical backlog | Accepted | docs/status.md + scripts/sync_status.py |
 | [ADR-0028](adr0028.md) | Authorize Battalion operations, not identities or transports | Accepted | BTN-64 architecture; runtime consumed by BTN-60/61/68 |
+| [ADR-0029](adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity | Accepted | BTN-70 substrate; consumed by BTN-71–80 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique

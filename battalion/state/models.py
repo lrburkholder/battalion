@@ -331,6 +331,149 @@ class ExecutionRecord(BaseModel):
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 
+class SideEffectOutcome(str, Enum):
+    """Confirmed knowledge about one external delivery attempt.
+
+    ``AMBIGUOUS`` means the attempt may have reached the provider; only
+    reconciliation against provider idempotency or status evidence may
+    resolve it (RFC-0006 "Failure and side-effect semantics").
+    """
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    AMBIGUOUS = "ambiguous"
+
+
+class SideEffectStatus(str, Enum):
+    """Replay-safety state of one logical external operation."""
+
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    AMBIGUOUS = "ambiguous"
+
+
+class SideEffectAttempt(BaseModel):
+    """Durable evidence for one delivery attempt of one logical operation.
+
+    Attempts never retain request or response payloads; bounded detail text,
+    digests, and provider references carry the audit weight.
+    """
+
+    attempt_number: int = Field(ge=1, le=10000)
+    started_at: datetime
+    ended_at: datetime
+    outcome: SideEffectOutcome
+    failure_category: str | None = Field(default=None, max_length=100)
+    detail: str | None = Field(default=None, max_length=2000)
+    provider_idempotency_used: bool = False
+    provider_reference: str | None = Field(default=None, max_length=500)
+    request_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("started_at", "ended_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("attempt timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_attempt_evidence(self) -> Self:
+        if self.ended_at < self.started_at:
+            raise ValueError("attempt cannot end before it starts")
+        if self.outcome is SideEffectOutcome.SUCCEEDED and self.failure_category is not None:
+            raise ValueError("succeeded attempts cannot record a failure category")
+        if self.outcome is not SideEffectOutcome.SUCCEEDED and self.failure_category is None:
+            raise ValueError("failed or ambiguous attempts require a failure category")
+        return self
+
+
+class SideEffectOperation(BaseModel):
+    """One logical externally visible operation with replay-safe identity.
+
+    ``operation_id`` is minted by Battalion before first delivery and is
+    stable across retries, resume, crashes, and duplicate processing.
+    """
+
+    operation_id: str = Field(
+        pattern=r"^op-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    )
+    dedupe_key: str = Field(min_length=1, max_length=200)
+    run_id: str = Field(min_length=1, max_length=200)
+    actor_id: UUID | None = None
+    capability: str = Field(min_length=1, max_length=100)
+    integration_id: str = Field(min_length=1, max_length=200)
+    integration_name: str = Field(min_length=1, max_length=200)
+    provider: str = Field(min_length=1, max_length=200)
+    transport: str = Field(min_length=1, max_length=100)
+    operation: str = Field(min_length=1, max_length=200)
+    created_at: datetime
+    status: SideEffectStatus = SideEffectStatus.PENDING
+    attempts: list[SideEffectAttempt] = Field(default_factory=list, max_length=100)
+    reconciled_at: datetime | None = None
+    reconciliation_detail: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("created_at", "reconciled_at")
+    @classmethod
+    def require_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("operation timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_operation_state(self) -> Self:
+        previous = 0
+        for attempt in self.attempts:
+            if attempt.attempt_number <= previous:
+                raise ValueError("attempt numbers must strictly increase from one")
+            previous = attempt.attempt_number
+        if (self.reconciled_at is None) != (self.reconciliation_detail is None):
+            raise ValueError("reconciliation requires both timestamp and detail")
+        if self.status is SideEffectStatus.PENDING:
+            if self.attempts or self.reconciled_at is not None:
+                raise ValueError("pending operations cannot record attempts or resolution")
+            return self
+        reconciled = self.reconciled_at is not None
+        expected = {
+            SideEffectStatus.SUCCEEDED: SideEffectOutcome.SUCCEEDED,
+            SideEffectStatus.FAILED: SideEffectOutcome.FAILED,
+            SideEffectStatus.AMBIGUOUS: SideEffectOutcome.AMBIGUOUS,
+        }[self.status]
+        if self.attempts:
+            if not reconciled and self.attempts[-1].outcome is not expected:
+                raise ValueError(
+                    f"{self.status.value} operations require a matching final attempt"
+                )
+        elif not reconciled:
+            raise ValueError(
+                f"{self.status.value} operations require an attempt or reconciliation"
+            )
+        return self
+
+
+class SideEffectLedger(BaseModel):
+    """Separately versioned durable evidence for externally visible effects.
+
+    The ledger lives inside the single RunState contract rather than in a
+    parallel event store (ADR-0014, ADR-0021, ADR-0023, ADR-0028).
+    """
+
+    schema_version: Literal["1.0"] = "1.0"
+    operations: list[SideEffectOperation] = Field(default_factory=list, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_unique_identity(self) -> Self:
+        operation_ids = [operation.operation_id for operation in self.operations]
+        if len(operation_ids) != len(set(operation_ids)):
+            raise ValueError("operation IDs must be unique within a ledger")
+        seen: set[str] = set()
+        for operation in self.operations:
+            if operation.dedupe_key in seen:
+                raise ValueError("dedupe keys must be unique within a ledger")
+            seen.add(operation.dedupe_key)
+        return self
+
+
 class Budget(BaseModel):
     """Tracked per graph run, not per node — see plan.md ADR notes and
     spec.md interrupt trigger #3."""
@@ -363,6 +506,7 @@ class RunState(BaseModel):
     execution_record: ExecutionRecord = Field(default_factory=ExecutionRecord)
     interventions: list[HumanIntervention] = Field(default_factory=list, max_length=100)
     human_action_log: list[HumanActionRecord] = Field(default_factory=list, max_length=500)
+    side_effect_ledger: SideEffectLedger = Field(default_factory=SideEffectLedger)
 
     @field_validator("project_id")
     @classmethod
