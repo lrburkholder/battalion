@@ -1694,7 +1694,7 @@
       "id": "BTN-66",
       "phase": "implementation",
       "title": "Portable integration configuration and secret indirection",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Add portable configuration for named integrations, providers, transports, capability assignments, and non-secret settings while keeping credentials outside repository-shareable configuration.",
       "acceptance_criteria": [

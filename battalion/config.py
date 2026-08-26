@@ -8,10 +8,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from battalion.integrations.configuration import IntegrationConfiguration
 from battalion.llm.litellm_client import NodeLLMConfig, ModelDiversityError
 
 
 DEFAULT_CONFIG_PATH = Path("battalion.config.yaml")
+DEFAULT_INTEGRATIONS_PATH = Path("battalion.integrations.yaml")
 
 
 class BattalionConfig(BaseModel):
@@ -23,6 +25,7 @@ class BattalionConfig(BaseModel):
     budget_limit: int = 100
     manual_checkpoints: list[str] = Field(default_factory=list)
     write_scope: dict[str, list[str]] = Field(default_factory=dict)
+    integrations: IntegrationConfiguration = Field(default_factory=IntegrationConfiguration)
 
 def load_config(
     config_path: str | Path | None = None,
@@ -35,6 +38,11 @@ def load_config(
     2. Environment variables (BATTALION_*)
     3. YAML config file
     4. Defaults
+
+    Portable integrations may additionally live in a sibling
+    ``battalion.integrations.yaml`` file.  It is deliberately separate from
+    the commonly local ``battalion.config.yaml`` and is replaced only by an
+    explicit ``integrations`` section in that config file.
     """
     # 1. Load YAML config file
     yaml_data: dict[str, Any] = {}
@@ -42,6 +50,14 @@ def load_config(
     if path.exists():
         import yaml
         yaml_data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    portable_integrations: dict[str, Any] = {}
+    integrations_path = path.parent / DEFAULT_INTEGRATIONS_PATH
+    if integrations_path.exists():
+        import yaml
+        portable_integrations = (
+            yaml.safe_load(integrations_path.read_text(encoding="utf-8")) or {}
+        )
 
     # 2. Apply environment variable overrides
     env_models = {}
@@ -110,6 +126,7 @@ def load_config(
         "driver": ["src/"],
         "reviewer": [],
     })
+    integrations = yaml_data.get("integrations", portable_integrations)
 
     return BattalionConfig(
         models=models,
@@ -118,6 +135,7 @@ def load_config(
         budget_limit=budget_limit,
         manual_checkpoints=manual_checkpoints,
         write_scope=write_scope,
+        integrations=integrations,
     )
 
 

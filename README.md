@@ -103,6 +103,7 @@ production-client screenshots (BTN-57) is live.
 | BTN-58 | Human identity, authority, assignment, and collaboration RFC | Yes |
 | BTN-59 | Durable Actor identity and local operator provenance | Yes |
 | BTN-65 | Transport-neutral integration capability architecture | Yes |
+| BTN-66 | Portable integration configuration and secret indirection | Yes |
 | BTN-82 | Consolidate role-node factories behind a shared graph scaffold | Yes |
 | BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Yes |
 | BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
@@ -120,7 +121,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, acceptance criteria, and the 31 planned (not-started) tickets live in the canonical [backlog.json](backlog.json).
+Ticket scope, dependencies, acceptance criteria, and the 30 planned (not-started) tickets live in the canonical [backlog.json](backlog.json).
 
 <!-- END GENERATED:backlog-delivery -->
 
@@ -154,6 +155,7 @@ Ticket scope, dependencies, acceptance criteria, and the 31 planned (not-started
 | `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | Complete |
 | `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Complete |
 | `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | Complete |
+| `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | Complete (BTN-66) |
 | `battalion.setup` | Provider discovery, configuration, and connectivity checks | Complete (BTN-15) |
 | `battalion.progress` | Human-readable CLI progress events | Complete |
 | `battalion.cli` | Typer CLI - run/resume/status/setup | Complete (BTN-9, BTN-15) |
@@ -280,6 +282,42 @@ python -m battalion setup \
 
 Driver and Reviewer must use different model identifiers. Use `--no-validate`
 only when intentionally skipping live provider connectivity checks.
+
+### Configure Portable Integrations
+
+Provider bindings belong in the optional, repository-shareable
+`battalion.integrations.yaml`; credentials never do. Each named project binding
+has a stable Battalion `integration_id`, a provider, a transport, one or more
+RFC-0006 capability surfaces, portable settings, and symbolic credential
+references. The current transport values are `native-local`, `http-rest`,
+`webhook`, `mcp`, and `protocol-specific`; valid capability surfaces are
+`work-source`, `knowledge-source`, `repository-service`, `notification`,
+`outbound-event-sink`, and `human-interaction`.
+
+```yaml
+# battalion.integrations.yaml — safe to share
+project:
+  integrations:
+    github-work:
+      integration_id: github-work-primary
+      provider: github
+      transport: http-rest
+      capabilities: [work-source]
+      settings:
+        repository: example/battalion
+        endpoint: https://api.github.example
+      credential_references:
+        access_token:
+          reference: env://GITHUB_TOKEN
+```
+
+References may use `env://NAME` or `keyring://service/account`; their values
+are resolved outside project configuration by a later integration runtime.
+Literal tokens, passwords, and secret-bearing settings are rejected. An optional
+organization allow-list and Actor preferences can only narrow or select project
+bindings, so they cannot grant a provider or capability forbidden by project
+policy. Provider adapter binding, secret resolution, health checks, and
+operation authorization remain separate follow-up work.
 
 ### Run Battalion
 
