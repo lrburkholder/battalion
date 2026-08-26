@@ -142,6 +142,9 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0024](docs/adrs/adr0024.md) | Keep inference identity and cost policy in Battalion |
 | [ADR-0025](docs/adrs/adr0025.md) | Put provider adapters and transports beneath Battalion capabilities |
 | [ADR-0026](docs/adrs/adr0026.md) | Separate Actor identity, authority, and responsibility |
+| [ADR-0027](docs/adrs/adr0027.md) | Generate status documentation from the canonical backlog |
+| [ADR-0028](docs/adrs/adr0028.md) | Authorize Battalion operations, not identities or transports |
+| [ADR-0029](docs/adrs/adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human
@@ -268,8 +271,13 @@ credential-free project integration configuration with stable IDs, provider /
 transport / capability declarations, symbolic secret references, and bounded
 organization/Actor precedence. BTN-67 now resolves those bindings through
 registered adapters and bounded transports with deterministic typed failures.
-Operation policy, health validation, durable side-effect evidence, and
-individual provider operations remain BTN-68 through BTN-80.
+BTN-70 now makes externally visible operations replay-safe: a versioned
+side-effect ledger inside `RunState` records write-ahead intent, typed
+attempt outcomes, and reconciliation evidence under Battalion-minted stable
+logical operation IDs (ADR-0029). Operation policy, health validation, and
+individual provider operations remain BTN-68, BTN-69, and BTN-71 through
+BTN-80; the capability contracts consume the ledger rather than redefining
+delivery semantics.
 
 ## Risks and watch items
 

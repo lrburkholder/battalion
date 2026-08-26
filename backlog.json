@@ -1820,7 +1820,7 @@
       "id": "BTN-70",
       "phase": "implementation",
       "title": "External side-effect evidence and idempotent delivery",
-      "status": "not-started",
+      "status": "done",
       "priority": "P0",
       "description": "Persist inspectable evidence for external operations and make side-effect delivery replay-safe across retries, resume, crashes, and duplicate event processing.",
       "acceptance_criteria": [
