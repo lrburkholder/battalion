@@ -17,8 +17,8 @@ run automatically.
   Reviewer loop; not part of the original spec draft.
 - LiteLLM as the model access layer (per-node model configurability, not
   hardcoded to one provider)
-- Local JSON as the default state/ticket persistence layer, following
-  `regiment-backlog.json`'s existing schema conventions
+- Local JSON as the default run-state persistence layer, with explicit
+  versioned schema conventions
 - A versioned state schema (JSON) shared across all four nodes
 - Per-node declared, enforced write scope
 - The v1 interrupt taxonomy (see below)
@@ -78,8 +78,7 @@ boundary; endpoint URLs and bounded non-secret classification evidence may be
 persisted.
 
 ## State Schema (v1, draft)
-Follows `regiment-backlog.json` conventions: explicit `schema_version`,
-enum-constrained `status`, per-item dependency/blocking fields. Lives as one
+Uses explicit `schema_version` and enum-constrained `status` fields. Lives as one
 versioned contract alongside the graph code; all four nodes validate against
 it rather than maintaining separate sub-schemas.
 

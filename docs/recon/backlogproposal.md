@@ -1,14 +1,15 @@
 # Backlog Proposal — Recon and Engineering Knowledge
 
-**Status:** Accepted into `backlog.json` on 2026-08-11
+**Status:** Historical proposal; its ticket records migrated to canonical
+GitHub Issues in BTN-102.
 
 This proposal replaces the earlier Recon-only ordering. Recon cannot produce
 useful, reviewable knowledge until Battalion has a durable execution record and
 an Instinct contract. Retrieval also depends on the bounded context assembly
 tracked by BTN-26.
 
-The canonical ticket definitions and acceptance criteria live in
-`backlog.json`. The accepted sequence is:
+The canonical ticket definitions and acceptance criteria live in GitHub
+Issues. The accepted sequence is:
 
 ## BTN-19 — Durable execution record and artifact provenance
 

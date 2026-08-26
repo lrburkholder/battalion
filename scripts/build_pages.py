@@ -17,7 +17,6 @@ PUBLISHED_DOCUMENTS = {
     ".github/pages/index.md": "index.md",
     "spec.md": "spec.md",
     "plan.md": "plan.md",
-    "backlog.json": "backlog.json",
     "docs/status.md": "docs/status.md",
     "docs/adrs/README.md": "docs/adrs/index.md",
     **{

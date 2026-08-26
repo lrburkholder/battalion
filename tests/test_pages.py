@@ -42,7 +42,6 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "assets/screenshots/battalion-work.png",
             "assets/screenshots/battalion-history.png",
             "assets/screenshots/battalion-intel.png",
-            "backlog.json",
             "index.md",
             "plan.md",
             "spec.md",
@@ -130,7 +129,7 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "| BTN-1 |" in status_page
         landing = (output / "index.md").read_text(encoding="utf-8")
         assert "docs/status.html" in landing
-        assert (output / "backlog.json").exists()
+        assert not (output / "backlog.json").exists()
         benchmark_index = (output / "benchmarks" / "desktop" / "index.md").read_text(
             encoding="utf-8"
         )
