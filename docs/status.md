@@ -102,7 +102,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (64 planned/not-started).
+Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (63 planned/not-started).
 
 <!-- END GENERATED:backlog-delivery -->
 
@@ -131,7 +131,7 @@ Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHu
 | `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | Complete |
 | `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | Complete |
 | `battalion.nodes.refactorer` | Refactor node sharing Driver's write scope (ADR-008) | Complete |
-| `battalion.nodes.recon` | Post-completion candidate generation | Complete (BTN-22) |
+| `battalion.nodes.recon` | Post-completion candidate Instinct generation | Complete (BTN-22) |
 | `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | Complete |
 | `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | Complete |
 | `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Complete |
