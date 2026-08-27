@@ -1,0 +1,2 @@
+# Shell scripts are executed by Bash in CI and must retain Unix line endings.
+*.sh text eol=lf
