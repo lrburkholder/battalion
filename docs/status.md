@@ -82,6 +82,7 @@ production-client screenshots (BTN-57) is live.
 | BTN-66 | Portable integration configuration and secret indirection | Yes |
 | BTN-67 | Integration adapter runtime and transport boundary | Yes |
 | BTN-70 | External side-effect evidence and idempotent delivery | Yes |
+| BTN-71 | WorkSource abstraction and configured intake | Yes |
 | BTN-82 | Consolidate role-node factories behind a shared graph scaffold | Yes |
 | BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Yes |
 | BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
