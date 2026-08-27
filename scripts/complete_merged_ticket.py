@@ -36,17 +36,26 @@ def _gh(*args: str) -> object:
     return json.loads(completed.stdout)
 
 
+def _normalization_record(issue: dict[str, object]) -> dict[str, object]:
+    """Adapt lowercase REST Issue fields to the canonical normalizer enums."""
+
+    state = issue.get("state")
+    state_reason = issue.get("state_reason")
+    return {
+        "number": issue.get("number"), "title": issue.get("title"), "body": issue.get("body"),
+        "state": state.upper() if isinstance(state, str) else state,
+        "stateReason": state_reason.upper() if isinstance(state_reason, str) else state_reason,
+        "labels": issue.get("labels"),
+    }
+
+
 def main() -> None:
     repository = os.environ["GITHUB_REPOSITORY"]
     issue_number = linked_issue_number(os.environ.get("PR_BODY"))
     issue = _gh(f"repos/{repository}/issues/{issue_number}")
     if not isinstance(issue, dict):
         raise TicketLifecycleError("GitHub returned a non-object Issue payload")
-    normalized = {
-        "number": issue.get("number"), "title": issue.get("title"), "body": issue.get("body"),
-        "state": issue.get("state"), "stateReason": issue.get("state_reason"),
-        "labels": issue.get("labels"),
-    }
+    normalized = _normalization_record(issue)
     try:
         normalize_issues([normalized])
     except IssueNormalizationError as exc:
