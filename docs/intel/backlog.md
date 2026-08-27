@@ -1,10 +1,11 @@
 # Engineering Knowledge System Backlog
 
-**Status:** Canonicalized in `backlog.json` on 2026-08-11
+**Status:** Historical proposal; its ticket records migrated to canonical
+GitHub Issues in BTN-102.
 
 The previous ticket list in this document reused BTN-15 through BTN-22 after
-those identifiers had already been assigned in the canonical backlog. It is
-superseded by BTN-19 through BTN-24 below. `backlog.json` remains the source of
+those identifiers had already been assigned in the canonical issue backlog. It
+is superseded by BTN-19 through BTN-24 below. GitHub Issues are the source of
 truth for scope, dependencies, priority, and status.
 
 | Ticket | Capability | Depends on |

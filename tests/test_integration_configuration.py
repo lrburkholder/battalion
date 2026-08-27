@@ -76,7 +76,7 @@ integrations:
         transport: native-local
         capabilities: [work-source]
         settings:
-          path: backlog.json
+          path: tickets.json
 """,
         encoding="utf-8",
     )
@@ -103,7 +103,7 @@ project:
       transport: native-local
       capabilities: [work-source]
       settings:
-        path: backlog.json
+        path: tickets.json
 """,
         encoding="utf-8",
     )

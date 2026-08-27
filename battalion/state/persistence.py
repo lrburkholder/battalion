@@ -1,5 +1,4 @@
-"""Local JSON persistence for RunState, following regiment-backlog.json's
-schema_version convention (spec.md, findings.md)."""
+"""Local JSON persistence for the versioned RunState contract."""
 from __future__ import annotations
 
 import json

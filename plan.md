@@ -142,7 +142,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0024](docs/adrs/adr0024.md) | Keep inference identity and cost policy in Battalion |
 | [ADR-0025](docs/adrs/adr0025.md) | Put provider adapters and transports beneath Battalion capabilities |
 | [ADR-0026](docs/adrs/adr0026.md) | Separate Actor identity, authority, and responsibility |
-| [ADR-0027](docs/adrs/adr0027.md) | Generate status documentation from the canonical backlog |
+| [ADR-0027](docs/adrs/adr0027.md) | Generate status documentation from canonical GitHub Issues |
 | [ADR-0028](docs/adrs/adr0028.md) | Authorize Battalion operations, not identities or transports |
 | [ADR-0029](docs/adrs/adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity |
 

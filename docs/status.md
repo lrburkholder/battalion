@@ -1,8 +1,7 @@
-Battalion status at a glance. `backlog.json` is the machine-readable source of
-truth for ticket identity, scope, dependencies, and status; this
-page is its human-readable projection and is embedded verbatim into
-`README.md`. Regenerate after backlog changes with
-`python scripts/sync_status.py`.
+Battalion status at a glance. Canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues)
+own ticket identity, scope, dependencies, and status; this page is their
+human-readable projection and is embedded verbatim into `README.md`.
+Regenerate with `python scripts/sync_status.py` in an authenticated repository.
 
 ## Current milestone
 
@@ -15,8 +14,8 @@ supervision, durable run/project identity, durable Actor identity and local
 bootstrap, operator evidence, typed live-observation, and the PySide6 console
 with human-action surfaces (BTN-42–43, BTN-56, BTN-59) are implemented.
 Repository status badges with a credential-independent test workflow (BTN-50),
-the shared graph node scaffold (BTN-82), backlog-generated status
-documentation (BTN-83, ADR-0027), and the hermetic Tauri benchmark fixture
+the shared graph node scaffold (BTN-82), GitHub-Issue-backed status
+documentation (BTN-83, BTN-102, ADR-0027), and the hermetic Tauri benchmark fixture
 (BTN-84) are shipped. The public Pages landing experience with reviewed
 production-client screenshots (BTN-57) is live.
 
@@ -70,12 +69,14 @@ production-client screenshots (BTN-57) is live.
 | BTN-41 | Desktop framework selection ADR | Yes |
 | BTN-42 | Read-only desktop operator console | Yes |
 | BTN-43 | Desktop human-action surfaces | Yes |
+| BTN-46 | Plugin architecture and integration lifecycle RFC | Yes |
 | BTN-50 | Repository status badges and README trust signals | Yes |
 | BTN-51 | Zero-cost inference and model-endpoint architecture RFC | Yes |
 | BTN-56 | Desktop visual system and brand assets | Yes |
 | BTN-57 | GitHub Pages product showcase and visual assets | Yes |
 | BTN-58 | Human identity, authority, assignment, and collaboration RFC | Yes |
 | BTN-59 | Durable Actor identity and local operator provenance | Yes |
+| BTN-64 | Actor authorization and external-action authority | Yes |
 | BTN-65 | Transport-neutral integration capability architecture | Yes |
 | BTN-66 | Portable integration configuration and secret indirection | Yes |
 | BTN-67 | Integration adapter runtime and transport boundary | Yes |
@@ -83,13 +84,14 @@ production-client screenshots (BTN-57) is live.
 | BTN-82 | Consolidate role-node factories behind a shared graph scaffold | Yes |
 | BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Yes |
 | BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
-| BTN-86 | Cartography persistence benchmark and selection spike | Yes |
+| BTN-85 | Cartographer codebase mapping and maintenance workflow RFC | Yes |
+| BTN-86 | Cartographer persistence benchmark and selection spike | Yes |
 
 ### In flight
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| — | Nothing currently in flight | — |
+| BTN-102 | Migrate status generation to GitHub Issues and retire backlog.json | Wip |
 
 ### Cancelled
 
@@ -97,7 +99,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, acceptance criteria, and the 28 planned (not-started) tickets live in the canonical [backlog.json](backlog.json).
+Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (42 planned/not-started).
 
 <!-- END GENERATED:backlog-delivery -->
 
@@ -150,8 +152,9 @@ is complete. Remaining work, by theme:
   ADR-0024); Actor capability enforcement, assignment/ownership, and
   authentication (BTN-60–62, per RFC-0007 / ADR-0026); transport-neutral
   integration capabilities (BTN-66–80, per RFC-0006 / ADR-0025), including
-  the WorkSource abstraction (BTN-71) and GitHub Issues adapter (BTN-72)
-  that would let GitHub Issues become a Battalion ticket source.
+  the WorkSource abstraction (BTN-71) and GitHub Issues adapter (BTN-72).
+  GitHub Issues are already the canonical backlog; BTN-102's narrow reader is
+  deliberately replaceable by that production WorkSource path.
 - **Future direction RFCs:** Specifier role (BTN-45), plugin architecture
   (BTN-46), severity-based review and a possible Guardian role (BTN-47),
   bounded self-modification safety (BTN-48), and pluggable repository quality
