@@ -10,11 +10,13 @@ on:
       - spec.md
       - plan.md
       - docs/adrs/**
+      - docs/status.md
       - docs/ui/**
       - docs/assets/**
       - battalion/desktop/assets/favicon.ico
       - battalion/desktop/assets/mark-transparent.svg
       - scripts/build_pages.py
+      - scripts/sync_status.py
       - scripts/capture_pages_screenshots.py
       - .github/pages/**
       - .github/workflows/pages.yml
@@ -25,11 +27,13 @@ on:
       - spec.md
       - plan.md
       - docs/adrs/**
+      - docs/status.md
       - docs/ui/**
       - docs/assets/**
       - battalion/desktop/assets/favicon.ico
       - battalion/desktop/assets/mark-transparent.svg
       - scripts/build_pages.py
+      - scripts/sync_status.py
       - scripts/capture_pages_screenshots.py
       - .github/pages/**
       - .github/workflows/pages.yml
@@ -47,6 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: read
       pages: read
     steps:
       - name: Check out repository
@@ -56,6 +61,11 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
+
+      - name: Render current project status from canonical GitHub Issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/sync_status.py
 
       - name: Stage approved documentation
         run: python scripts/build_pages.py

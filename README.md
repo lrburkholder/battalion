@@ -22,116 +22,7 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 ## Status
 
-<!-- battalion:status:start -->
-
-Battalion status at a glance. Canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues)
-own ticket identity, scope, dependencies, and status; this page is their
-human-readable projection and is embedded verbatim into `README.md`.
-Regenerate with `python scripts/sync_status.py` in an authenticated repository.
-
-## Current milestone
-
-**Current Milestone**: desktop operator UI and public product showcase.
-
-The v1 execution graph is complete. Durable execution evidence, the Recon and
-Intel knowledge lifecycle, deterministic context assembly, the desktop
-operator architecture, shared application boundary, isolated active-run worker
-supervision, durable run/project identity, durable Actor identity and local
-bootstrap, operator evidence, typed live-observation, and the PySide6 console
-with human-action surfaces (BTN-42–43, BTN-56, BTN-59) are implemented.
-Repository status badges with a credential-independent test workflow (BTN-50),
-the shared graph node scaffold (BTN-82), GitHub-Issue-backed status
-documentation (BTN-83, BTN-102, ADR-0027), and the hermetic Tauri benchmark fixture
-(BTN-84) are shipped. The public Pages landing experience with reviewed
-production-client screenshots (BTN-57) is live.
-
-## Delivered work
-
-<!-- BEGIN GENERATED:backlog-delivery (regenerate with: python scripts/sync_status.py) -->
-
-### Shipped
-
-| Ticket | Title | Status |
-| --- | --- | --- |
-| BTN-1 | State models + persistence layer | Yes |
-| BTN-2 | Per-node write-scope tool binding | Yes |
-| BTN-3 | LiteLLM client wrapper | Yes |
-| BTN-4 | Architect node | Yes |
-| BTN-5 | Driver node | Yes |
-| BTN-6 | Reviewer node | Yes |
-| BTN-7 | Graph wiring — StateGraph, edges, interrupt points | Yes |
-| BTN-8 | Interrupt triggers (1-6) + budget tracking | Yes |
-| BTN-9 | CLI (Typer) — run / resume / status | Yes |
-| BTN-10 | End-to-end acceptance criteria validation | Yes |
-| BTN-11 | Driver RED/GREEN mode support | Yes |
-| BTN-12 | Reviewer expect_pass parameter + per-checkpoint rejection counters | Yes |
-| BTN-13 | Refactorer node | Yes |
-| BTN-14 | Model-diversity constraint: Reviewer must differ from Driver | Yes |
-| BTN-15 | CLI setup command for LLM configuration and validation | Yes |
-| BTN-16 | Cost/budget reporting granularity | Yes |
-| BTN-18 | Public GitHub Pages site | Yes |
-| BTN-19 | Durable execution record and artifact provenance | Yes |
-| BTN-20 | Instinct data contract | Yes |
-| BTN-21 | Immutable Intel repository | Yes |
-| BTN-22 | Recon candidate generation | Yes |
-| BTN-23 | Operator review and Instinct promotion workflow | Yes |
-| BTN-24 | Deterministic retrieval and node-specific Instinct injection | Yes |
-| BTN-25 | Align role prompts with node contracts | Yes |
-| BTN-26 | Persist and assemble node execution context | Yes |
-| BTN-27 | Preserve caller-supplied run configuration | Yes |
-| BTN-28 | Project-layout-aware scoped writes | Yes |
-| BTN-29 | Desktop operator interface architecture RFC | Yes |
-| BTN-30 | Application command and query boundary | Yes |
-| BTN-31 | Active-run worker supervision | Yes |
-| BTN-32 | Run and project identity | Yes |
-| BTN-33 | Operator summaries and revision evidence | Yes |
-| BTN-34 | Recon candidate persistence | Yes |
-| BTN-35 | Usage evidence revision | Yes |
-| BTN-36 | Live observation contract | Yes |
-| BTN-37 | Desktop framework benchmark fixture | Yes |
-| BTN-38 | Tauri desktop architecture spike | Yes |
-| BTN-39 | PySide6 desktop architecture spike | Yes |
-| BTN-40 | Electron desktop architecture spike | Yes |
-| BTN-41 | Desktop framework selection ADR | Yes |
-| BTN-42 | Read-only desktop operator console | Yes |
-| BTN-43 | Desktop human-action surfaces | Yes |
-| BTN-46 | Plugin architecture and integration lifecycle RFC | Yes |
-| BTN-50 | Repository status badges and README trust signals | Yes |
-| BTN-51 | Zero-cost inference and model-endpoint architecture RFC | Yes |
-| BTN-56 | Desktop visual system and brand assets | Yes |
-| BTN-57 | GitHub Pages product showcase and visual assets | Yes |
-| BTN-58 | Human identity, authority, assignment, and collaboration RFC | Yes |
-| BTN-59 | Durable Actor identity and local operator provenance | Yes |
-| BTN-63 | Actor identity and external identity mappings | Yes |
-| BTN-64 | Actor authorization and external-action authority | Yes |
-| BTN-65 | Transport-neutral integration capability architecture | Yes |
-| BTN-66 | Portable integration configuration and secret indirection | Yes |
-| BTN-67 | Integration adapter runtime and transport boundary | Yes |
-| BTN-70 | External side-effect evidence and idempotent delivery | Yes |
-| BTN-71 | WorkSource abstraction and configured intake | Yes |
-| BTN-82 | Consolidate role-node factories behind a shared graph scaffold | Yes |
-| BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Yes |
-| BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
-| BTN-85 | Cartographer codebase mapping and maintenance workflow RFC | Yes |
-| BTN-86 | Cartographer persistence benchmark and selection spike | Yes |
-| BTN-102 | Migrate status generation to GitHub Issues and retire backlog.json | Yes |
-| BTN-126 | Automate post-merge ticket lifecycle and status projections | Yes |
-
-### In flight
-
-| Ticket | Title | Status |
-| --- | --- | --- |
-| BTN-127 | Make post-merge lifecycle entry point executable in clean CI checkout | Review |
-
-### Cancelled
-
-| Ticket | Title | Status |
-| --- | --- | --- |
-| BTN-17 | Interrupt/checkpoint web UI | No |
-
-Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (63 planned/not-started).
-
-<!-- END GENERATED:backlog-delivery -->
+Current work status is generated from the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) and Milestones during GitHub Pages publication. See the [public status dashboard](https://lrburkholder.github.io/battalion/docs/status.html) for the current milestone-level view.
 
 ## Component readiness
 
@@ -195,8 +86,6 @@ The former Teacher concept is no longer planned as a Battalion role. It is
 expected to evolve into **Dojo**, a separate future application. Researcher
 workflows may likewise belong in a separate application; that product boundary
 is still unresolved and is not part of Battalion's current roadmap.
-
-<!-- battalion:status:end -->
 
 ## Architecture
 
@@ -566,8 +455,9 @@ The project uses a ticket-based workflow where each significant feature or
 component has a canonical [GitHub Issue](https://github.com/lrburkholder/battalion/issues).
 Tickets follow the BTN-# format and carry explicit dependencies, acceptance
 criteria, lifecycle status, and locked Issue Schema v1 classification labels.
-`scripts/sync_status.py` renders the checked-in status projections from those
-Issues; unit tests use deterministic fixtures and never require GitHub access.
+GitHub Pages renders the public status projection from those Issues and
+Milestones at publication time; unit tests use deterministic fixtures and never
+require GitHub access.
 
 ## License
 
