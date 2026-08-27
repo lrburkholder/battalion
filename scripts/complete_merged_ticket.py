@@ -1,0 +1,65 @@
+"""Close one validated merged-PR ticket and regenerate status projections.
+
+The GitHub Action supplies trusted pull-request event data through environment
+variables.  This script never executes PR text and permits only the explicit
+marker parsed by :mod:`battalion.ticket_lifecycle`.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from battalion.ticket_lifecycle import TicketLifecycleError, ensure_in_review, linked_issue_number
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from sync_status import IssueNormalizationError, normalize_issues, sync_documents  # noqa: E402
+
+
+def _gh(*args: str) -> object:
+    completed = subprocess.run(
+        ["gh", "api", *args], check=True, capture_output=True, text=True, encoding="utf-8"
+    )
+    return json.loads(completed.stdout)
+
+
+def main() -> None:
+    repository = os.environ["GITHUB_REPOSITORY"]
+    issue_number = linked_issue_number(os.environ.get("PR_BODY"))
+    issue = _gh(f"repos/{repository}/issues/{issue_number}")
+    if not isinstance(issue, dict):
+        raise TicketLifecycleError("GitHub returned a non-object Issue payload")
+    normalized = {
+        "number": issue.get("number"), "title": issue.get("title"), "body": issue.get("body"),
+        "state": issue.get("state"), "stateReason": issue.get("state_reason"),
+        "labels": issue.get("labels"),
+    }
+    try:
+        normalize_issues([normalized])
+    except IssueNormalizationError as exc:
+        raise TicketLifecycleError(f"linked Issue schema validation failed: {exc}") from exc
+    if normalized["state"] == "OPEN":
+        labels = {label["name"] for label in normalized["labels"] if isinstance(label, dict) and isinstance(label.get("name"), str)}
+        ensure_in_review(labels)
+        # Removing the active label first avoids ever persisting an invalid
+        # closed Issue with a status:* label (ADR-0027).
+        _gh("-X", "DELETE", f"repos/{repository}/issues/{issue_number}/labels/status:in-review")
+        _gh("-X", "PATCH", f"repos/{repository}/issues/{issue_number}", "-f", "state=closed")
+    elif normalized["state"] != "CLOSED":
+        raise TicketLifecycleError("linked Issue must be open or already completed")
+    stale = sync_documents(root=ROOT)
+    if not stale:
+        print("status projections already current")
+    else:
+        print("updated: " + ", ".join(stale))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (KeyError, TicketLifecycleError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f"post-merge ticket lifecycle failed: {exc}") from exc

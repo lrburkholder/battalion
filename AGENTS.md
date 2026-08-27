@@ -66,6 +66,10 @@ dependency already solves the problem.
   region of `docs/status.md` and the embedded copy inside `README.md`.
   Do not hand-edit those generated regions, and keep the authenticated
   `python scripts/sync_status.py --check` clean before handoff (ADR-0027).
+  For a PR that completes exactly one ticket, include a full-line
+  `Battalion-ticket: #<issue-number>` marker in its body. After a human merges
+  it to `main`, the post-merge lifecycle Action validates that marker, closes
+  the in-review Issue, and regenerates the status projections (ADR-0030).
 
 ## Setup and validation
 

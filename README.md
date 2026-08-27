@@ -119,7 +119,7 @@ production-client screenshots (BTN-57) is live.
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| BTN-71 | WorkSource abstraction and configured intake | Review |
+| BTN-126 | Automate post-merge ticket lifecycle and status projections | Review |
 
 ### Cancelled
 
@@ -127,7 +127,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (62 planned/not-started).
+Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (63 planned/not-started).
 
 <!-- END GENERATED:backlog-delivery -->
 
