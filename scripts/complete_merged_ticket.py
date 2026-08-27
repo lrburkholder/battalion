@@ -1,4 +1,4 @@
-"""Close one validated merged-PR ticket and regenerate status projections.
+"""Close one validated merged-PR ticket.
 
 The GitHub Action supplies trusted pull-request event data through environment
 variables.  This script never executes PR text and permits only the explicit
@@ -26,7 +26,7 @@ from battalion.ticket_lifecycle import (  # noqa: E402
     ensure_in_review,
     linked_issue_number,
 )
-from sync_status import IssueNormalizationError, normalize_issues, sync_documents  # noqa: E402
+from sync_status import IssueNormalizationError, normalize_issues  # noqa: E402
 
 
 def _gh(*args: str) -> object:
@@ -60,11 +60,7 @@ def main() -> None:
         _gh("-X", "PATCH", f"repos/{repository}/issues/{issue_number}", "-f", "state=closed")
     elif normalized["state"] != "CLOSED":
         raise TicketLifecycleError("linked Issue must be open or already completed")
-    stale = sync_documents(root=ROOT)
-    if not stale:
-        print("status projections already current")
-    else:
-        print("updated: " + ", ".join(stale))
+    print("ticket lifecycle completed; status is rendered at Pages publication time")
 
 
 if __name__ == "__main__":

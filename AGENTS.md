@@ -62,14 +62,16 @@ dependency already solves the problem.
 - Never place API keys or secrets in tracked configuration, fixtures, logs, or
   documentation.
 - Ticket status changes flow through locked GitHub Issue labels and
-  `python scripts/sync_status.py`, which regenerates the "Delivered work"
-  region of `docs/status.md` and the embedded copy inside `README.md`.
-  Do not hand-edit those generated regions, and keep the authenticated
-  `python scripts/sync_status.py --check` clean before handoff (ADR-0027).
+  the Pages publication pipeline, which renders the milestone-level status
+  projection from GitHub Issues and Milestones. Do not hand-maintain status
+  rows or counters in repository documentation; keep the authenticated
+  `python scripts/sync_status.py --validate` check clean before handoff
+  (ADR-0027 as amended by ADR-0031).
   For a PR that completes exactly one ticket, include a full-line
   `Battalion-ticket: #<issue-number>` marker in its body. After a human merges
   it to `main`, the post-merge lifecycle Action validates that marker, closes
-  the in-review Issue, and regenerates the status projections (ADR-0030).
+  the in-review Issue, and leaves public status rendering to the Pages
+  publication pipeline (ADR-0030 as amended by ADR-0031).
 
 ## Setup and validation
 
