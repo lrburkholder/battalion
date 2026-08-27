@@ -76,6 +76,7 @@ production-client screenshots (BTN-57) is live.
 | BTN-57 | GitHub Pages product showcase and visual assets | Yes |
 | BTN-58 | Human identity, authority, assignment, and collaboration RFC | Yes |
 | BTN-59 | Durable Actor identity and local operator provenance | Yes |
+| BTN-63 | Actor identity and external identity mappings | Yes |
 | BTN-64 | Actor authorization and external-action authority | Yes |
 | BTN-65 | Transport-neutral integration capability architecture | Yes |
 | BTN-66 | Portable integration configuration and secret indirection | Yes |
@@ -92,7 +93,7 @@ production-client screenshots (BTN-57) is live.
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| BTN-63 | Actor identity and external identity mappings | Wip |
+| BTN-71 | WorkSource abstraction and configured intake | Review |
 
 ### Cancelled
 
@@ -100,7 +101,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (63 planned/not-started).
+Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (62 planned/not-started).
 
 <!-- END GENERATED:backlog-delivery -->
 

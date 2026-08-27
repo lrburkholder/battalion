@@ -52,6 +52,12 @@ from battalion.integrations.runtime import (
     UnsupportedTransportOperation,
     WorkSourcePort,
 )
+from battalion.work import (
+    WorkItem,
+    WorkItemProvenance,
+    WorkSourceMutationPort,
+    WorkSourceReadPort,
+)
 
 __all__ = [
     "ActorIntegrationPreferences",
@@ -99,5 +105,9 @@ __all__ = [
     "UnsupportedProviderTransport",
     "UnsupportedTransportOperation",
     "WorkSourcePort",
+    "WorkItem",
+    "WorkItemProvenance",
+    "WorkSourceMutationPort",
+    "WorkSourceReadPort",
     "request_digest",
 ]

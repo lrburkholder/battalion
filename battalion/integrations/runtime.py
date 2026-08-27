@@ -29,6 +29,7 @@ from battalion.integrations.configuration import (
     SecretReference,
     TransportKind,
 )
+from battalion.work import WorkItem
 
 
 class IntegrationError(Exception):
@@ -154,7 +155,50 @@ class CapabilityPort(Protocol):
 
 
 class WorkSourcePort(CapabilityPort, Protocol):
-    """Provider-neutral WorkSource port; operations arrive with BTN-71."""
+    """Provider-neutral, read-only WorkSource port used for Run intake."""
+
+    @property
+    def integration_id(self) -> str:
+        """Stable configured integration identity for retrieved work."""
+
+    def get(self, external_id: str) -> "WorkItem":
+        """Return one normalized work-item snapshot."""
+
+    def refresh(self, item: "WorkItem") -> "WorkItem":
+        """Return a refreshed normalized work-item snapshot."""
+
+
+class _ReadOnlyWorkSource:
+    """Capability wrapper that excludes provider-specific mutation methods."""
+
+    __slots__ = ("__get", "__integration_id", "__refresh")
+
+    def __init__(self, source: WorkSourcePort) -> None:
+        self.__integration_id = source.integration_id
+        self.__get = source.get
+        self.__refresh = source.refresh
+
+    @property
+    def capability(self) -> CapabilitySurface:
+        return CapabilitySurface.WORK_SOURCE
+
+    @property
+    def integration_id(self) -> str:
+        return self.__integration_id
+
+    def get(self, external_id: str) -> WorkItem:
+        return self._validate_item(self.__get(external_id), "work.get")
+
+    def refresh(self, item: WorkItem) -> WorkItem:
+        return self._validate_item(self.__refresh(item), "work.refresh")
+
+    @staticmethod
+    def _validate_item(item: object, operation: str) -> WorkItem:
+        if not isinstance(item, WorkItem):
+            raise IntegrationMalformedResponse(
+                f"{operation} returned a value outside the WorkItem contract"
+            )
+        return item
 
 
 class KnowledgeSourcePort(CapabilityPort, Protocol):
@@ -312,7 +356,9 @@ class IntegrationRuntime:
     def work_source(self, integration_name: str | None = None) -> WorkSourcePort:
         """Resolve an admitted WorkSource port."""
 
-        return cast(WorkSourcePort, self._resolve(CapabilitySurface.WORK_SOURCE, integration_name))
+        return _ReadOnlyWorkSource(
+            cast(WorkSourcePort, self._resolve(CapabilitySurface.WORK_SOURCE, integration_name))
+        )
 
     def knowledge_source(self, integration_name: str | None = None) -> KnowledgeSourcePort:
         """Resolve an admitted KnowledgeSource port."""
@@ -482,6 +528,14 @@ def _freeze(value: Any) -> Any:
 
 def _has_capability(adapter: object, capability: CapabilitySurface) -> bool:
     try:
-        return getattr(adapter, "capability") is capability
+        if getattr(adapter, "capability") is not capability:
+            return False
+        if capability is CapabilitySurface.WORK_SOURCE:
+            return (
+                isinstance(getattr(adapter, "integration_id"), str)
+                and callable(getattr(adapter, "get"))
+                and callable(getattr(adapter, "refresh"))
+            )
+        return True
     except Exception:
         return False

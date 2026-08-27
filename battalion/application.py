@@ -47,12 +47,14 @@ from battalion.identity import (
     load_run_catalog,
     register_run,
 )
+from battalion.integrations.runtime import IntegrationRuntime, WorkSourcePort
 from battalion.intel.candidates import (
     CandidateInbox,
     CandidateInboxEntry,
     CandidateNotFoundError,
     CandidateRepository,
 )
+from battalion.work import WorkItem
 from battalion.intel.models import AcceptedInstinct, CandidateInstinct
 from battalion.intel.repository import IntelRepository
 from battalion.intel.review import (
@@ -219,6 +221,21 @@ class StartRun:
     """Request execution and persistence of one caller-supplied initial state."""
 
     initial_state: RunState
+    config: BattalionConfig
+    overwrite: bool = False
+
+
+@dataclass(frozen=True)
+class StartWorkItemRun:
+    """Start one Run from a configured WorkSource read operation.
+
+    ``ticket_id`` remains Battalion-owned display context. The normalized
+    ``WorkItem`` preserves external identity separately in durable state.
+    """
+
+    ticket_id: str
+    integration_name: str
+    external_id: str
     config: BattalionConfig
     overwrite: bool = False
 
@@ -459,8 +476,25 @@ def state_path(run_id: str, state_dir: str | Path = DEFAULT_STATE_DIR) -> Path:
     return Path(state_dir) / f"{run_id}.json"
 
 
+def _validate_work_item_source(
+    work_source: WorkSourcePort, work_item: WorkItem, external_id: str
+) -> None:
+    """Reject malformed adapter results before durable RunState is created."""
+
+    if work_source.integration_id != work_item.source_integration_id:
+        raise ApplicationError(
+            "WorkSource returned a work item for a different integration"
+        )
+    if work_item.external_id != external_id:
+        raise ApplicationError("WorkSource returned a work item with a different external ID")
+
+
 def create_initial_state(
-    ticket_id: str, spec: str, config: BattalionConfig
+    ticket_id: str,
+    spec: str,
+    config: BattalionConfig,
+    *,
+    work_item: WorkItem | None = None,
 ) -> RunState:
     """Create one canonical new-run state through the application boundary."""
     try:
@@ -475,6 +509,7 @@ def create_initial_state(
         run_alias=identity.display_alias,
         project_id=str(project.project_id),
         ticket_id=ticket_id,
+        work_item=work_item,
         spec=spec,
         status=RunStatus.NOT_STARTED,
         phase="architect",
@@ -484,6 +519,46 @@ def create_initial_state(
         reviewer_rejection_history=[],
         interrupt_log=[],
         manual_checkpoints=config.manual_checkpoints,
+    )
+
+
+def start_work_item_run(
+    command: StartWorkItemRun,
+    *,
+    integration_runtime: IntegrationRuntime,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    on_node_event: EventCallback | None = None,
+    on_token: EventCallback | None = None,
+    on_observation: ObservationCallback | None = None,
+    _execute: Callable[..., RunState | dict[str, Any]] | None = None,
+) -> RunOperationResult:
+    """Retrieve a WorkItem then start through the normal application path.
+
+    Provider selection occurs once at the application boundary. The graph
+    receives only the durable snapshot in ``RunState`` and never a provider
+    port, raw client, credential, or transport.
+    """
+
+    work_source = integration_runtime.work_source(command.integration_name)
+    work_item = work_source.get(command.external_id)
+    _validate_work_item_source(work_source, work_item, command.external_id)
+    initial_state = create_initial_state(
+        command.ticket_id,
+        work_item.description,
+        command.config,
+        work_item=work_item,
+    )
+    return start_run(
+        StartRun(
+            initial_state=initial_state,
+            config=command.config,
+            overwrite=command.overwrite,
+        ),
+        state_dir=state_dir,
+        on_node_event=on_node_event,
+        on_token=on_token,
+        on_observation=on_observation,
+        _execute=_execute,
     )
 
 

@@ -86,10 +86,11 @@ python -m battalion --help
 ```
 
 When a full local suite would be slow or contend with local development
-processes, push the branch and run `./scripts/run_ci.sh` instead. It dispatches
+processes, push the branch and run `./scripts/run_ci.ps1` instead. It dispatches
 the on-demand GitHub Actions workflow against the current branch (or an
 explicit `--branch`) and streams the result; it requires an authenticated
-`gh` CLI. Pass a test path or `-k` expression for a remotely focused run.
+`gh` CLI. The PowerShell wrapper invokes the underlying Bash runner through
+Git Bash. Pass a test path or `-k` expression for a remotely focused run.
 
 For live LLM setup, use `python -m battalion setup`. Connectivity checks may
 make network calls and require provider credentials; unit tests must not.
