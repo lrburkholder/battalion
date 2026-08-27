@@ -120,6 +120,7 @@ production-client screenshots (BTN-57) is live.
 | Ticket | Title | Status |
 | --- | --- | --- |
 | BTN-71 | WorkSource abstraction and configured intake | Review |
+| BTN-126 | Automate post-merge ticket lifecycle and status projections | Wip |
 
 ### Cancelled
 

@@ -1,0 +1,40 @@
+name: Complete merged Battalion ticket
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: ticket-lifecycle-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  complete:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ github.token }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Validate, close ticket, and regenerate projections
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python scripts/complete_merged_ticket.py
+      - name: Commit generated projections
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/status.md
+          git diff --cached --quiet || git commit -m "docs: synchronize ticket status after merged PR #${{ github.event.pull_request.number }}"
+          git push origin HEAD:main
