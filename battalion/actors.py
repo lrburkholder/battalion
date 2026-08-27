@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -12,7 +13,15 @@ from pathlib import Path
 from typing import Literal, Self
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from battalion.identity import load_project_identity
 
@@ -25,6 +34,24 @@ BOOTSTRAP_CAPABILITIES = (
     "approve",
     "assign",
     "administer",
+)
+_INTEGRATION_IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
+_SENSITIVE_METADATA_NAMES = frozenset(
+    {
+        "accesskey",
+        "accesstoken",
+        "apikey",
+        "apisecret",
+        "apitoken",
+        "authorization",
+        "bearertoken",
+        "clientsecret",
+        "credential",
+        "password",
+        "privatekey",
+        "secret",
+        "token",
+    }
 )
 
 
@@ -46,6 +73,14 @@ class ActorNotFound(ActorError):
 
 class ActorUnavailable(ActorError):
     """An Actor exists but cannot be selected for a new action."""
+
+
+class ExternalIdentityNotFound(ActorError):
+    """No external identity mapping matches the supplied provider subject."""
+
+
+class ExternalIdentityAlreadyLinked(ActorError):
+    """An integration-scoped external subject is already linked to an Actor."""
 
 
 class ActorKind(str, Enum):
@@ -93,6 +128,66 @@ class Actor(_ActorContract):
         return self
 
 
+def _normalise_metadata_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _reject_secret_metadata(value: JsonValue, path: str = "metadata") -> None:
+    """Reject conventional credential-bearing fields from durable metadata.
+
+    Metadata supports provider context needed to display or diagnose a binding,
+    not authentication material.  As with portable integration configuration,
+    this is a structural guard: secret-bearing field names must never enter the
+    durable Actor registry.
+    """
+
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            name = str(key)
+            if _normalise_metadata_name(name) in _SENSITIVE_METADATA_NAMES:
+                raise ValueError(
+                    f"{path}.{name} may contain secret material and cannot be stored"
+                )
+            _reject_secret_metadata(nested, f"{path}.{name}")
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            _reject_secret_metadata(nested, f"{path}[{index}]")
+
+
+class ExternalIdentity(_ActorContract):
+    """A credential-free provider subject linked to one Battalion Actor.
+
+    ``integration_id`` scopes a subject to one configured provider instance,
+    such as a specific GitHub organization or Discord server.  It is therefore
+    the durable disambiguator; provider names alone are insufficient.
+    """
+
+    schema_version: Literal["1.0"] = "1.0"
+    actor_id: UUID
+    integration_id: str = Field(min_length=1, max_length=63)
+    provider: str = Field(min_length=1, max_length=63)
+    external_subject: str = Field(min_length=1, max_length=500)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator("integration_id", "provider")
+    @classmethod
+    def validate_identifier(cls, value: str) -> str:
+        if not _INTEGRATION_IDENTIFIER.fullmatch(value):
+            raise ValueError(
+                "must be a stable lowercase identifier using letters, digits, "
+                "and hyphens"
+            )
+        return value
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_credential_free_metadata(
+        cls, metadata: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]:
+        _reject_secret_metadata(metadata)
+        return metadata
+
+
 class ActorBootstrapEvent(_ActorContract):
     """One-time evidence establishing the project's initial local trust root."""
 
@@ -124,11 +219,12 @@ class ActorBootstrapEvent(_ActorContract):
 
 
 class ActorRegistry(_ActorContract):
-    """Versioned project Actor collection and selected local human identity."""
+    """Versioned Actors and their credential-free external identity bindings."""
 
     schema_version: Literal["1.0"] = "1.0"
     project_id: UUID
     actors: tuple[Actor, ...] = ()
+    external_identities: tuple[ExternalIdentity, ...] = ()
     local_actor_id: UUID | None = None
     bootstrap_event: ActorBootstrapEvent | None = None
 
@@ -137,12 +233,22 @@ class ActorRegistry(_ActorContract):
         indexed = {actor.actor_id: actor for actor in self.actors}
         if len(indexed) != len(self.actors):
             raise ValueError("Actor identifiers must be unique")
+        external_subjects: set[tuple[str, str]] = set()
+        for identity in self.external_identities:
+            if identity.actor_id not in indexed:
+                raise ValueError("external identity must reference a persisted Actor")
+            key = (identity.integration_id, identity.external_subject)
+            if key in external_subjects:
+                raise ValueError(
+                    "integration_id plus external subject must identify only one Actor"
+                )
+            external_subjects.add(key)
         if self.local_actor_id is not None:
             local = indexed.get(self.local_actor_id)
             if local is None or local.kind is not ActorKind.HUMAN:
                 raise ValueError("selected local Actor must reference a human Actor")
         if self.bootstrap_event is None:
-            if self.actors or self.local_actor_id is not None:
+            if self.actors or self.external_identities or self.local_actor_id is not None:
                 raise ValueError("Actors cannot exist before project bootstrap")
             return self
         event = self.bootstrap_event
@@ -255,6 +361,33 @@ def get_local_actor(project_root: str | Path) -> Actor:
     return actor
 
 
+def get_external_identity(
+    project_root: str | Path, integration_id: str, external_subject: str
+) -> ExternalIdentity:
+    """Return one mapping by its unambiguous integration-scoped subject."""
+    registry = load_actor_registry(project_root)
+    identity = next(
+        (
+            item
+            for item in registry.external_identities
+            if item.integration_id == integration_id
+            and item.external_subject == external_subject
+        ),
+        None,
+    )
+    if identity is None:
+        raise ExternalIdentityNotFound(f"{integration_id}:{external_subject}")
+    return identity
+
+
+def resolve_external_actor(
+    project_root: str | Path, integration_id: str, external_subject: str
+) -> Actor:
+    """Resolve identity only; callers still must authorize the returned Actor."""
+    identity = get_external_identity(project_root, integration_id, external_subject)
+    return get_actor(project_root, identity.actor_id)
+
+
 def format_actor_attribution(display_name: str, actor_id: UUID | None) -> str:
     """Render literal pre-BTN-59 strings without pretending they are an Actor."""
     if actor_id is None:
@@ -299,6 +432,63 @@ def create_actor(
     return updated
 
 
+def link_external_identity(
+    project_root: str | Path,
+    *,
+    actor_id: UUID,
+    integration_id: str,
+    provider: str,
+    external_subject: str,
+    metadata: dict[str, JsonValue] | None = None,
+) -> ActorRegistry:
+    """Atomically link one provider subject to an existing durable Actor."""
+    root = Path(project_root).resolve()
+    registry = load_actor_registry(root)
+    if not any(actor.actor_id == actor_id for actor in registry.actors):
+        raise ActorNotFound(str(actor_id))
+    identity = ExternalIdentity(
+        actor_id=actor_id,
+        integration_id=integration_id,
+        provider=provider,
+        external_subject=external_subject,
+        metadata=metadata or {},
+    )
+    if any(
+        item.integration_id == identity.integration_id
+        and item.external_subject == identity.external_subject
+        for item in registry.external_identities
+    ):
+        raise ExternalIdentityAlreadyLinked(
+            f"{identity.integration_id}:{identity.external_subject}"
+        )
+    updated = registry.model_copy(
+        update={"external_identities": (*registry.external_identities, identity)}
+    )
+    _write_registry(root / ACTOR_REGISTRY, updated)
+    return updated
+
+
+def unlink_external_identity(
+    project_root: str | Path, integration_id: str, external_subject: str
+) -> ActorRegistry:
+    """Remove exactly one integration-scoped external identity mapping."""
+    root = Path(project_root).resolve()
+    registry = load_actor_registry(root)
+    retained = tuple(
+        item
+        for item in registry.external_identities
+        if not (
+            item.integration_id == integration_id
+            and item.external_subject == external_subject
+        )
+    )
+    if len(retained) == len(registry.external_identities):
+        raise ExternalIdentityNotFound(f"{integration_id}:{external_subject}")
+    updated = registry.model_copy(update={"external_identities": retained})
+    _write_registry(root / ACTOR_REGISTRY, updated)
+    return updated
+
+
 def rename_actor(
     project_root: str | Path, actor_id: UUID, display_name: str
 ) -> ActorRegistry:
@@ -325,6 +515,10 @@ def rename_actor(
 def _write_registry(
     path: Path, registry: ActorRegistry, *, create_only: bool = False
 ) -> None:
+    # Frozen Pydantic models do not recursively freeze dictionaries.  Revalidate
+    # at the sole persistence seam so a caller cannot mutate metadata after
+    # construction and then durably introduce a secret or malformed mapping.
+    registry = ActorRegistry.model_validate(registry.model_dump(mode="json"))
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:

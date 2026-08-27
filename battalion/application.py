@@ -24,10 +24,15 @@ from battalion.actors import (
     ActorKind,
     ActorRegistry,
     ActorStatus,
+    ExternalIdentity,
     bootstrap_local_actor,
     get_actor,
+    get_external_identity as _get_external_identity,
     get_local_actor,
+    link_external_identity as _link_external_identity,
     load_actor_registry,
+    resolve_external_actor as _resolve_external_actor,
+    unlink_external_identity as _unlink_external_identity,
 )
 from battalion.config import BattalionConfig
 from battalion.execution import summarize_costs
@@ -288,6 +293,36 @@ class InspectActors:
 
 
 @dataclass(frozen=True)
+class LinkExternalIdentity:
+    """Link one provider subject to an existing durable Actor."""
+
+    project_root: str | Path
+    actor_id: UUID
+    integration_id: str
+    provider: str
+    external_subject: str
+    metadata: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class UnlinkExternalIdentity:
+    """Remove one integration-scoped external identity mapping."""
+
+    project_root: str | Path
+    integration_id: str
+    external_subject: str
+
+
+@dataclass(frozen=True)
+class ResolveExternalIdentity:
+    """Resolve an external caller to an Actor without authorizing an operation."""
+
+    project_root: str | Path
+    integration_id: str
+    external_subject: str
+
+
+@dataclass(frozen=True)
 class StartWorker:
     """Launch a supervised process for a start or resume command."""
 
@@ -390,6 +425,14 @@ class ActorInspection:
     actors: tuple[Actor, ...]
     local_actor: Actor | None
     registry: ActorRegistry
+
+
+@dataclass(frozen=True)
+class ExternalIdentityResolution:
+    """The durable mapping and Actor identified by an external caller."""
+
+    identity: ExternalIdentity
+    actor: Actor
 
 
 @dataclass(frozen=True)
@@ -619,6 +662,52 @@ def inspect_actors(query: InspectActors) -> ActorInspection:
     except (ActorError, IdentityError, OSError, ValueError, TypeError) as exc:
         raise ActorRegistryFailed(root, exc) from exc
     return _actor_inspection(registry)
+
+
+def link_external_identity(command: LinkExternalIdentity) -> ActorInspection:
+    """Persist a credential-free mapping through the application boundary."""
+    root = Path(command.project_root).resolve()
+    try:
+        registry = _link_external_identity(
+            root,
+            actor_id=command.actor_id,
+            integration_id=command.integration_id,
+            provider=command.provider,
+            external_subject=command.external_subject,
+            metadata=dict(command.metadata or {}),
+        )
+    except (ActorError, IdentityError, OSError, ValueError, TypeError) as exc:
+        raise ActorRegistryFailed(root, exc) from exc
+    return _actor_inspection(registry)
+
+
+def unlink_external_identity(command: UnlinkExternalIdentity) -> ActorInspection:
+    """Remove a mapping through the shared application command boundary."""
+    root = Path(command.project_root).resolve()
+    try:
+        registry = _unlink_external_identity(
+            root, command.integration_id, command.external_subject
+        )
+    except (ActorError, IdentityError, OSError, ValueError, TypeError) as exc:
+        raise ActorRegistryFailed(root, exc) from exc
+    return _actor_inspection(registry)
+
+
+def resolve_external_identity(
+    query: ResolveExternalIdentity,
+) -> ExternalIdentityResolution:
+    """Resolve external identity without treating it as authorization evidence."""
+    root = Path(query.project_root).resolve()
+    try:
+        identity = _get_external_identity(
+            root, query.integration_id, query.external_subject
+        )
+        actor = _resolve_external_actor(
+            root, query.integration_id, query.external_subject
+        )
+    except (ActorError, IdentityError, OSError, ValueError, TypeError) as exc:
+        raise ActorRegistryFailed(root, exc) from exc
+    return ExternalIdentityResolution(identity=identity, actor=actor)
 
 
 def inspect_intel(query: InspectIntel) -> IntelInspection:

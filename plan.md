@@ -35,8 +35,10 @@ project capabilities, FTUE bootstrap provenance, assignment and Ticket
 ownership history, and non-authoritative collaboration evidence. Runtime
 BTN-59 now implements the durable project-local Actor registry, offline FTUE
 bootstrap evidence, local human selection, application queries, and compatible
-Actor attribution for run and Recon evidence. Capability enforcement,
-assignment/ownership, and authentication remain BTN-60 through BTN-62.
+Actor attribution for run and Recon evidence. BTN-63 is in progress to add
+credential-free, integration-scoped external identity mappings that resolve to
+Actors without granting authority. Capability enforcement, assignment/ownership,
+and authentication remain BTN-60 through BTN-62.
 
 ## Architecture overview
 
