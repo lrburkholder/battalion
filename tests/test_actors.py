@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from uuid import UUID
 
 import pytest
@@ -12,21 +13,34 @@ from battalion.actors import (
     Actor,
     ActorBootstrapConsumed,
     ActorCreationProvenance,
+    ActorNotFound,
+    ExternalIdentity,
+    ExternalIdentityAlreadyLinked,
+    ExternalIdentityNotFound,
     ActorKind,
     ActorRegistry,
     MalformedActorRegistry,
     bootstrap_local_actor,
     create_actor,
     format_actor_attribution,
+    link_external_identity,
     load_actor_registry,
     rename_actor,
+    resolve_external_actor,
     select_local_actor,
+    unlink_external_identity,
 )
 from battalion.application import (
     BootstrapLocalActor,
     InspectActors,
+    LinkExternalIdentity,
+    ResolveExternalIdentity,
+    UnlinkExternalIdentity,
     establish_local_actor,
     inspect_actors,
+    link_external_identity as link_external_identity_command,
+    resolve_external_identity,
+    unlink_external_identity as unlink_external_identity_command,
 )
 from battalion.identity import load_project_identity
 from battalion.state.models import HumanActionRecord, RunStatus
@@ -218,3 +232,156 @@ def test_actor_creation_and_lookup_use_shared_application_boundary(tmp_path):
     assert created.local_actor is not None
     assert inspected.local_actor == created.local_actor
     assert inspected.actors == created.actors
+
+
+def test_external_identity_links_are_durable_and_scoped_to_an_integration(tmp_path):
+    load_project_identity(tmp_path, create=True)
+    bootstrap = bootstrap_local_actor(tmp_path, "Operator")
+    actor_id = bootstrap.local_actor_id
+    assert actor_id is not None
+
+    linked = link_external_identity(
+        tmp_path,
+        actor_id=actor_id,
+        integration_id="github-personal",
+        provider="github",
+        external_subject="user-42",
+        metadata={"login": "octo-user", "organization": {"slug": "personal"}},
+    )
+    second = link_external_identity(
+        tmp_path,
+        actor_id=actor_id,
+        integration_id="github-work",
+        provider="github",
+        external_subject="user-42",
+        metadata={"login": "octo-user", "organization": {"slug": "work"}},
+    )
+
+    assert len(linked.external_identities) == 1
+    assert len(second.external_identities) == 2
+    assert resolve_external_actor(tmp_path, "github-personal", "user-42").actor_id == actor_id
+    assert resolve_external_actor(tmp_path, "github-work", "user-42").actor_id == actor_id
+    assert load_actor_registry(tmp_path).external_identities == second.external_identities
+
+
+def test_external_identity_subject_cannot_be_linked_twice_within_one_integration(tmp_path):
+    load_project_identity(tmp_path, create=True)
+    actor_id = bootstrap_local_actor(tmp_path, "Operator").local_actor_id
+    assert actor_id is not None
+    link_external_identity(
+        tmp_path,
+        actor_id=actor_id,
+        integration_id="discord-community-one",
+        provider="discord",
+        external_subject="member-9",
+    )
+
+    with pytest.raises(ExternalIdentityAlreadyLinked):
+        link_external_identity(
+            tmp_path,
+            actor_id=actor_id,
+            integration_id="discord-community-one",
+            provider="discord",
+            external_subject="member-9",
+        )
+
+
+def test_external_identity_rejects_secret_metadata_and_malformed_references(tmp_path):
+    with pytest.raises(ValueError, match="secret material"):
+        ExternalIdentity(
+            actor_id=ACTOR_ID,
+            integration_id="github-work",
+            provider="github",
+            external_subject="user-42",
+            metadata={"profile": {"api_token": "must-not-persist"}},
+        )
+
+    load_project_identity(tmp_path, create=True)
+    bootstrap = bootstrap_local_actor(tmp_path, "Operator")
+    assert bootstrap.local_actor_id is not None
+    unknown = UUID("40000000-0000-4000-8000-000000000063")
+    with pytest.raises(ActorNotFound, match=str(unknown)):
+        link_external_identity(
+            tmp_path,
+            actor_id=unknown,
+            integration_id="github-work",
+            provider="github",
+            external_subject="user-42",
+        )
+
+    identity = ExternalIdentity(
+        actor_id=bootstrap.local_actor_id,
+        integration_id="github-work",
+        provider="github",
+        external_subject="user-42",
+    )
+    with pytest.raises(ValueError, match="only one Actor"):
+        ActorRegistry(
+            project_id=bootstrap.project_id,
+            actors=bootstrap.actors,
+            local_actor_id=bootstrap.local_actor_id,
+            bootstrap_event=bootstrap.bootstrap_event,
+            external_identities=(identity, identity),
+        )
+
+
+def test_external_identity_registry_migrates_existing_actor_file_on_next_write(tmp_path):
+    load_project_identity(tmp_path, create=True)
+    bootstrap = bootstrap_local_actor(tmp_path, "Operator")
+    actor_id = bootstrap.local_actor_id
+    assert actor_id is not None
+    path = tmp_path / ".battalion" / "actors.json"
+    legacy = json.loads(path.read_text(encoding="utf-8"))
+    legacy.pop("external_identities")
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    assert load_actor_registry(tmp_path).external_identities == ()
+    link_external_identity(
+        tmp_path,
+        actor_id=actor_id,
+        integration_id="slack-team",
+        provider="slack",
+        external_subject="U0123",
+    )
+
+    migrated = json.loads(path.read_text(encoding="utf-8"))
+    assert migrated["external_identities"] == [
+        {
+            "schema_version": "1.0",
+            "actor_id": str(actor_id),
+            "integration_id": "slack-team",
+            "provider": "slack",
+            "external_subject": "U0123",
+            "metadata": {},
+        }
+    ]
+
+
+def test_external_identity_commands_use_the_shared_application_boundary(tmp_path):
+    load_project_identity(tmp_path, create=True)
+    actor = establish_local_actor(BootstrapLocalActor(tmp_path, "Operator")).local_actor
+    assert actor is not None
+
+    linked = link_external_identity_command(
+        LinkExternalIdentity(
+            tmp_path,
+            actor.actor_id,
+            "github-work",
+            "github",
+            "user-42",
+            {"login": "octo-user"},
+        )
+    )
+    resolved = resolve_external_identity(
+        ResolveExternalIdentity(tmp_path, "github-work", "user-42")
+    )
+    unlinked = unlink_external_identity_command(
+        UnlinkExternalIdentity(tmp_path, "github-work", "user-42")
+    )
+
+    assert linked.registry.external_identities[0].actor_id == actor.actor_id
+    assert resolved.actor == actor
+    assert resolved.identity.provider == "github"
+    assert unlinked.registry.external_identities == ()
+    with pytest.raises(ExternalIdentityNotFound):
+        resolve_external_actor(tmp_path, "github-work", "user-42")

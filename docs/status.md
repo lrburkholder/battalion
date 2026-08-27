@@ -86,12 +86,13 @@ production-client screenshots (BTN-57) is live.
 | BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
 | BTN-85 | Cartographer codebase mapping and maintenance workflow RFC | Yes |
 | BTN-86 | Cartographer persistence benchmark and selection spike | Yes |
+| BTN-102 | Migrate status generation to GitHub Issues and retire backlog.json | Yes |
 
 ### In flight
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| BTN-102 | Migrate status generation to GitHub Issues and retire backlog.json | Wip |
+| BTN-63 | Actor identity and external identity mappings | Wip |
 
 ### Cancelled
 
@@ -99,7 +100,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (42 planned/not-started).
+Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (63 planned/not-started).
 
 <!-- END GENERATED:backlog-delivery -->
 
