@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -32,6 +33,7 @@ from battalion.integrations.runtime import (
     UnsupportedProviderTransport,
     UnsupportedTransportOperation,
 )
+from battalion.work import WorkItem, WorkItemProvenance
 
 
 def _configuration(
@@ -77,11 +79,24 @@ class FakeTransport:
 class FakeWorkSource:
     capability: CapabilitySurface
     _transport: BoundTransport
+    integration_id: str = "work-primary"
 
-    def read(self, item_id: str) -> TransportResponse:
-        return self._transport.invoke(
+    def get(self, item_id: str) -> WorkItem:
+        response = self._transport.invoke(
             TransportOperation.NATIVE_LOCAL_READ, TransportCall({"item_id": item_id})
         )
+        return WorkItem(
+            source_integration_id=self.integration_id,
+            external_id=item_id,
+            title=str(response.payload["id"]),
+            provenance=WorkItemProvenance(
+                retrieved_at=datetime(2026, 8, 26, tzinfo=timezone.utc),
+                operation="work.get",
+            ),
+        )
+
+    def refresh(self, item: WorkItem) -> WorkItem:
+        return self.get(item.external_id)
 
 
 class FakeAdapterFactory:
@@ -128,8 +143,9 @@ def test_runtime_resolves_a_capability_specific_port_through_configured_binding(
 
     port = runtime.work_source("work")
 
-    assert isinstance(port, FakeWorkSource)
-    assert port.read("one") == TransportResponse({"id": "one"})
+    assert port.integration_id == "work-primary"
+    assert port.get("one").external_id == "one"
+    assert not hasattr(port, "comment")
     assert transport.calls == [
         (TransportOperation.NATIVE_LOCAL_READ, TransportCall({"item_id": "one"}))
     ]
@@ -204,7 +220,7 @@ def test_transport_failures_are_typed_and_do_not_escape_as_provider_exceptions(
     port = runtime.work_source("work")
 
     with pytest.raises(expected):
-        port.read("one")
+        port.get("one")
 
 
 def test_malformed_transport_response_has_typed_failure_semantics():
@@ -212,7 +228,7 @@ def test_malformed_transport_response_has_typed_failure_semantics():
     port = runtime.work_source("work")
 
     with pytest.raises(IntegrationMalformedResponse, match="TransportResponse"):
-        port.read("one")
+        port.get("one")
 
 
 def test_adapter_construction_failure_is_typed_unavailable_integration():

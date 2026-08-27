@@ -1,5 +1,7 @@
 """Focused tests for the BTN-30 application command/query boundary."""
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
@@ -12,16 +14,79 @@ from battalion.application import (
     RunIdentityChanged,
     RunNotFound,
     StartRun,
+    StartWorkItemRun,
     StateReadFailed,
     create_initial_state,
     inspect_run,
     resume_run,
     start_run,
+    start_work_item_run,
     state_path,
 )
 from battalion.actors import load_actor_registry
 from battalion.config import BattalionConfig
+from battalion.integrations.configuration import (
+    CapabilitySurface,
+    IntegrationConfiguration,
+    TransportKind,
+)
+from battalion.integrations.runtime import AdapterRegistration, IntegrationRuntime
 from battalion.state.models import Budget, RunState, RunStatus
+from battalion.work import WorkItem, WorkItemProvenance
+
+
+@dataclass
+class _FixtureWorkSource:
+    item: WorkItem
+    capability: CapabilitySurface = CapabilitySurface.WORK_SOURCE
+    integration_id: str = "fixture-work"
+    requests: list[str] | None = None
+
+    def get(self, external_id: str) -> WorkItem:
+        assert external_id == self.item.external_id
+        if self.requests is not None:
+            self.requests.append(external_id)
+        return self.item
+
+    def refresh(self, item: WorkItem) -> WorkItem:
+        return self.get(item.external_id)
+
+
+class _FixtureTransport:
+    def invoke(self, operation, call):  # pragma: no cover - never reached by fixture
+        raise AssertionError("the fixture WorkSource has no transport operation")
+
+
+def _work_source_runtime(item: WorkItem) -> tuple[IntegrationRuntime, _FixtureWorkSource]:
+    source = _FixtureWorkSource(item=item, requests=[])
+    configuration = IntegrationConfiguration.model_validate(
+        {
+            "project": {
+                "integrations": {
+                    "fixture": {
+                        "integration_id": "fixture-work",
+                        "provider": "fixture-work",
+                        "transport": "native-local",
+                        "capabilities": ["work-source"],
+                    }
+                }
+            }
+        }
+    )
+    runtime = IntegrationRuntime(
+        configuration,
+        adapters=(
+            AdapterRegistration(
+                provider="fixture-work",
+                transport=TransportKind.NATIVE_LOCAL,
+                capability=CapabilitySurface.WORK_SOURCE,
+                required_transport_operations=frozenset(),
+                factory=lambda binding, transport: source,
+            ),
+        ),
+        transports={TransportKind.NATIVE_LOCAL: lambda binding: _FixtureTransport()},
+    )
+    return runtime, source
 
 
 def make_state(
@@ -50,6 +115,51 @@ def test_application_creates_canonical_new_run_identity(tmp_path):
     assert state.run_alias.startswith("BTN-32-")
     assert UUID(state.project_id)
     assert (tmp_path / ".battalion" / "project.json").exists()
+
+
+def test_application_starts_a_run_from_configured_work_source_with_durable_provenance(
+    tmp_path,
+):
+    item = WorkItem(
+        source_integration_id="fixture-work",
+        external_id="EXT-101",
+        title="Provider-neutral intake",
+        description="Implement source-backed intake.",
+        status="open",
+        labels=("priority:P1",),
+        assignment_references=("actor-17",),
+        reference_url="https://example.test/work/EXT-101",
+        source_revision="updated-at:2026-08-26T00:00:00Z",
+        provenance=WorkItemProvenance(
+            retrieved_at=datetime(2026, 8, 26, tzinfo=timezone.utc),
+            operation="work.get",
+            evidence={"response_etag": "abc123"},
+        ),
+    )
+    runtime, source = _work_source_runtime(item)
+    captured = {}
+
+    result = start_work_item_run(
+        StartWorkItemRun(
+            ticket_id="BTN-71",
+            integration_name="fixture",
+            external_id="EXT-101",
+            config=BattalionConfig(base_dir=str(tmp_path)),
+        ),
+        integration_runtime=runtime,
+        state_dir=tmp_path / "state",
+        _execute=lambda **kwargs: captured.setdefault("initial_state", kwargs["initial_state"])
+        .model_copy(update={"status": RunStatus.DONE, "phase": "done"}),
+    )
+
+    assert source.requests == ["EXT-101"]
+    assert result.state.ticket_id == "BTN-71"
+    assert UUID(result.state.run_id).version == 4
+    assert result.state.work_item == item
+    assert result.state.spec == item.description
+    assert "work_source" not in captured
+    persisted = RunState.model_validate_json(result.state_path.read_text(encoding="utf-8"))
+    assert persisted.work_item == item
 
 
 def test_start_run_returns_typed_identity_and_persists_graph_result(tmp_path):

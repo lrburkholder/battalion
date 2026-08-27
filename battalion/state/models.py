@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from battalion.work import WorkItem
+
 
 class RunStatus(str, Enum):
     NOT_STARTED = "not-started"
@@ -493,6 +495,7 @@ class RunState(BaseModel):
     run_alias: str | None = None
     project_id: str | None = None
     ticket_id: str
+    work_item: WorkItem | None = None
     spec: str = ""
     status: RunStatus
     phase: str
