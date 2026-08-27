@@ -114,12 +114,13 @@ production-client screenshots (BTN-57) is live.
 | BTN-85 | Cartographer codebase mapping and maintenance workflow RFC | Yes |
 | BTN-86 | Cartographer persistence benchmark and selection spike | Yes |
 | BTN-102 | Migrate status generation to GitHub Issues and retire backlog.json | Yes |
+| BTN-126 | Automate post-merge ticket lifecycle and status projections | Yes |
 
 ### In flight
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| BTN-126 | Automate post-merge ticket lifecycle and status projections | Review |
+| BTN-127 | Make post-merge lifecycle entry point executable in clean CI checkout | Review |
 
 ### Cancelled
 
@@ -435,8 +436,8 @@ battalion/
 ├── intel/
 │   ├── candidates.py           # Create-only Recon Markdown inbox (BTN-34)
 │   ├── models.py               # Candidate and accepted Instinct contracts (BTN-20)
-│   ├── repository.py           # Immutable accepted-Instinct storage (BTN-21)
-│   ├── retrieval.py            # Deterministic Instinct selection (BTN-24)
+│   ├── repository.py           # Immutable accepted-Instinct persistence (BTN-21)
+│   ├── retrieval.py            # Deterministic active-Instinct selection (BTN-24)
 │   └── review.py               # Operator decisions and promotion workflow (BTN-23)
 ├── llm/
 │   ├── __init__.py
@@ -552,7 +553,7 @@ decisions and their implementation status.
 
 ## Contributing
 
-1. **Fork and clone** the repository
+1. **Fork and clone the repository**
 2. **Create a branch** for your changes
 3. **Add tests** for new functionality
 4. **Run existing tests** to ensure nothing breaks
