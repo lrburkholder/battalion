@@ -1,6 +1,6 @@
 # battalion
 
-[![Test](https://github.com/lrburkholder/battalion/actions/workflows/test.yml/badge.svg)](https://github.com/lrburkholder/battalion/actions/workflows/test.yml)
+[![Test](https://github.com/lrburkholder/battalion/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/lrburkholder/battalion/actions/workflows/test.yml?query=branch%3Amain)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://lrburkholder.github.io/battalion)
@@ -170,10 +170,10 @@ environment; do not put API keys in `battalion.config.yaml`.
 BTN-15 adds a guided setup command:
 
 ```bash
-python -m battalion setup
+battalion setup
 
 # Non-interactive example
-python -m battalion setup \
+battalion setup \
   --model-architect provider/model-a \
   --model-driver provider/model-b \
   --model-reviewer provider/model-c \
@@ -222,10 +222,10 @@ operation authorization remain separate follow-up work.
 ### Run Battalion
 
 ```bash
-python -m battalion run BTN-16 --spec path/to/spec.md
-python -m battalion status run-BTN-16 --human
-python -m battalion status run-BTN-16 --costs --human
-python -m battalion resume run-BTN-16
+battalion run BTN-16 --spec path/to/spec.md
+battalion status run-BTN-16 --human
+battalion status run-BTN-16 --costs --human
+battalion resume run-BTN-16
 ```
 
 `status --costs` projects persisted LiteLLM input/output tokens and known cost
@@ -234,8 +234,9 @@ explicit and never becomes zero; token usage is still shown. Without `--human`,
 the command emits the cost summary as JSON. Cost reporting does not change the
 run-level turn budget used by interrupt trigger #3.
 
-Run `python -m battalion <command> --help` for the authoritative options while
-the CLI is evolving.
+Run `battalion <command> --help` for the authoritative options while the CLI
+is evolving. `python -m battalion <command>` remains an equivalent source-mode
+entry point.
 
 ### Browse with the Desktop Console
 

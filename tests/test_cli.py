@@ -2,6 +2,7 @@
 
 import json
 import tempfile
+import tomllib
 from pathlib import Path
 from uuid import UUID
 
@@ -14,6 +15,14 @@ from battalion.state.persistence import save_state
 
 
 runner = CliRunner()
+
+
+def test_project_installs_the_battalion_console_script() -> None:
+    """Pause guidance must name an entry point that package installs expose."""
+    root = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert project["project"]["scripts"]["battalion"] == "battalion.cli:main"
 
 
 def make_paused_state(run_id: str, phase: str = "driver_red") -> RunState:
@@ -35,6 +44,14 @@ def make_paused_state(run_id: str, phase: str = "driver_red") -> RunState:
         interrupt_log=[],
         manual_checkpoints=[],
     )
+
+
+def test_cli_help_uses_console_safe_separator() -> None:
+    """Public help must remain legible on legacy Windows code pages."""
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "Battalion SDLC Orchestrator - run, resume" in result.output
 
 
 def test_run_creates_state_file(tmp_path, monkeypatch):
@@ -60,6 +77,7 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     
     assert result.exit_code == 0
     assert "Run complete" in result.output
+    assert " -> done" in result.output
     
     # Check state file was created
     state_files = list((tmp_path / ".battalion" / "state").glob("*.json"))
@@ -125,6 +143,7 @@ def test_resume_loads_and_continues(tmp_path, monkeypatch):
     
     assert result.exit_code == 0
     assert "Resumed" in result.output
+    assert " -> done" in result.output
     assert "done" in result.output
     
     # Verify state was updated
@@ -256,6 +275,7 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
         result = runner.invoke(app, ["run", "BTN-9-test", "--spec", str(spec_file)])
 
     assert result.exit_code == 0
+    assert "Run paused - awaiting human review." in result.output
     assert "Run paused" in result.output
     assert "Invalid API Key" in result.output
     assert "Resume when ready: battalion resume " in result.output

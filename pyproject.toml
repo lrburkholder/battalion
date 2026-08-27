@@ -25,6 +25,7 @@ dev = [
 ]
 
 [project.scripts]
+battalion = "battalion.cli:main"
 battalion-desktop = "battalion.desktop.app:main"
 
 [tool.setuptools.packages.find]

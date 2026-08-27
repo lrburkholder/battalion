@@ -41,7 +41,14 @@ class TestReadmeBadges:
     def test_test_status_badge_present(self, readme_content: str) -> None:
         """Test status badge is present and links to GitHub Actions workflow."""
         assert "[![Test" in readme_content
-        assert "github.com/lrburkholder/battalion/actions/workflows/test.yml" in readme_content
+        assert (
+            "https://github.com/lrburkholder/battalion/actions/workflows/test.yml/"
+            "badge.svg?branch=main"
+        ) in readme_content
+        assert (
+            "https://github.com/lrburkholder/battalion/actions/workflows/test.yml"
+            "?query=branch%3Amain"
+        ) in readme_content
 
     def test_python_version_badge_present(self, readme_content: str) -> None:
         """Python version badge is present."""

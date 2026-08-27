@@ -231,11 +231,19 @@ def test_pages_workflow_limits_deployment_permissions() -> None:
     )
 
     assert workflow["permissions"] == {"contents": "read"}
+    assert workflow[True]["workflow_run"] == {
+        "workflows": ["Complete merged Battalion ticket"],
+        "types": ["completed"],
+    }
     assert workflow["jobs"]["build"]["permissions"] == {
         "contents": "read",
         "issues": "read",
         "pages": "read",
     }
+    assert workflow["jobs"]["build"]["if"] == (
+        "github.event_name != 'workflow_run' || "
+        "github.event.workflow_run.conclusion == 'success'"
+    )
     build_steps = workflow["jobs"]["build"]["steps"]
     assert {
         "name": "Render current project status from canonical GitHub Issues",
@@ -246,7 +254,8 @@ def test_pages_workflow_limits_deployment_permissions() -> None:
     deploy = workflow["jobs"]["deploy"]
     assert deploy["needs"] == "build"
     assert deploy["if"] == (
-        "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'"
+        "github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && "
+        "(github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')"
     )
     assert deploy["permissions"] == {
         "actions": "read",

@@ -43,7 +43,7 @@ from battalion.setup import (
 
 app = typer.Typer(
     name="battalion",
-    help="Battalion SDLC Orchestrator — run, resume, and check status of tickets.",
+    help="Battalion SDLC Orchestrator - run, resume, and check status of tickets.",
     add_completion=False,
 )
 
@@ -150,7 +150,7 @@ def _print_pause_reason(state: RunState, run_id: str) -> None:
     if state.status != RunStatus.AWAITING_HUMAN or not state.interrupt_log:
         return
     entry = state.interrupt_log[-1]
-    typer.echo("\nRun paused — awaiting human review.")
+    typer.echo("\nRun paused - awaiting human review.")
     typer.echo(f"  {_describe_interrupt(entry)}")
     typer.echo(f"  Resume when ready: battalion resume {run_id}")
 
@@ -222,7 +222,7 @@ def run(
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
     
-    typer.echo(f"Run complete: {result.run_id} → {result.state.status.value}")
+    typer.echo(f"Run complete: {result.run_id} -> {result.state.status.value}")
     typer.echo(f"State saved to: {result.state_path}")
     _print_pause_reason(result.state, result.run_id)
 
@@ -265,7 +265,7 @@ def resume(
     
     if result.warning:
         typer.echo(f"Warning: {result.warning}")
-    typer.echo(f"Resumed: {result.run_id} → {result.state.status.value}")
+    typer.echo(f"Resumed: {result.run_id} -> {result.state.status.value}")
     typer.echo(f"State saved to: {result.state_path}")
     _print_pause_reason(result.state, result.run_id)
 

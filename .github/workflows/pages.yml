@@ -37,6 +37,12 @@ on:
       - scripts/capture_pages_screenshots.py
       - .github/pages/**
       - .github/workflows/pages.yml
+  # The lifecycle workflow uses GITHUB_TOKEN to close its validated Issue.
+  # That mutation does not itself trigger an issues workflow, so rebuild after
+  # the successful lifecycle run to publish the post-merge canonical status.
+  workflow_run:
+    workflows: [Complete merged Battalion ticket]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -48,6 +54,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -82,7 +89,7 @@ jobs:
           path: ./_site
 
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     needs: build
     runs-on: ubuntu-latest
     permissions:
