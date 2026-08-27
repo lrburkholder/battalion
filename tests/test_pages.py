@@ -256,16 +256,30 @@ def test_pages_workflow_limits_deployment_permissions() -> None:
     assert deploy["environment"]["name"] == "github-pages"
 
 
-def test_test_workflow_validates_canonical_state_without_projection_drift_check() -> None:
+def test_test_workflow_is_hermetic() -> None:
     workflow = yaml.safe_load(
         (REPOSITORY_ROOT / ".github" / "workflows" / "test.yml").read_text(
             encoding="utf-8"
         )
     )
     steps = workflow["jobs"]["test"]["steps"]
+    assert workflow["permissions"] == {"contents": "read"}
+    assert all("sync_status.py" not in step.get("run", "") for step in steps)
+
+
+def test_status_governance_workflow_tracks_canonical_lifecycle_events() -> None:
+    workflow = yaml.safe_load(
+        (REPOSITORY_ROOT / ".github" / "workflows" / "status-governance.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert workflow["permissions"] == {"contents": "read", "issues": "read"}
+    assert workflow[True]["issues"]["types"] == [
+        "closed", "edited", "labeled", "milestoned", "opened", "reopened", "unlabeled", "demilestoned",
+    ]
     assert {
         "name": "Validate canonical GitHub Issue corpus",
         "env": {"GH_TOKEN": "${{ github.token }}"},
         "run": "python scripts/sync_status.py --validate",
-    } in steps
-    assert all(step.get("run") != "python scripts/sync_status.py --check" for step in steps)
+    } in workflow["jobs"]["validate"]["steps"]
