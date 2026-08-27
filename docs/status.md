@@ -88,12 +88,13 @@ production-client screenshots (BTN-57) is live.
 | BTN-85 | Cartographer codebase mapping and maintenance workflow RFC | Yes |
 | BTN-86 | Cartographer persistence benchmark and selection spike | Yes |
 | BTN-102 | Migrate status generation to GitHub Issues and retire backlog.json | Yes |
+| BTN-126 | Automate post-merge ticket lifecycle and status projections | Yes |
 
 ### In flight
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| BTN-126 | Automate post-merge ticket lifecycle and status projections | Review |
+| — | Nothing currently in flight | — |
 
 ### Cancelled
 
@@ -101,7 +102,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (63 planned/not-started).
+Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (64 planned/not-started).
 
 <!-- END GENERATED:backlog-delivery -->
 
