@@ -1,6 +1,7 @@
 """CLI integration tests for battalion.cli (BTN-9)."""
 
 import json
+import re
 import tempfile
 import tomllib
 from pathlib import Path
@@ -15,6 +16,13 @@ from battalion.state.persistence import save_state
 
 
 runner = CliRunner()
+
+
+def _compact_help(output: str) -> str:
+    """Compare option spellings independently of Rich wrapping and ANSI styles."""
+
+    without_ansi = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+    return re.sub(r"\s+", "", without_ansi)
 
 
 def test_project_installs_the_battalion_console_script() -> None:
@@ -52,8 +60,8 @@ def test_cli_help_uses_console_safe_separator() -> None:
 
     assert result.exit_code == 0
     assert "Battalion SDLC Orchestrator - run, resume" in result.output
-    assert "--trace-output" in runner.invoke(app, ["run", "--help"]).output
-    assert "--trace-output" in runner.invoke(app, ["resume", "--help"]).output
+    assert "--trace-output" in _compact_help(runner.invoke(app, ["run", "--help"]).output)
+    assert "--trace-output" in _compact_help(runner.invoke(app, ["resume", "--help"]).output)
 
 
 def test_run_creates_state_file(tmp_path, monkeypatch):
