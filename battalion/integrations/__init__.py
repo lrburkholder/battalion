@@ -22,6 +22,17 @@ from battalion.integrations.effects import (
     UnknownSideEffectOperation,
     request_digest,
 )
+from battalion.integrations.github import (
+    GitHubHttpIssueClient,
+    GitHubIssueClient,
+    GitHubIssueConflict,
+    GitHubIssueMutationPolicy,
+    GitHubIssueMutationService,
+    GitHubIssueNotFound,
+    GitHubIssueWorkSource,
+    github_work_source_factory,
+    github_work_source_registration,
+)
 from battalion.integrations.runtime import (
     AdapterBinding,
     AdapterRegistration,
@@ -79,6 +90,13 @@ __all__ = [
     "DeliveryReceipt",
     "DuplicateSideEffectKey",
     "HumanInteractionPort",
+    "GitHubHttpIssueClient",
+    "GitHubIssueClient",
+    "GitHubIssueConflict",
+    "GitHubIssueMutationPolicy",
+    "GitHubIssueMutationService",
+    "GitHubIssueNotFound",
+    "GitHubIssueWorkSource",
     "IntegrationCancelled",
     "IntegrationConfigurationError",
     "IntegrationError",
@@ -110,4 +128,6 @@ __all__ = [
     "WorkSourceMutationPort",
     "WorkSourceReadPort",
     "request_digest",
+    "github_work_source_factory",
+    "github_work_source_registration",
 ]
