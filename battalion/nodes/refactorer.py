@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from battalion.context import refactorer_authorized_paths
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.execution import record_no_change
 from battalion.nodes.errors import RoleOutputError, WriteScopeMisconfigured
@@ -39,6 +40,15 @@ class EmptyRefactorerOutput(RoleOutputError):
 
     A Refactorer no-op is valid only when it explicitly identifies the
     ``no-change`` outcome and supplies a short reason.
+    """
+
+
+class UnauthorizedRefactorerOutput(RoleOutputError):
+    """Raised when Refactorer tries to alter a non-GREEN artifact.
+
+    Refactorer's write scope is a structural filesystem boundary.  This
+    narrower contract boundary prevents the role from expanding a ticket by
+    creating tests, documentation, or edits to unrelated project code.
     """
 
 
@@ -120,6 +130,52 @@ def extract_files(response: Any) -> dict[str, str]:
     return extract_output(response).files
 
 
+def _is_nonproduction_path(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    name = normalized.rsplit("/", maxsplit=1)[-1].casefold()
+    suffix = Path(name).suffix.casefold()
+    return (
+        normalized.startswith("docs/")
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+        or suffix in {".md", ".rst", ".txt"}
+    )
+
+
+def _validate_authorized_targets(
+    state: RunState,
+    targets: list[tuple[Any, str]],
+    base_dir: str | Path,
+) -> None:
+    """Reject Refactorer output outside the latest GREEN artifact set.
+
+    A direct node-level caller without any execution evidence remains
+    backwards-compatible.  Every graph execution has this evidence, so its
+    Refactorer attempt is constrained to the GREEN Driver's actual writes.
+    """
+    if not state.execution_record.node_executions:
+        return
+
+    authorized = set(refactorer_authorized_paths(state))
+    root = Path(base_dir).resolve()
+    requested = {
+        tool.resolve(relative_path).resolve().relative_to(root).as_posix()
+        for tool, relative_path in targets
+    }
+    prohibited = sorted(path for path in requested if _is_nonproduction_path(path))
+    unexpected = sorted(path for path in requested if path not in authorized)
+    if prohibited or unexpected:
+        details: list[str] = []
+        if prohibited:
+            details.append("non-production paths: " + ", ".join(prohibited))
+        if unexpected:
+            details.append("not written by accepted GREEN Driver: " + ", ".join(unexpected))
+        raise UnauthorizedRefactorerOutput(
+            "Refactorer may modify only production artifacts written by the accepted "
+            "GREEN Driver attempt; " + "; ".join(details)
+        )
+
+
 def run_refactorer(
     state: RunState,
     refactor_text: str,
@@ -141,8 +197,9 @@ def run_refactorer(
     proceeds to review without writes. Other empty mappings are rejected.
 
     Raises InfraFailure (from call_llm_fn), WriteScopeMisconfigured,
-    MalformedRefactorerOutput, EmptyRefactorerOutput on failure — never
-    silently swallows any of them."""
+    MalformedRefactorerOutput, EmptyRefactorerOutput, or
+    UnauthorizedRefactorerOutput on failure — never silently swallows any of
+    them."""
     scope_key = scope_key_for_phase(state.write_scope, "refactorer")
     write_tools = build_write_tools(
         scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
@@ -179,6 +236,7 @@ def run_refactorer(
         targets = resolve_scoped_batch(write_tools, list(files))
     except ValueError as exc:
         raise WriteScopeMisconfigured(str(exc)) from exc
+    _validate_authorized_targets(state, targets, base_dir)
     for (tool, relative_path), content in zip(targets, files.values(), strict=True):
         tool.write(relative_path, content)
 

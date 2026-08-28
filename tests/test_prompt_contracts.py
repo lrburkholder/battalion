@@ -90,6 +90,8 @@ def test_refactorer_prompt_preserves_behavior_and_architecture():
     assert "Do not claim that tests were executed" in prompt
     assert '"outcome": "no-change"' in prompt
     assert "reason" in prompt
+    assert "Authorized Refactorer targets" in prompt
+    assert "Do not add comments or docstrings" in prompt
 
 
 def test_recon_prompt_preserves_post_completion_human_authority():

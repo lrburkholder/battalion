@@ -214,6 +214,19 @@ def refactorer_context(
     )
     if intervention is not None:
         sections.append(("Human intervention", intervention))
+    authorized_paths = refactorer_authorized_paths(state)
+    if authorized_paths:
+        authorization = (
+            "Only these production files were written by the accepted GREEN Driver "
+            "attempt and may be changed:\n"
+            + "\n".join(f"- {path}" for path in authorized_paths)
+        )
+    else:
+        authorization = (
+            "No GREEN Driver production artifact is recorded for this run. "
+            "Return the explicit no-change result; do not create a file."
+        )
+    sections.append(("Authorized Refactorer targets", authorization))
     sections.append(("Approved plan", _plan_text(base_dir)))
     sections.extend(
         (f"Passing file: {relative}", content)
@@ -230,3 +243,16 @@ def reviewer_context(
     """Assemble Reviewer knowledge through the same canonical context path."""
 
     return _bounded(_base_sections(state, instincts))
+
+
+def refactorer_authorized_paths(state: RunState) -> tuple[str, ...]:
+    """Return the latest GREEN Driver artifacts that Refactorer may alter.
+
+    Artifact provenance records files actually written by the preceding Driver
+    attempt.  It is therefore a stronger boundary than a broad implementation
+    root or a model's guess about authorship.
+    """
+    for execution in reversed(state.execution_record.node_executions):
+        if execution.phase == "driver_green" and execution.outcome == "succeeded":
+            return tuple(sorted(artifact.path for artifact in execution.artifact_provenance))
+    return ()

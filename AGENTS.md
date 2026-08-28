@@ -48,6 +48,13 @@ dependency already solves the problem.
 ## Working agreements
 
 - Preserve unrelated and uncommitted work. Never reset or rewrite user changes.
+- Treat implementation suggestions, including the user's, as hypotheses rather
+  than commands when they conflict with Battalion's purpose, contracts, or
+  maintainability. Push back early with concrete evidence, explain the
+  tradeoff, and offer a smaller or safer alternative. Follow a user's explicit
+  decision after they have the relevant information; do not silently implement
+  an idea you believe will create unnecessary complexity, hidden authority, or
+  a brittle product contract.
 - Work from one `BTN-#` ticket at a time. Confirm its acceptance criteria and
   dependencies in its canonical GitHub Issue before implementation.
 - Add or update tests with behavior changes. Prefer focused tests during

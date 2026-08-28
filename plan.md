@@ -293,7 +293,9 @@ delivery semantics.
   behavior materially and should be reviewed as role-definition changes.
 - BTN-26 persists the supplied specification in `RunState` and assembles
   deterministic, bounded context for Architect, Driver RED/GREEN, and
-  Refactorer through one canonical context path.
+  Refactorer through one canonical context path. BTN-129 narrows Refactorer
+  writes to the latest successful GREEN Driver artifacts when provenance is
+  available.
 - BTN-24 selects active accepted Instincts with literal audience,
   applicability, and tag rules, then injects whole identified entries through
   that same bounded context path for every execution role.

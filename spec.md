@@ -337,6 +337,16 @@ source roots. Context is bounded before each LLM call: RED receives existing
 implementation context, GREEN receives accepted RED tests, and Refactorer
 receives the passing file set.
 
+For a graph execution with GREEN artifact provenance, Refactorer receives the
+latest successful GREEN Driver's production artifact paths and may write only
+those paths. Its scope remains a structural ceiling, but artifact provenance is
+the narrower task boundary. Refactorer may not create or modify tests,
+documentation, configuration, or examples; its prompt also forbids adding
+comments or docstrings. An attempted path outside the recorded GREEN artifact
+set is a typed role-output failure and follows the documented human interrupt
+path. A no-op remains valid when no behavior-preserving code simplification is
+warranted.
+
 ## Interrupt Taxonomy (v1, final)
 | # | Trigger | Definition | Handling |
 |---|---|---|---|
