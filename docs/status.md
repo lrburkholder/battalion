@@ -82,18 +82,32 @@ production-client screenshots (BTN-57) is live.
 | BTN-66 | Portable integration configuration and secret indirection | Yes |
 | BTN-67 | Integration adapter runtime and transport boundary | Yes |
 | BTN-70 | External side-effect evidence and idempotent delivery | Yes |
+| BTN-71 | WorkSource abstraction and configured intake | Yes |
 | BTN-82 | Consolidate role-node factories behind a shared graph scaffold | Yes |
 | BTN-83 | Generate status documentation from the canonical backlog (ADR-0027) | Yes |
 | BTN-84 | Fix Tauri failure-diagnostics test to build its fixture instead of relying on a gitignored artifact | Yes |
 | BTN-85 | Cartographer codebase mapping and maintenance workflow RFC | Yes |
 | BTN-86 | Cartographer persistence benchmark and selection spike | Yes |
 | BTN-102 | Migrate status generation to GitHub Issues and retire backlog.json | Yes |
+| BTN-104 | Generate project status from GitHub milestones | Yes |
+| BTN-126 | Automate post-merge ticket lifecycle and status projections | Yes |
+| BTN-127 | Make post-merge lifecycle entry point executable in clean CI checkout | Yes |
+| BTN-128 | Decouple status projection generation from live GitHub drift checks | Yes |
+| BTN-131 | Tactician workflow selector architecture RFC | Yes |
+| BTN-151 | Make post-merge ticket lifecycle reruns read current PR metadata | Yes |
+| BTN-152 | Define validated multi-ticket post-merge lifecycle markers | Yes |
 
 ### In flight
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| BTN-71 | WorkSource abstraction and configured intake | Review |
+| BTN-73 | Versioned outbound event sink contract | Review |
+| BTN-74 | Generic outbound HTTP webhook adapter | Review |
+| BTN-75 | Actor-targeted notification routing | Review |
+| BTN-79 | Discord human-interrupt notification adapter | Review |
+| BTN-72 | GitHub Issues WorkSource adapter | Wip |
+| BTN-129 | Release-gate CLI UAT remediation | Wip |
+| BTN-136 | Define tagged release, packaging, and installer path | Wip |
 
 ### Cancelled
 
@@ -101,7 +115,7 @@ production-client screenshots (BTN-57) is live.
 | --- | --- | --- |
 | BTN-17 | Interrupt/checkpoint web UI | No |
 
-Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (62 planned/not-started).
+Ticket scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (75 planned/not-started).
 
 <!-- END GENERATED:backlog-delivery -->
 

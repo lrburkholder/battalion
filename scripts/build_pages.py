@@ -18,6 +18,7 @@ PUBLISHED_DOCUMENTS = {
     "spec.md": "spec.md",
     "plan.md": "plan.md",
     "docs/status.md": "docs/status.md",
+    "docs/release.md": "docs/release.md",
     "docs/adrs/README.md": "docs/adrs/index.md",
     **{
         f"docs/adrs/adr{number:04d}.md": f"docs/adrs/adr{number:04d}.md"
