@@ -194,6 +194,23 @@ references. The current transport values are `native-local`, `http-rest`,
 `work-source`, `knowledge-source`, `repository-service`, `notification`,
 `outbound-event-sink`, and `human-interaction`.
 
+### Outbound Event Contract (BTN-73, in progress)
+
+Configured `outbound-event-sink` bindings receive one-way, versioned machine
+events after the corresponding Run state is durable. Schema `1.0` supports
+`human_interrupt`, `run_failed`, and `run_completed`. Every envelope contains
+a stable event ID, type, schema version, timezone-aware occurrence time,
+bounded Run/project provenance, and typed minimized data. It never includes
+prompts, transcripts, source content, arbitrary state, model context, or
+secrets.
+
+Within a major schema version, changes must be additive and optional. Removing,
+renaming, changing the meaning of a field, or adding a required field requires
+a new registered schema version. Consumers must ignore unknown optional fields
+and reject unknown major versions. Delivery uses the durable side-effect ledger
+and Battalion-minted idempotency key; receiving an event grants no command,
+Actor, or Run authority.
+
 ```yaml
 # battalion.integrations.yaml — safe to share
 project:
