@@ -128,6 +128,8 @@ class ConfiguredOutboundEventSink(Protocol):
     @property
     def transport(self) -> TransportKind: ...
 
+    def accepts(self, event: OutboundEvent) -> bool: ...
+
     def publish(self, event: OutboundEvent, *, idempotency_key: str) -> Any: ...
 
 
@@ -214,6 +216,12 @@ class OutboundEventPublisher:
         for event in events:
             digest = request_digest(event.model_dump(mode="json"))
             for sink in destination_sinks:
+                # Event selection is evaluated before opening a durable
+                # operation: intentionally unsubscribed event types are not
+                # delivery attempts. Older in-process fixtures select all.
+                accepts = getattr(sink, "accepts", lambda _: True)
+                if not accepts(event):
+                    continue
                 receipts.append(
                     self._coordinator.execute(
                         capability=CapabilitySurface.OUTBOUND_EVENT_SINK,

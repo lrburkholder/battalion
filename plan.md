@@ -278,7 +278,12 @@ BTN-70 now makes externally visible operations replay-safe: a versioned
 side-effect ledger inside `RunState` records write-ahead intent, typed
 attempt outcomes, and reconciliation evidence under Battalion-minted stable
 logical operation IDs (ADR-0029). Operation policy and health validation
-remain BTN-68 and BTN-69. BTN-72 is in progress delivering the GitHub Issues
+remain BTN-68 and BTN-69. BTN-73 now adds versioned, minimized outbound
+machine-event envelopes after durable Run transitions. BTN-74 is in progress
+adding a generic, vendor-neutral HTTP webhook OutboundEventSink: configured
+selected event types post through one bounded endpoint with symbolic
+authorization, a stable idempotency identity, and BTN-70 outcome semantics.
+BTN-72 is in progress delivering the GitHub Issues
 WorkSource adapter: repository-bound Issue normalization remains above
 replaceable transports, and any accepted GitHub mutation must pass through
 application policy plus the shared ledger rather than granting graph nodes

@@ -194,7 +194,7 @@ references. The current transport values are `native-local`, `http-rest`,
 `work-source`, `knowledge-source`, `repository-service`, `notification`,
 `outbound-event-sink`, and `human-interaction`.
 
-### Outbound Event Contract (BTN-73, in progress)
+### Outbound Event Contract (BTN-73; HTTP delivery in BTN-74, in progress)
 
 Configured `outbound-event-sink` bindings receive one-way, versioned machine
 events after the corresponding Run state is durable. Schema `1.0` supports
@@ -211,25 +211,37 @@ and reject unknown major versions. Delivery uses the durable side-effect ledger
 and Battalion-minted idempotency key; receiving an event grants no command,
 Actor, or Run authority.
 
+The built-in, vendor-neutral `http-webhook` adapter POSTs selected envelopes to
+one configured HTTP(S) endpoint. Its portable configuration accepts only an
+endpoint, a bounded timeout, and a non-empty selection of registered event
+types. Authorization is a symbolic `credential_references.authorization`
+reference, never a literal setting. The transport does not follow redirects;
+it sends the same Battalion operation ID in `Idempotency-Key` on a confirmed
+retry. A timeout, cancellation, malformed response, or unavailable endpoint
+is an ambiguous outcome that requires BTN-70 reconciliation before
+redelivery; a non-2xx response is a confirmed rejection and may retry under
+that same event and operation identity.
+
 ```yaml
 # battalion.integrations.yaml — safe to share
 project:
   integrations:
-    github-work:
-      integration_id: github-work-primary
-      provider: github
-      transport: http-rest
-      capabilities: [work-source]
+    automation-events:
+      integration_id: automation-events-primary
+      provider: http-webhook
+      transport: webhook
+      capabilities: [outbound-event-sink]
       settings:
-        repository: example/battalion
-        endpoint: https://api.github.example
+        endpoint: https://automation.example/events
+        event_types: [human_interrupt, run_failed]
+        timeout_seconds: 10
       credential_references:
-        access_token:
-          reference: env://GITHUB_TOKEN
+        authorization:
+          reference: env://AUTOMATION_WEBHOOK_AUTHORIZATION
 ```
 
 References may use `env://NAME` or `keyring://service/account`; their values
-are resolved outside project configuration by a later integration runtime.
+are resolved outside project configuration by an approved transport resolver.
 Literal tokens, passwords, and secret-bearing settings are rejected. An optional
 organization allow-list and Actor preferences can only narrow or select project
 bindings, so they cannot grant a provider or capability forbidden by project

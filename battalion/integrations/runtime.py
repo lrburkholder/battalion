@@ -235,6 +235,7 @@ class _ConfiguredOutboundEventSink:
         "__integration_id",
         "__integration_name",
         "__provider",
+        "__accepts",
         "__publish",
         "__transport",
     )
@@ -256,9 +257,13 @@ class _ConfiguredOutboundEventSink:
             raise IntegrationMalformedResponse(
                 "outbound-event-sink publish must be callable"
             )
+        accepts = getattr(source, "accepts", lambda event: True)
+        if not callable(accepts):
+            raise IntegrationMalformedResponse("outbound-event-sink accepts must be callable")
         self.__integration_id = definition.integration_id
         self.__integration_name = integration_name
         self.__provider = definition.provider
+        self.__accepts = accepts
         self.__publish = publish
         self.__transport = definition.transport
 
@@ -281,6 +286,12 @@ class _ConfiguredOutboundEventSink:
     @property
     def transport(self) -> TransportKind:
         return self.__transport
+
+    def accepts(self, event: "OutboundEvent") -> bool:
+        accepted = self.__accepts(event)
+        if not isinstance(accepted, bool):
+            raise IntegrationMalformedResponse("outbound-event-sink accepts must return a boolean")
+        return accepted
 
     def publish(self, event: "OutboundEvent", *, idempotency_key: str) -> Any:
         return self.__publish(event, idempotency_key=idempotency_key)
