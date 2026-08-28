@@ -131,9 +131,9 @@ production-client screenshots (BTN-57) is live.
 | BTN-74 | Generic outbound HTTP webhook adapter | Review |
 | BTN-75 | Actor-targeted notification routing | Review |
 | BTN-79 | Discord human-interrupt notification adapter | Review |
+| BTN-136 | Define tagged release, packaging, and installer path | Review |
 | BTN-72 | GitHub Issues WorkSource adapter | Wip |
 | BTN-129 | Release-gate CLI UAT remediation | Wip |
-| BTN-136 | Define tagged release, packaging, and installer path | Wip |
 
 ### Cancelled
 
