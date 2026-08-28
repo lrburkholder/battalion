@@ -277,10 +277,13 @@ registered adapters and bounded transports with deterministic typed failures.
 BTN-70 now makes externally visible operations replay-safe: a versioned
 side-effect ledger inside `RunState` records write-ahead intent, typed
 attempt outcomes, and reconciliation evidence under Battalion-minted stable
-logical operation IDs (ADR-0029). Operation policy, health validation, and
-individual provider operations remain BTN-68, BTN-69, and BTN-71 through
-BTN-80; the capability contracts consume the ledger rather than redefining
-delivery semantics.
+logical operation IDs (ADR-0029). Operation policy and health validation
+remain BTN-68 and BTN-69. BTN-72 is in progress delivering the GitHub Issues
+WorkSource adapter: repository-bound Issue normalization remains above
+replaceable transports, and any accepted GitHub mutation must pass through
+application policy plus the shared ledger rather than granting graph nodes
+GitHub access. The remaining capability operations continue to consume the
+ledger rather than redefining delivery semantics.
 
 ## Risks and watch items
 
