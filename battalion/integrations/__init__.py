@@ -32,6 +32,7 @@ from battalion.integrations.events import (
     RunCompletedData,
     RunFailedData,
     events_for_state,
+)
 from battalion.integrations.github import (
     GitHubHttpIssueClient,
     GitHubIssueClient,
