@@ -30,7 +30,6 @@ on:
 
 permissions:
   contents: read
-  issues: read
 
 jobs:
   test:
@@ -61,8 +60,3 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short
-
-      - name: Check GitHub Issue-backed status projections
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/sync_status.py --check

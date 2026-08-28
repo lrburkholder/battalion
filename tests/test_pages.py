@@ -46,7 +46,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "plan.md",
             "spec.md",
             "docs/adrs/index.md",
-            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 30)},
+                *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 32)},
             "docs/rfcs/rfc0004.md",
             "docs/operator/workflow.md",
             "docs/operator/screens.md",
@@ -126,9 +126,12 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "adr0027.html" in adr_index
         assert "adr0028.html" in adr_index
         assert "adr0029.html" in adr_index
+        assert "adr0030.html" in adr_index
+        assert "adr0031.html" in adr_index
         status_page = (output / "docs" / "status.md").read_text(encoding="utf-8")
         assert "BEGIN GENERATED:backlog-delivery" in status_page
-        assert "| BTN-1 |" in status_page
+        assert "### Milestone overview" in status_page
+        assert "| Milestone | Tickets | Shipped | Active | Planned | Cancelled |" in status_page
         landing = (output / "index.md").read_text(encoding="utf-8")
         assert "docs/status.html" in landing
         assert not (output / "backlog.json").exists()
@@ -232,8 +235,15 @@ def test_pages_workflow_limits_deployment_permissions() -> None:
     assert workflow["permissions"] == {"contents": "read"}
     assert workflow["jobs"]["build"]["permissions"] == {
         "contents": "read",
+        "issues": "read",
         "pages": "read",
     }
+    build_steps = workflow["jobs"]["build"]["steps"]
+    assert {
+        "name": "Render current project status from canonical GitHub Issues",
+        "env": {"GH_TOKEN": "${{ github.token }}"},
+        "run": "python scripts/sync_status.py",
+    } in build_steps
 
     deploy = workflow["jobs"]["deploy"]
     assert deploy["needs"] == "build"
@@ -246,3 +256,32 @@ def test_pages_workflow_limits_deployment_permissions() -> None:
         "id-token": "write",
     }
     assert deploy["environment"]["name"] == "github-pages"
+
+
+def test_test_workflow_is_hermetic() -> None:
+    workflow = yaml.safe_load(
+        (REPOSITORY_ROOT / ".github" / "workflows" / "test.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["test"]["steps"]
+    assert workflow["permissions"] == {"contents": "read"}
+    assert all("sync_status.py" not in step.get("run", "") for step in steps)
+
+
+def test_status_governance_workflow_tracks_canonical_lifecycle_events() -> None:
+    workflow = yaml.safe_load(
+        (REPOSITORY_ROOT / ".github" / "workflows" / "status-governance.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert workflow["permissions"] == {"contents": "read", "issues": "read"}
+    assert workflow[True]["issues"]["types"] == [
+        "closed", "edited", "labeled", "milestoned", "opened", "reopened", "unlabeled", "demilestoned",
+    ]
+    assert {
+        "name": "Validate canonical GitHub Issue corpus",
+        "env": {"GH_TOKEN": "${{ github.token }}"},
+        "run": "python scripts/sync_status.py --validate",
+    } in workflow["jobs"]["validate"]["steps"]

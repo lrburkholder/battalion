@@ -19,6 +19,7 @@ def issue(
     ticket_id: str = "BTN-12", *, state: str = "OPEN", reason: str = "",
     phase: str = "implementation", priority: str = "P1", role: str = "driver",
     labels: list[str] | None = None, body: str | None = None,
+    milestone: str | None = None,
 ) -> dict[str, object]:
     if body is None:
         body = f"""## Battalion metadata
@@ -38,7 +39,9 @@ assignee_role: {role}
             labels.append(f"role:{role}")
     return {"number": 12, "title": f"{ticket_id} — Example ticket", "body": body,
             "state": state, "stateReason": reason,
-            "labels": [{"name": label} for label in labels]}
+            "labels": [{"name": label} for label in labels],
+            "milestone": {"title": milestone} if milestone else None,
+            "url": "https://example.test/issues/12"}
 
 
 @pytest.mark.parametrize(
@@ -69,8 +72,6 @@ def test_normalization_orders_and_omits_non_battalion_issues() -> None:
         issue("BTN-2", state="CLOSED", reason="COMPLETED"),
     ])
     assert [ticket.id for ticket in tickets] == ["BTN-2", "BTN-12"]
-    rendered = render_delivery_section(tickets)
-    assert rendered.index("BTN-2") < rendered.index("BTN-12")
 
 
 def test_battalion_ticket_without_metadata_is_rejected() -> None:
@@ -103,28 +104,38 @@ def test_role_specifier_is_rejected() -> None:
         normalize_issues([issue(role="specifier", labels=["phase:implementation", "priority:P1", "role:specifier"])])
 
 
-def test_rendering_is_pure_and_excludes_not_started() -> None:
+def test_rendering_is_pure_and_summarizes_milestones() -> None:
     rendered = render_delivery_section([
-        Ticket("BTN-10", "Shipped", "done", "implementation", "P1", "driver"),
-        Ticket("BTN-11", "Planned", "not-started", "design", "unknown", "unknown"),
-        Ticket("BTN-12", "Blocked", "blocked", "implementation", "P1", "driver"),
-        Ticket("BTN-13", "Cancelled", "cancelled", "testing", "P2", "reviewer"),
+        Ticket("BTN-10", "Shipped", "done", "implementation", "P1", "driver", 10, "v1"),
+        Ticket("BTN-11", "Planned", "not-started", "design", "unknown", "unknown", 11, "v1"),
+        Ticket("BTN-12", "Blocked", "blocked", "implementation", "P1", "driver", 12, "v2"),
+        Ticket("BTN-13", "Cancelled", "cancelled", "testing", "P2", "reviewer", 13, "v2"),
     ])
-    assert "| BTN-10 | Shipped | Yes |" in rendered
-    assert "| BTN-12 | Blocked | Blocked |" in rendered
-    assert "| BTN-13 | Cancelled | No |" in rendered
-    assert "BTN-11" not in rendered
-    assert "canonical [GitHub Issues]" in rendered
+    assert "### Milestone overview" in rendered
+    assert "| v1 | 2 | 1 | 0 | 1 | 0 |" in rendered
+    assert "| v2 | 2 | 0 | 1 | 0 | 1 |" in rendered
+    assert "| BTN-12 | Blocked | v2 | Blocked |" in rendered
+    assert "BTN-10 | Shipped" not in rendered
+    assert "Issue-level scope, dependencies" in rendered
 
 
 def test_sync_uses_injected_offline_reader(tmp_path: Path) -> None:
     status = tmp_path / "docs" / "status.md"
     status.parent.mkdir()
     status.write_text("before\n<!-- BEGIN GENERATED:backlog-delivery -->\nold\n<!-- END GENERATED:backlog-delivery -->\nafter\n", encoding="utf-8")
-    readme = tmp_path / "README.md"
-    readme.write_text("<!-- battalion:status:start -->\nold\n<!-- battalion:status:end -->\n", encoding="utf-8")
     reader = lambda: [issue("BTN-12", state="CLOSED", reason="COMPLETED")]
-    assert sync_documents(tmp_path, issue_reader=reader) == ["docs/status.md", "README.md"]
+    assert sync_documents(tmp_path, issue_reader=reader) == ["docs/status.md"]
     assert sync_documents(tmp_path, check=True, issue_reader=reader) == []
-    assert "| BTN-12 | Example ticket | Yes |" in status.read_text(encoding="utf-8")
-    assert status.read_text(encoding="utf-8").strip() in readme.read_text(encoding="utf-8")
+    assert "| Unassigned | 1 | 1 | 0 | 0 | 0 |" in status.read_text(encoding="utf-8")
+
+
+def test_readme_links_to_status_without_owning_generated_payload() -> None:
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "public status dashboard" in readme
+    assert "battalion:status" not in readme
+    assert "BEGIN GENERATED:backlog-delivery" not in readme
+
+
+def test_normalization_rejects_malformed_milestone() -> None:
+    with pytest.raises(IssueNormalizationError, match="malformed milestone"):
+        normalize_issues([issue(milestone="", ) | {"milestone": {"title": ""}}])

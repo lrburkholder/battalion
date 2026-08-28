@@ -1,0 +1,28 @@
+name: Validate canonical work status
+
+on:
+  issues:
+    types: [closed, edited, labeled, milestoned, opened, reopened, unlabeled, demilestoned]
+  push:
+    branches: [main]
+    paths:
+      - "scripts/sync_status.py"
+      - ".github/workflows/status-governance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Validate canonical GitHub Issue corpus
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/sync_status.py --validate
