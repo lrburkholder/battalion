@@ -290,6 +290,15 @@ application policy plus the shared ledger rather than granting graph nodes
 GitHub access. The remaining capability operations continue to consume the
 ledger rather than redefining delivery semantics.
 
+BTN-75 is in progress: its notification router accepts only Battalion Actor
+IDs or explicitly configured Actor groups, applies the configured project and
+permitted Actor channel selection, resolves provider subjects from
+integration-scoped external identity mappings at the adapter boundary, and
+records every actual delivery through BTN-70's ledger. It reports missing
+destinations, disabled channels, policy denial, unavailable integrations, and
+delivery failures independently without allowing notification delivery to
+mutate HumanInterrupt state.
+
 ## Risks and watch items
 
 - Rejection-cause comparison depends on consistent, specific Reviewer output.
