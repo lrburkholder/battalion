@@ -251,7 +251,10 @@ def test_closed_issue_with_active_status_is_not_valid_reconciliation(
     monkeypatch.setenv("GITHUB_REPOSITORY", "lrburkholder/battalion")
     monkeypatch.setenv("PR_NUMBER", "99")
 
-    with pytest.raises(TicketLifecycleError, match="must not retain lifecycle"):
+    with pytest.raises(
+        TicketLifecycleError,
+        match="schema validation failed.*closed issues cannot retain status labels",
+    ):
         complete_merged_ticket.main()
 
     assert not any(call[0] == "-X" for call in calls)
