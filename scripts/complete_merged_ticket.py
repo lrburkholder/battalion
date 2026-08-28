@@ -1,8 +1,10 @@
 """Close one validated merged-PR ticket.
 
-The GitHub Action supplies trusted pull-request event data through environment
-variables.  This script never executes PR text and permits only the explicit
-marker parsed by :mod:`battalion.ticket_lifecycle`.
+The GitHub Action supplies trusted repository and pull-request identity through
+environment variables. The script fetches the current PR body from GitHub so a
+rerun can recover after a maintainer corrects PR metadata. It never executes PR
+text and permits only the explicit marker parsed by
+:mod:`battalion.ticket_lifecycle`.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import sys
 from pathlib import Path
 
 # Direct script execution puts ``scripts/`` rather than the repository root on
-# sys.path.  The lifecycle Action intentionally does not install Battalion and
+# sys.path. The lifecycle Action intentionally does not install Battalion and
 # its runtime dependency tree, so make both repository-owned import roots
 # explicit before importing either module.
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +38,18 @@ def _gh(*args: str) -> object:
     return json.loads(completed.stdout)
 
 
+def _current_pr_body(repository: str, pr_number: str) -> str | None:
+    """Fetch current PR metadata rather than the immutable workflow event body."""
+
+    pull_request = _gh(f"repos/{repository}/pulls/{pr_number}")
+    if not isinstance(pull_request, dict):
+        raise TicketLifecycleError("GitHub returned a non-object pull request payload")
+    body = pull_request.get("body")
+    if body is not None and not isinstance(body, str):
+        raise TicketLifecycleError("GitHub returned an invalid pull request body")
+    return body
+
+
 def _normalization_record(issue: dict[str, object]) -> dict[str, object]:
     """Adapt lowercase REST Issue fields to the canonical normalizer enums."""
 
@@ -51,7 +65,8 @@ def _normalization_record(issue: dict[str, object]) -> dict[str, object]:
 
 def main() -> None:
     repository = os.environ["GITHUB_REPOSITORY"]
-    issue_number = linked_issue_number(os.environ.get("PR_BODY"))
+    pr_number = os.environ["PR_NUMBER"]
+    issue_number = linked_issue_number(_current_pr_body(repository, pr_number))
     issue = _gh(f"repos/{repository}/issues/{issue_number}")
     if not isinstance(issue, dict):
         raise TicketLifecycleError("GitHub returned a non-object Issue payload")
