@@ -321,6 +321,8 @@ class NodeExecution(BaseModel):
     artifact_provenance: list[ArtifactProvenance] = Field(default_factory=list, max_length=100)
     interrupt_ids: list[int] = Field(default_factory=list, max_length=20)
     llm_calls: list[LLMCallCost] = Field(default_factory=list, max_length=20)
+    streamed_reasoning_characters: int = Field(default=0, ge=0)
+    streamed_content_characters: int = Field(default=0, ge=0)
     operator_summary: OperatorSummary | None = None
     prompt_provenance: PromptProvenance | None = None
     code_provenance: CodeProvenance | None = None
@@ -329,7 +331,7 @@ class NodeExecution(BaseModel):
 class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
-    schema_version: Literal["1.0", "1.1", "1.2"] = "1.2"
+    schema_version: Literal["1.0", "1.1", "1.2", "1.3"] = "1.3"
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 

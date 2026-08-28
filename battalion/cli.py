@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator, TextIO
 from uuid import UUID
 
 import typer
@@ -55,6 +57,18 @@ def _state_path(run_id: str) -> Path:
     return state_path(run_id, STATE_DIR)
 
 
+@contextmanager
+def _open_trace_output(path: str | None) -> Iterator[tuple[TextIO | None, Path | None]]:
+    """Open explicit CLI trace output without adding it to RunState."""
+    if path is None:
+        yield None, None
+        return
+    target = Path(path).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8", newline="\n", buffering=1) as stream:
+        yield stream, target
+
+
 def _print_status(
     state: RunState,
     human: bool = False,
@@ -89,8 +103,11 @@ def _print_status(
                 if phase["unknown_cost_calls"]:
                     known += f"; {phase['unknown_cost_calls']} unknown"
                 typer.echo(
-                    f"  {phase['phase']}: {phase['calls']} call(s), "
+                    f"  {phase['phase']} [{', '.join(phase['models'])}]: "
+                    f"{phase['calls']} call(s), "
                     f"{phase['input_tokens']} in / {phase['output_tokens']} out, "
+                    f"{phase['streamed_reasoning_characters']} reasoning chars / "
+                    f"{phase['streamed_content_characters']} content chars, "
                     f"{known}"
                 )
             known = ", ".join(
@@ -101,6 +118,8 @@ def _print_status(
             typer.echo(
                 f"  Total: {summary['calls']} call(s), "
                 f"{summary['input_tokens']} in / {summary['output_tokens']} out, "
+                f"{summary['streamed_reasoning_characters']} reasoning chars / "
+                f"{summary['streamed_content_characters']} content chars, "
                 f"{known}"
             )
     else:
@@ -177,6 +196,11 @@ def run(
     manual_checkpoint: list[str] | None = typer.Option(None, "--checkpoint", help="Manual checkpoint phase(s)"),
     base_dir: str = typer.Option(".", "--base-dir", help="Base directory for file operations"),
     prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
+    trace_output: str | None = typer.Option(
+        None,
+        "--trace-output",
+        help="Append raw token/reasoning observations to this JSONL file",
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Authorize overwrite if a canonical ID already exists"),
 ):
     """Start a new ticket run through the Battalion graph."""
@@ -203,15 +227,21 @@ def run(
     run_id = initial_state.run_id
     
     typer.echo(f"Starting run: {initial_state.run_alias} ({run_id})")
-    display = ProgressDisplay()
     try:
-        with display:
-            result = start_run(
-                StartRun(initial_state=initial_state, config=cfg, overwrite=force),
-                state_dir=STATE_DIR,
-                on_node_event=display.handle_event,
-                on_token=display.handle_token,
-            )
+        with _open_trace_output(trace_output) as (trace_stream, trace_path):
+            if trace_path is not None:
+                typer.echo(f"Trace output: {trace_path}")
+            display = ProgressDisplay(trace_output=trace_stream, run_ref=run_id)
+            with display:
+                result = start_run(
+                    StartRun(initial_state=initial_state, config=cfg, overwrite=force),
+                    state_dir=STATE_DIR,
+                    on_node_event=display.handle_event,
+                    on_token=display.handle_token,
+                )
+    except OSError as exc:
+        typer.echo(f"Error: Cannot write trace output: {exc}", err=True)
+        raise typer.Exit(1)
     except RunAlreadyExists as exc:
         typer.echo(
             f"Error: State file already exists at {exc.path}. Use --force to overwrite.",
@@ -233,6 +263,11 @@ def resume(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to battalion.config.yaml"),
     base_dir: str = typer.Option(".", "--base-dir", help="Base directory for file operations"),
     prompts_dir: str | None = typer.Option(None, "--prompts-dir", help="Directory containing node prompts"),
+    trace_output: str | None = typer.Option(
+        None,
+        "--trace-output",
+        help="Append raw token/reasoning observations to this JSONL file",
+    ),
     actor_id: UUID | None = typer.Option(
         None,
         "--actor-id",
@@ -245,20 +280,26 @@ def resume(
     """Resume a paused/interrupted run from saved state."""
     cfg = load_config(config, {"base_dir": base_dir, "prompts_dir": prompts_dir})
     typer.echo(f"Resuming run: {run_id}")
-    display = ProgressDisplay()
     try:
-        with display:
-            result = resume_run(
-                ResumeRun(
-                    run_id=run_id,
-                    config=cfg,
-                    actor_id=actor_id,
-                    resolution=resolution,
-                ),
-                state_dir=STATE_DIR,
-                on_node_event=display.handle_event,
-                on_token=display.handle_token,
-            )
+        with _open_trace_output(trace_output) as (trace_stream, trace_path):
+            if trace_path is not None:
+                typer.echo(f"Trace output: {trace_path}")
+            display = ProgressDisplay(trace_output=trace_stream, run_ref=run_id)
+            with display:
+                result = resume_run(
+                    ResumeRun(
+                        run_id=run_id,
+                        config=cfg,
+                        actor_id=actor_id,
+                        resolution=resolution,
+                    ),
+                    state_dir=STATE_DIR,
+                    on_node_event=display.handle_event,
+                    on_token=display.handle_token,
+                )
+    except OSError as exc:
+        typer.echo(f"Error: Cannot write trace output: {exc}", err=True)
+        raise typer.Exit(1)
     except ApplicationError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)

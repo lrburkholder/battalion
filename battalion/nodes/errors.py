@@ -1,6 +1,18 @@
-"""Error types shared across node implementations (Architect, Driver,
-Reviewer) — kept in one place so a scope-misconfiguration check in one
-node is the same exception type as in another, not three lookalikes."""
+"""Error types shared across node implementations.
+
+Keeping graph-routable role-output contract errors here means malformed
+provider responses pause through the documented failure interrupt rather than
+being indistinguishable from an application defect.
+"""
+
+
+class RoleOutputError(Exception):
+    """A role returned unusable content for its declared response contract.
+
+    This is a recoverable provider/protocol failure: the operator can inspect
+    the retained context, adjust the model or configuration, and resume. It
+    remains distinct from an unexpected programmer error, which propagates.
+    """
 
 
 class WriteScopeMisconfigured(Exception):

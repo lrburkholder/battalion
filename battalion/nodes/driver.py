@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
-from battalion.nodes.errors import WriteScopeMisconfigured
+from battalion.nodes.errors import RoleOutputError, WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import (
     build_write_tools,
@@ -33,17 +33,17 @@ _FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
 _TEST_FILE_RE = re.compile(r"^test_.*\.py$|.*_test\.py$")
 
 
-class MalformedDriverOutput(Exception):
+class MalformedDriverOutput(RoleOutputError):
     """Raised when the LLM response isn't valid {"files": {...}} JSON."""
 
 
-class EmptyDriverOutput(Exception):
+class EmptyDriverOutput(RoleOutputError):
     """Raised when the LLM returns a files dict with no entries. Without
     this check, the ticket would silently advance to 'reviewer' having
     written nothing."""
 
 
-class InvalidModeOutput(Exception):
+class InvalidModeOutput(RoleOutputError):
     """Raised when a mode-scoped Driver call (BTN-11) produces files that
     violate what that mode is allowed to write: RED mode must only write
     test files, GREEN mode must not write any. Without this, mode is just

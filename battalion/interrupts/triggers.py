@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from battalion.llm.litellm_client import InfraFailure
+from battalion.nodes.errors import RoleOutputError
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import CheckpointType, RunState, RunStatus
 
@@ -151,16 +152,17 @@ def check_infra_failure(error: Exception | None = None) -> tuple[bool, str]:
     
     Distinct handling path — not folded into triggers #1 or #3.
     Fires when a node crash, malformed state, or LiteLLM call fails after
-    retries (InfraFailure exception).
+    retries (InfraFailure exception), or a role returns malformed, empty, or
+    contract-violating provider output (RoleOutputError).
     
     Args:
         error: Exception that was raised (if any)
     
     Returns:
         (should_trigger, trigger_id) tuple. Trigger fires if error
-        is an InfraFailure.
+        is an InfraFailure or RoleOutputError.
     """
-    if error is not None and isinstance(error, InfraFailure):
+    if error is not None and isinstance(error, (InfraFailure, RoleOutputError)):
         return True, TRIGGER_INFRA_FAILURE
     return False, TRIGGER_INFRA_FAILURE
 

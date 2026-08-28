@@ -290,6 +290,8 @@ def test_inspect_run_returns_state_version_and_derived_costs(tmp_path):
         "calls": 0,
         "input_tokens": 0,
         "output_tokens": 0,
+        "streamed_reasoning_characters": 0,
+        "streamed_content_characters": 0,
         "costs": [],
         "unknown_cost_calls": 0,
         "phases": [],

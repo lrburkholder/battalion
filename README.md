@@ -223,20 +223,25 @@ operation authorization remain separate follow-up work.
 
 ```bash
 battalion run BTN-16 --spec path/to/spec.md
+battalion run BTN-16 --spec path/to/spec.md --trace-output .battalion/traces/BTN-16.jsonl
 battalion status run-BTN-16 --human
 battalion status run-BTN-16 --costs --human
 battalion resume run-BTN-16
 ```
 
 `status --costs` projects persisted LiteLLM input/output tokens and known cost
-by concrete graph phase, currency, and source. Unknown monetary cost remains
-explicit and never becomes zero; token usage is still shown. Without `--human`,
-the command emits the cost summary as JSON. Cost reporting does not change the
-run-level turn budget used by interrupt trigger #3.
+by concrete graph phase, model, currency, and source. It also shows bounded
+streamed reasoning/content character totals for UAT model comparison; raw trace
+text remains opt-in and local. Unknown monetary cost remains explicit and never
+becomes zero; token usage is still shown. Without `--human`, the command emits
+the cost summary as JSON. Cost reporting does not change the run-level turn
+budget used by interrupt trigger #3.
 
 Run `battalion <command> --help` for the authoritative options while the CLI
 is evolving. `python -m battalion <command>` remains an equivalent source-mode
-entry point.
+entry point. `--trace-output` is an explicit local JSONL export of raw streamed
+reasoning and token text; it is not persisted in `RunState`, may contain
+sensitive provider text, and is not acceptance evidence.
 
 ### Browse with the Desktop Console
 

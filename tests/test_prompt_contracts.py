@@ -36,12 +36,40 @@ def test_red_and_green_prompts_preserve_mode_authority():
     assert "No returned basename may start with `test_`" in green
 
 
+def test_file_producing_prompts_request_direct_non_narrated_output():
+    for name in ("driver", "driver-red", "driver-green"):
+        prompt = load_system_prompt(name).lower()
+        assert "do not restate the\n  ticket" in prompt or "do not restate the ticket" in prompt
+        assert "start with `{`" in prompt
+
+    assert "do\n  not explain a no-op" in load_system_prompt("refactorer").lower()
+    assert "start with `{`" in load_system_prompt("refactorer").lower()
+
+
+def test_red_prompt_explains_the_intended_missing_behavior():
+    prompt = load_system_prompt("driver-red")
+
+    assert "intended failing condition" in prompt
+    assert "Do not debate or narrate" in prompt
+
+
+def test_green_and_refactorer_prompts_use_a_minimality_ladder():
+    green = load_system_prompt("driver-green")
+    refactorer = load_system_prompt("refactorer")
+
+    assert "first option that satisfies the ticket" in green
+    assert "never authorizes skipping it" in green
+    assert "Stop at the first rung" in refactorer
+    assert "no change is needed" in refactorer
+
+
 def test_reviewer_prompt_matches_stored_cause_contract():
     prompt = load_system_prompt("reviewer")
+    normalized = " ".join(prompt.split())
 
     assert "exactly one plain-text root-cause sentence" in prompt
     assert "no more than 30 words" in prompt
-    assert "do not include test\nlogs" in prompt
+    assert "do not include test logs" in normalized.lower()
     assert "Tests:" not in prompt
 
 
@@ -51,6 +79,7 @@ def test_architect_prompt_requires_evidence_bounded_plan():
     assert "Do not invent requirements" in prompt
     assert "Do not fill the gap with a generic architecture" in prompt
     assert "Output only the plan content suitable for `plan.md`" in prompt
+    assert "target 250 words or fewer" in prompt
 
 
 def test_refactorer_prompt_preserves_behavior_and_architecture():
@@ -59,6 +88,8 @@ def test_refactorer_prompt_preserves_behavior_and_architecture():
     assert "without changing observable\nbehavior" in prompt
     assert "Skip changes that require an Architect" in prompt
     assert "Do not claim that tests were executed" in prompt
+    assert '"outcome": "no-change"' in prompt
+    assert "reason" in prompt
 
 
 def test_recon_prompt_preserves_post_completion_human_authority():

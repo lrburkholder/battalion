@@ -32,7 +32,7 @@ from typing import Callable
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.llm.response import extract_content
-from battalion.nodes.errors import WriteScopeMisconfigured
+from battalion.nodes.errors import RoleOutputError, WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import build_write_tools
 from battalion.state.models import CheckpointType, RejectionRecord, RunState, RunStatus
@@ -72,7 +72,7 @@ class TestRunResult:
     returncode: int
 
 
-class EmptyReviewContent(Exception):
+class EmptyReviewContent(RoleOutputError):
     """Raised when the LLM returns empty/whitespace-only rejection-cause
     content. Without this check, an unusable cause string could be
     recorded, undermining same-cause-twice detection (interrupt trigger #1,

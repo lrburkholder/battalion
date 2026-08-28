@@ -45,6 +45,7 @@ from battalion.interrupts.triggers import (
     log_interrupt,
 )
 from battalion.llm.litellm_client import InfraFailure
+from battalion.nodes.errors import RoleOutputError
 from battalion.execution import ExecutionCapture
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import (
@@ -178,7 +179,8 @@ def _handle_node_error(
 ) -> RunState:
     """Route a node-level exception to its interrupt trigger and pause.
 
-    InfraFailure (LLM call failed after retries, trigger #5) and
+    InfraFailure (LLM call failed after retries), RoleOutputError (malformed
+    or contract-violating provider output), and
     ScopeViolationError (out-of-scope write attempt, trigger #2) must
     surface as an AWAITING_HUMAN pause with an interrupt logged — not crash
     the whole invoke() with an unhandled exception (spec.md AC: "surfaces
@@ -271,9 +273,9 @@ def _scaffold_node(
       error_/check_/pause_resume_node: routing values for the failure,
                               interrupt-check, and paused-resume paths
 
-    InfraFailure (trigger #5) and ScopeViolationError (trigger #2) route to
-    an AWAITING_HUMAN pause through _handle_node_error; any other exception
-    is a bug and propagates unchanged.
+    InfraFailure and RoleOutputError (trigger #5) and ScopeViolationError
+    (trigger #2) route to an AWAITING_HUMAN pause through _handle_node_error;
+    any other exception is a bug and propagates unchanged.
     """
     def node(state: RunState) -> RunState:
         entered_state = state
@@ -318,7 +320,7 @@ def _scaffold_node(
             if on_token is not None:
                 call_kwargs["on_stream"] = on_token
             new_state = runner(**call_kwargs)
-        except (InfraFailure, ScopeViolationError) as exc:
+        except (InfraFailure, RoleOutputError, ScopeViolationError) as exc:
             if on_node_event is not None:
                 on_node_event({
                     "type": "node_error",
@@ -400,7 +402,10 @@ def _make_architect_node(
         instinct_retriever=instinct_retriever,
         on_state_checkpoint=on_state_checkpoint,
         error_next_phase=NODE_TO_PHASE[NODE_ARCHITECT],
-        error_resume_node=NEXT_NODE_ON_PAUSE[NODE_ARCHITECT],
+        # A failed Architect attempt did not produce an approved plan, so a
+        # human-authorized retry must return to Architect rather than skip to
+        # Driver with stale or absent design context.
+        error_resume_node=NODE_ARCHITECT,
         check_next_phase=NODE_TO_PHASE[NODE_ARCHITECT],
         pause_resume_node=NEXT_NODE_ON_PAUSE[NODE_ARCHITECT],
     )
@@ -511,7 +516,9 @@ def _make_reviewer_node(
         instinct_retriever=instinct_retriever,
         on_state_checkpoint=None,
         error_next_phase=lambda state: state.phase,
-        error_resume_node=resume_node,
+        # A failed review has no verdict to hand off; re-run this exact
+        # checkpoint after the operator resolves the provider problem.
+        error_resume_node=node_name,
         check_next_phase=lambda state: state.phase,
         pause_resume_node=resume_node,
     )
@@ -556,7 +563,9 @@ def _make_refactorer_node(
         instinct_retriever=instinct_retriever,
         on_state_checkpoint=on_state_checkpoint,
         error_next_phase=refactorer_next_phase,
-        error_resume_node=NEXT_NODE_ON_PAUSE[NODE_REFACTORER],
+        # A malformed Refactorer response wrote no trustworthy output. Do not
+        # skip straight to review of the pre-refactor tree on resume.
+        error_resume_node=NODE_REFACTORER,
         check_next_phase=refactorer_next_phase,
         pause_resume_node=NEXT_NODE_ON_PAUSE[NODE_REFACTORER],
     )

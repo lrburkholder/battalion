@@ -55,6 +55,7 @@ Run a deliberately small ticket:
 ```powershell
 battalion run BTN-UAT-1 `
   --spec "Create src/greeting.py with greet(name: str) returning Hello, {name}! and src/test_greeting.py proving it. Return strict JSON for Driver and Refactorer responses." `
+  --trace-output .battalion\traces\BTN-UAT-1.jsonl `
   --budget 12
 ```
 
@@ -84,6 +85,29 @@ Pass criteria:
 - Tests pass in the project and the execution record shows all seven phases.
 - The status output shows stored model, token, cost, and artifact evidence;
   missing cost is presented as `unknown`, never as zero.
+- `battalion status <RUN_UUID> --human --costs` identifies each node's model,
+  provider token usage, and bounded streamed reasoning/content character counts
+  without embedding raw trace text in `RunState`.
+- The terminal retains each completed node's trace in scrollback, and the
+  JSONL trace contains node-associated `reasoning` and `token` events for
+  post-run review.
+
+### Prompt-efficiency observation
+
+For this deliberately small ticket, the generated `plan.md` should be 250
+words or fewer and the Driver and Refactorer final responses should be direct
+JSON rather than commentary. Compare the per-node reasoning/content character
+counts and provider tokens in `status --costs` across configured models. Inspect
+the optional trace for repeated debate about RED's intentionally missing
+implementation or JSON serialization; record that as a UAT finding if it
+recurs. Raw provider reasoning remains observable but is provider-controlled,
+so its character count is diagnostic evidence—not a deterministic pass/fail
+contract.
+
+For Refactorer, an already-clear implementation may validly return
+`{"outcome":"no-change","files":{},"reason":"..."}`. That result writes no
+files, records `refactorer:no-change` in execution evidence, and still proceeds
+to the independent Refactor review.
 
 ## 3. Manual checkpoint and resume
 
@@ -118,17 +142,17 @@ Capture the console output and saved state for each case:
 - a duplicate run invocation;
 - a foreground interruption after a durable node checkpoint; and
 - an invalid RED response that contains an implementation file as well as test
-  files.
+  files; and
+- malformed, empty, or non-JSON Driver, Reviewer, or Refactorer output.
 
-The last case is a known failing condition in the current candidate: the
-Driver raises `InvalidModeOutput`, which escapes as a traceback and can leave
-the run `in-progress`. The required eventual behavior is a documented durable
-interrupt with actionable context, not a generic crash. Do not mark the CLI
-full-flow UAT complete until that condition is repaired.
+Each role-output failure must pause with `infra-failure`, retain the actionable
+error in `battalion status <RUN_UUID> --human`, and leave a resumable run. It
+must not emit a Python traceback or leave the run `in-progress`.
 
 ## Evidence to retain
 
 Retain the command transcript, `battalion.config.yaml` with any secrets
 removed, `.battalion/state/<RUN_UUID>.json`, `plan.md`, generated source and
-test files, and the final `pytest` result. Do not include provider credentials
-or raw prompt/source payloads in shared evidence.
+test files, and the final `pytest` result. `--trace-output` is opt-in raw
+provider text for the local operator: it may be sensitive, is not acceptance
+evidence, and must not be shared with credentials or raw prompt/source payloads.

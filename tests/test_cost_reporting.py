@@ -117,7 +117,7 @@ def test_streaming_requests_and_records_final_usage_frame(tmp_path):
         return iter([
             SimpleNamespace(
                 choices=[SimpleNamespace(delta=SimpleNamespace(
-                    content="ok", reasoning_content=None,
+                    content="ok", reasoning_content="why",
                 ))],
                 usage=None,
                 _hidden_params={},
@@ -144,7 +144,10 @@ def test_streaming_requests_and_records_final_usage_frame(tmp_path):
         11, 3, Decimal("0.0015")
     )
     assert call.cost_source == CostSource.PROVIDER_REPORTED
-    assert finished.execution_record.schema_version == "1.2"
+    assert finished.execution_record.schema_version == "1.3"
+    execution = finished.execution_record.node_executions[0]
+    assert execution.streamed_reasoning_characters == 3
+    assert execution.streamed_content_characters == 2
 
 
 def test_summary_is_broken_down_by_phase_with_stable_order():
@@ -169,19 +172,23 @@ def test_summary_is_broken_down_by_phase_with_stable_order():
         "calls": 2,
         "input_tokens": 30,
         "output_tokens": 12,
+        "streamed_reasoning_characters": 0,
+        "streamed_content_characters": 0,
         "costs": [{
             "amount": "0.005", "currency": "USD",
             "sources": ["provider-reported"],
         }],
         "unknown_cost_calls": 0,
         "phases": [
-            {"phase": "architect", "role": "architect", "calls": 1,
+            {"phase": "architect", "role": "architect", "models": ["architect", "configured-model"], "calls": 1,
              "input_tokens": 10, "output_tokens": 4,
+             "streamed_reasoning_characters": 0, "streamed_content_characters": 0,
              "unknown_cost_calls": 0,
              "costs": [{"amount": "0.002", "currency": "USD",
                         "sources": ["provider-reported"]}]},
-            {"phase": "driver_green", "role": "driver", "calls": 1,
+            {"phase": "driver_green", "role": "driver", "models": ["configured-model", "driver"], "calls": 1,
              "input_tokens": 20, "output_tokens": 8,
+             "streamed_reasoning_characters": 0, "streamed_content_characters": 0,
              "unknown_cost_calls": 0,
              "costs": [{"amount": "0.003", "currency": "USD",
                         "sources": ["provider-reported"]}]},
@@ -263,6 +270,9 @@ def test_status_costs_queries_saved_run_without_changing_turn_budget(tmp_path, m
         result = CliRunner().invoke(app, ["status", "run-BTN-16", "--costs", "--human"])
 
     assert result.exit_code == 0
-    assert "architect: 1 call(s), 10 in / 4 out, 0.002 USD" in result.output
+    assert (
+        "architect [architect, configured-model]: 1 call(s), 10 in / 4 out, "
+        "0 reasoning chars / 0 content chars, 0.002 USD"
+    ) in result.output
     assert "Budget:      7 / 100" in result.output
     assert load_state(state_path).budget == Budget(limit=100, used=7)

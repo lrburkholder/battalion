@@ -9,9 +9,11 @@ import pytest
 from battalion.nodes.refactorer import (
     EmptyRefactorerOutput,
     MalformedRefactorerOutput,
+    extract_output,
     extract_files,
     run_refactorer,
 )
+from battalion.execution import ExecutionCapture
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig, call_llm
 from battalion.scope.tool_binding import ScopeViolationError
@@ -36,6 +38,13 @@ def make_state(write_scope=None, **overrides):
 def files_response(files: dict) -> dict:
     import json
     return {"choices": [{"message": {"content": json.dumps({"files": files})}}]}
+
+
+def no_change_response(reason: str = "The implementation is already clear.") -> dict:
+    import json
+    return {"choices": [{"message": {"content": json.dumps({
+        "outcome": "no-change", "files": {}, "reason": reason,
+    })}}]}
 
 
 def fenced_files_response(files: dict) -> dict:
@@ -84,6 +93,16 @@ def test_extract_files_rejects_empty_string_path():
     resp = {"choices": [{"message": {"content": '{"files": {"": "content"}}'}}]}
     with pytest.raises(MalformedRefactorerOutput):
         extract_files(resp)
+
+
+def test_extract_output_accepts_explicit_no_change_only_with_reason():
+    output = extract_output(no_change_response("No smaller safe change exists."))
+
+    assert output.files == {}
+    assert output.no_change_reason == "No smaller safe change exists."
+
+    with pytest.raises(EmptyRefactorerOutput):
+        extract_output(files_response({}))
 
 
 # --- run_refactorer tests ---
@@ -197,7 +216,7 @@ def test_run_refactorer_propagates_infra_failure(tmp_path):
     assert not (tmp_path / "src").exists()
 
 
-def test_run_refactorer_rejects_empty_files_output(tmp_path):
+def test_run_refactorer_rejects_unexplained_empty_files_output(tmp_path):
     with pytest.raises(EmptyRefactorerOutput):
         run_refactorer(
             make_state(),
@@ -207,6 +226,27 @@ def test_run_refactorer_rejects_empty_files_output(tmp_path):
             call_llm_fn=lambda *a, **kw: files_response({}),
         )
     assert not (tmp_path / "src").exists()
+
+
+def test_run_refactorer_no_change_writes_nothing_and_records_decision(tmp_path):
+    state = make_state()
+    capture = ExecutionCapture.start(state, "refactorer", "test-model", tmp_path)
+
+    updated = run_refactorer(
+        state,
+        refactor_text="refactor",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: no_change_response("Already minimal."),
+    )
+    finished = capture.finish(state, updated)
+    execution = finished.execution_record.node_executions[-1]
+
+    assert updated.phase == "reviewer"
+    assert not (tmp_path / "src").exists()
+    assert execution.output_reference == "refactorer:no-change"
+    assert execution.artifact_provenance == []
+    assert "Already minimal." in execution.operator_summary.what_i_did
 
 
 def test_run_refactorer_validates_all_paths_before_writing_any(tmp_path):

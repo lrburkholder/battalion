@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
-from battalion.nodes.errors import WriteScopeMisconfigured
+from battalion.execution import record_no_change
+from battalion.nodes.errors import RoleOutputError, WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import (
     build_write_tools,
@@ -28,21 +30,28 @@ from battalion.state.models import RunState, RunStatus
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
 
 
-class MalformedRefactorerOutput(Exception):
+class MalformedRefactorerOutput(RoleOutputError):
     """Raised when the LLM response isn't valid {files: {...}} JSON."""
 
 
-class EmptyRefactorerOutput(Exception):
-    """Raised when the LLM returns a files dict with no entries. Without
-    this check, the ticket would silently advance to 'reviewer' having
-    written nothing."""
+class EmptyRefactorerOutput(RoleOutputError):
+    """Raised when the LLM returns an unexplained empty files mapping.
+
+    A Refactorer no-op is valid only when it explicitly identifies the
+    ``no-change`` outcome and supplies a short reason.
+    """
 
 
-def extract_files(response: Any) -> dict[str, str]:
-    """Extract a {relative_path: content} mapping from a litellm-style
-    response. Accepts either plain JSON or a single markdown-fenced JSON
-    block, since LLMs commonly wrap JSON output in fences despite
-    instructions not to."""
+@dataclass(frozen=True)
+class RefactorerOutput:
+    """Validated structured response from the Refactorer provider."""
+
+    files: dict[str, str]
+    no_change_reason: str | None = None
+
+
+def extract_output(response: Any) -> RefactorerOutput:
+    """Parse Refactorer's files result or explicit behavior-preserving no-op."""
     if isinstance(response, dict):
         raw_content = response["choices"][0]["message"]["content"]
     else:
@@ -77,7 +86,38 @@ def extract_files(response: Any) -> dict[str, str]:
             raise MalformedRefactorerOutput(
                 f"'files' values must be strings, got {type(content).__name__} for {path!r}"
             )
-    return files
+    outcome = parsed.get("outcome", "changed")
+    if outcome not in {"changed", "no-change"}:
+        raise MalformedRefactorerOutput(
+            "Refactorer LLM output 'outcome' must be 'changed' or 'no-change'"
+        )
+
+    reason = parsed.get("reason")
+    if outcome == "no-change":
+        if files:
+            raise MalformedRefactorerOutput(
+                "Refactorer 'no-change' output must use an empty 'files' mapping"
+            )
+        if not isinstance(reason, str) or not reason.strip():
+            raise EmptyRefactorerOutput(
+                "Refactorer 'no-change' output requires a concise non-empty reason"
+            )
+        if len(reason) > 500:
+            raise MalformedRefactorerOutput(
+                "Refactorer 'no-change' reason must be at most 500 characters"
+            )
+        return RefactorerOutput(files={}, no_change_reason=reason.strip())
+
+    if not files:
+        raise EmptyRefactorerOutput(
+            "Refactorer LLM returned no files without an explicit 'no-change' outcome"
+        )
+    return RefactorerOutput(files=files)
+
+
+def extract_files(response: Any) -> dict[str, str]:
+    """Backward-compatible helper returning only validated changed files."""
+    return extract_output(response).files
 
 
 def run_refactorer(
@@ -95,6 +135,10 @@ def run_refactorer(
 
     Per ADR-0013, an explicit ``refactorer`` scope wins. Legacy configurations
     fall back to Driver's scope per ADR-0008.
+
+    An explicit ``{\"outcome\": \"no-change\", \"files\": {}, \"reason\": ...}``
+    is a successful behavior-preserving result: it records the decision and
+    proceeds to review without writes. Other empty mappings are rejected.
 
     Raises InfraFailure (from call_llm_fn), WriteScopeMisconfigured,
     MalformedRefactorerOutput, EmptyRefactorerOutput on failure — never
@@ -121,13 +165,15 @@ def run_refactorer(
         response = call_llm_fn("refactorer", llm_config, messages, on_stream=on_stream)
     else:
         response = call_llm_fn("refactorer", llm_config, messages)
-    files = extract_files(response)
+    output = extract_output(response)
+    files = output.files
 
-    if not files:
-        raise EmptyRefactorerOutput(
-            "Refactorer LLM call returned no files — refusing to advance the "
-            "ticket to 'reviewer' having written nothing."
-        )
+    if output.no_change_reason is not None:
+        record_no_change(output.no_change_reason)
+        return state.model_copy(update={
+            "phase": "reviewer",
+            "status": RunStatus.IN_PROGRESS,
+        })
 
     try:
         targets = resolve_scoped_batch(write_tools, list(files))

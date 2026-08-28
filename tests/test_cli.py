@@ -52,6 +52,8 @@ def test_cli_help_uses_console_safe_separator() -> None:
 
     assert result.exit_code == 0
     assert "Battalion SDLC Orchestrator - run, resume" in result.output
+    assert "--trace-output" in runner.invoke(app, ["run", "--help"]).output
+    assert "--trace-output" in runner.invoke(app, ["resume", "--help"]).output
 
 
 def test_run_creates_state_file(tmp_path, monkeypatch):
@@ -89,6 +91,37 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     assert loaded.run_alias.startswith("BTN-9-test-")
     assert loaded.project_id is not None
     assert loaded.status == RunStatus.DONE
+
+
+def test_run_appends_node_associated_trace_output(tmp_path, monkeypatch):
+    import battalion.application as application_module
+
+    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+        kwargs["on_node_event"]({"type": "node_start", "node": "architect"})
+        kwargs["on_token"]({"type": "reasoning", "content": "plan carefully"})
+        kwargs["on_token"]({"type": "token", "content": "# Plan"})
+        kwargs["on_node_event"]({"type": "node_end", "node": "architect", "phase": "done"})
+        return initial_state.model_copy(update={"status": RunStatus.DONE, "phase": "done"})
+
+    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
+    spec_file = tmp_path / "spec.md"
+    spec_file.write_text("# Test Spec", encoding="utf-8")
+    trace_path = tmp_path / "traces" / "run.jsonl"
+
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        result = runner.invoke(
+            app,
+            ["run", "BTN-9-test", "--spec", str(spec_file), "--trace-output", str(trace_path)],
+        )
+
+    assert result.exit_code == 0
+    assert f"Trace output: {trace_path.resolve()}" in result.output
+    events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+    assert [(event["node"], event["kind"], event["content"]) for event in events] == [
+        ("architect", "reasoning", "plan carefully"),
+        ("architect", "token", "# Plan"),
+    ]
 
 
 def test_repeated_ticket_runs_get_distinct_canonical_ids(tmp_path, monkeypatch):
@@ -150,6 +183,35 @@ def test_resume_loads_and_continues(tmp_path, monkeypatch):
     loaded = load_state(state_dir / "run-BTN-9-test.json")
     assert loaded.status == RunStatus.DONE
     assert loaded.budget.used == 15
+
+
+def test_resume_appends_node_associated_trace_output(tmp_path, monkeypatch):
+    import battalion.application as application_module
+
+    def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+        kwargs["on_node_event"]({"type": "node_start", "node": "driver_green"})
+        kwargs["on_token"]({"type": "reasoning", "content": "implement now"})
+        kwargs["on_node_event"]({"type": "node_end", "node": "driver_green", "phase": "done"})
+        return state.model_copy(update={"status": RunStatus.DONE, "phase": "done"})
+
+    monkeypatch.setattr(application_module, "resume_ticket", mock_resume_ticket)
+    state_dir = tmp_path / ".battalion" / "state"
+    state_dir.mkdir(parents=True)
+    save_state(make_paused_state("run-BTN-9-test"), state_dir / "run-BTN-9-test.json")
+    trace_path = tmp_path / "traces" / "resume.jsonl"
+
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        result = runner.invoke(
+            app,
+            ["resume", "run-BTN-9-test", "--trace-output", str(trace_path)],
+        )
+
+    assert result.exit_code == 0
+    events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+    assert [(event["node"], event["kind"], event["content"]) for event in events] == [
+        ("driver_green", "reasoning", "implement now"),
+    ]
 
 
 def test_resume_missing_state_file(tmp_path, monkeypatch):

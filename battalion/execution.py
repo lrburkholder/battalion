@@ -255,6 +255,9 @@ class ExecutionCapture:
     base_dir: Path
     written_paths: set[str]
     llm_calls: list[LLMCallCost]
+    streamed_reasoning_characters: int
+    streamed_content_characters: int
+    no_change_reason: str | None
     input_references: list[EvidenceReference]
     prompt_provenance: PromptProvenance | None
     code_start: dict[str, object]
@@ -280,6 +283,9 @@ class ExecutionCapture:
             base_dir=root,
             written_paths=set(),
             llm_calls=[],
+            streamed_reasoning_characters=0,
+            streamed_content_characters=0,
+            no_change_reason=None,
             input_references=_input_references(state, node_name, root),
             prompt_provenance=_prompt_provenance(
                 node_name, prompts_dir, model_configuration, model_identity
@@ -374,6 +380,8 @@ class ExecutionCapture:
             verdict = new_state.interrupt_log[-1].trigger
         elif artifacts:
             output_reference = ",".join(item.path for item in artifacts)[:1000]
+        elif self.no_change_reason is not None:
+            output_reference = "refactorer:no-change"
         else:
             output_reference = f"state:phase={new_state.phase}"
 
@@ -401,10 +409,15 @@ class ExecutionCapture:
             open_questions.append(
                 f"Resolve interrupt: {new_state.interrupt_log[-1].trigger}"
             )
+        no_change_detail = (
+            f" No code change was warranted: {self.no_change_reason}"
+            if self.no_change_reason is not None
+            else ""
+        )
         summary = OperatorSummary(
             what_i_did=(
                 f"{self.node_name} finished with outcome {outcome}; "
-                f"recorded {len(artifacts)} changed artifact(s)."
+                f"recorded {len(artifacts)} changed artifact(s).{no_change_detail}"
             ),
             what_should_happen_next=f"Continue at phase {new_state.phase}.",
             open_questions=open_questions,
@@ -432,13 +445,15 @@ class ExecutionCapture:
             artifact_provenance=artifacts,
             interrupt_ids=new_interrupt_indexes,
             llm_calls=list(self.llm_calls),
+            streamed_reasoning_characters=self.streamed_reasoning_characters,
+            streamed_content_characters=self.streamed_content_characters,
             operator_summary=summary,
             prompt_provenance=self.prompt_provenance,
             code_provenance=code_provenance,
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.2",
+                "schema_version": "1.3",
                 "node_executions": new_state.execution_record.node_executions
                 + [execution]
             }
@@ -488,24 +503,59 @@ def record_llm_call(call: LLMCallCost) -> None:
         capture.llm_calls.append(call)
 
 
+def record_stream_observation(kind: str, content: str) -> None:
+    """Count streamed provider text on the active node without retaining it.
+
+    Raw trace text remains optional operator output. These bounded counters make
+    a model's visible deliberation comparable by concrete node and model in
+    the durable execution record.
+    """
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is None:
+        return
+    if kind == "reasoning":
+        capture.streamed_reasoning_characters += len(content)
+    else:
+        capture.streamed_content_characters += len(content)
+
+
+def record_no_change(reason: str) -> None:
+    """Record Refactorer's explicit behavior-preserving no-op decision."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        capture.no_change_reason = reason
+
+
 def summarize_costs(record: ExecutionRecord) -> dict[str, object]:
-    """Build a deterministic per-phase and whole-run cost projection."""
+    """Build a deterministic per-node model-usage and cost projection."""
     phases: dict[str, dict[str, object]] = {}
     for execution in record.node_executions:
+        if not execution.llm_calls and not (
+            execution.streamed_reasoning_characters
+            or execution.streamed_content_characters
+        ):
+            continue
+        phase = phases.setdefault(
+            execution.phase,
+            {
+                "phase": execution.phase,
+                "role": execution.role,
+                "models": set(),
+                "calls": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "streamed_reasoning_characters": 0,
+                "streamed_content_characters": 0,
+                "known_costs": {},
+                "cost_sources": {},
+                "unknown_cost_calls": 0,
+            },
+        )
+        phase["models"].add(execution.model_identity)
+        phase["streamed_reasoning_characters"] += execution.streamed_reasoning_characters
+        phase["streamed_content_characters"] += execution.streamed_content_characters
         for call in execution.llm_calls:
-            phase = phases.setdefault(
-                execution.phase,
-                {
-                    "phase": execution.phase,
-                    "role": execution.role,
-                    "calls": 0,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "known_costs": {},
-                    "cost_sources": {},
-                    "unknown_cost_calls": 0,
-                },
-            )
+            phase["models"].add(call.model)
             phase["calls"] += 1
             phase["input_tokens"] += call.input_tokens
             phase["output_tokens"] += call.output_tokens
@@ -529,6 +579,7 @@ def summarize_costs(record: ExecutionRecord) -> dict[str, object]:
             }
             for currency in sorted(phase["known_costs"])
         ]
+        phase["models"] = sorted(phase["models"])
         del phase["known_costs"]
         del phase["cost_sources"]
         ordered.append(phase)
@@ -546,6 +597,12 @@ def summarize_costs(record: ExecutionRecord) -> dict[str, object]:
         "calls": sum(item["calls"] for item in ordered),
         "input_tokens": sum(item["input_tokens"] for item in ordered),
         "output_tokens": sum(item["output_tokens"] for item in ordered),
+        "streamed_reasoning_characters": sum(
+            item["streamed_reasoning_characters"] for item in ordered
+        ),
+        "streamed_content_characters": sum(
+            item["streamed_content_characters"] for item in ordered
+        ),
         "costs": [
             {
                 "amount": str(total_costs[currency]),

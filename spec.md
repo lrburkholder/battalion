@@ -193,8 +193,8 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.2` (BTN-35); persisted `1.0` and `1.1`
-records remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.3` (BTN-129); persisted `1.0` through
+`1.2` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
@@ -225,6 +225,10 @@ It retains no prompt/template contents, source contents, configuration values,
 or dirty-worktree patch. A dirty endpoint therefore carries an explicit
 `dirty-workspace-patch-not-retained` limitation and cannot claim exact
 reconstructability.
+
+Version `1.3` adds bounded counts of streamed reasoning and content characters
+for each node attempt. These counts support model/phase comparison without
+persisting raw provider reasoning or creating a second trace store.
 
 ### Instinct data contract
 
@@ -340,7 +344,7 @@ receives the passing file set.
 | 2 | Out-of-scope write attempt | Node tries to write outside its declared write scope | Hard block, mechanical check, no LLM judgment involved |
 | 3 | Budget exceeded | Tracked per graph run (whole ticket), not per node | Pause, show spend/turns so far, ask to continue/adjust/stop |
 | 4 | Role-definition edit | Any action modifying a Battalion role/node definition | Always interrupt, no exceptions in v1 |
-| 5 | Infra failure | Node crash, malformed state, or LiteLLM call fails after retries | Separate handling path — not folded into triggers 1 or 3; surfaces as a distinct failure state, not a judgment escalation |
+| 5 | Infra failure | Node crash, malformed state, malformed or contract-violating role output, or LiteLLM call fails after retries | Separate handling path — not folded into triggers 1 or 3; surfaces as a distinct failure state, not a judgment escalation |
 | 6 | Manual checkpoint | User declares a checkpoint on the ticket/run config (e.g. "pause after Architect") independent of any system-detected condition | Graph pauses unconditionally at the declared point, regardless of whether any other trigger fired |
 
 ADR-0024 accepts a post-v1 extension of trigger #5 for runtime inference

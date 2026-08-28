@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 import pytest
 
 from battalion.context import MAX_CONTEXT_CHARS, driver_context, refactorer_context
+from battalion.nodes.driver import InvalidModeOutput
+from battalion.nodes.refactorer import MalformedRefactorerOutput
 from battalion.graph import (
     NODE_ARCHITECT,
     NODE_DONE,
@@ -37,6 +39,7 @@ from battalion.state.models import (
     Budget,
     CheckpointType,
     InterruptLogEntry,
+    RunState,
     RunStatus,
 )
 from unittest.mock import patch
@@ -327,6 +330,59 @@ class TestReviewerCheckpointsDoNotCrash:
 
         assert final["status"] == RunStatus.DONE
         assert final["phase"] == "done"
+
+
+class TestRoleOutputFailuresPause:
+    """Provider responses that violate a role contract are recoverable.
+
+    These use the real graph scaffolding and the exact exception types the
+    parsers raise, so the regression covers the two UAT failures without
+    requiring a live provider.
+    """
+
+    def test_driver_mode_violation_pauses_and_retries_the_same_phase(self, tmp_path):
+        def invalid_red_response(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            assert mode == "red"
+            raise InvalidModeOutput("RED mode must only produce test files")
+
+        final = invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=5, driver=invalid_red_response
+        )
+
+        assert final["status"] == RunStatus.AWAITING_HUMAN
+        assert final["phase"] == NODE_PAUSE
+        interrupt = final["interrupt_log"][-1]
+        assert interrupt.trigger == "infra-failure"
+        assert interrupt.context["next_phase"] == NODE_DRIVER_RED
+        assert "RED mode" in interrupt.context["error"]
+
+    def test_refactorer_non_json_pauses_and_retries_refactoring(self, tmp_path):
+        def malformed_response(state, refactor_text, llm_config, base_dir, prompts_dir=None):
+            raise MalformedRefactorerOutput(
+                "Refactorer LLM output was not valid JSON: Expecting value"
+            )
+
+        final = invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=10, refactorer=malformed_response
+        )
+
+        assert final["status"] == RunStatus.AWAITING_HUMAN
+        assert final["phase"] == NODE_PAUSE
+        interrupt = final["interrupt_log"][-1]
+        assert interrupt.trigger == "infra-failure"
+        assert interrupt.context["next_phase"] == NODE_REFACTORER
+        assert "Refactorer LLM output was not valid JSON" in interrupt.context["error"]
+
+        calls = []
+        resumed = resume_graph(
+            RunState.model_validate(final),
+            tmp_path,
+            max_turns=5,
+            refactorer=refactorer_advancing(calls),
+            reviewer=reviewer_accepting(calls),
+        )
+        assert calls == ["refactorer", "reviewer_refactor-check"]
+        assert RunState.model_validate(resumed).status == RunStatus.DONE
 
 
 class TestResumeActuallyResumes:

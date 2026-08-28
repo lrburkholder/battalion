@@ -24,7 +24,7 @@ PROMPT_CONTRACT_VERSIONS = {
     "driver-red": "driver-red/v1",
     "driver-green": "driver-green/v1",
     "reviewer": "reviewer/v1",
-    "refactorer": "refactorer/v1",
+    "refactorer": "refactorer/v2",
     "recon": "recon/v1",
 }
 
