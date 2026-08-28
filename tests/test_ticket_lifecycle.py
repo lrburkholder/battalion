@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from battalion.ticket_lifecycle import TicketLifecycleError, ensure_in_review, linked_issue_number
-from scripts.complete_merged_ticket import _normalization_record
+from scripts import complete_merged_ticket
+from scripts.complete_merged_ticket import _current_pr_body, _normalization_record
 from scripts.sync_status import normalize_issues
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,25 @@ def test_only_in_review_is_eligible_for_automatic_closure() -> None:
     with pytest.raises(TicketLifecycleError, match="status:in-review"):
         ensure_in_review({"status:in-progress"})
 
+
+def test_current_pr_body_uses_live_github_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fake_gh(*args: str) -> object:
+        calls.append(args)
+        return {"body": "Summary\n\nBattalion-ticket: #228\n"}
+
+    monkeypatch.setattr(complete_merged_ticket, "_gh", fake_gh)
+
+    assert _current_pr_body("lrburkholder/battalion", "229") == "Summary\n\nBattalion-ticket: #228\n"
+    assert calls == [("repos/lrburkholder/battalion/pulls/229",)]
+
+
+def test_current_pr_body_rejects_invalid_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(complete_merged_ticket, "_gh", lambda *args: [])
+
+    with pytest.raises(TicketLifecycleError, match="non-object pull request"):
+        _current_pr_body("lrburkholder/battalion", "229")
 
 def test_lifecycle_normalizes_lowercase_rest_closed_state() -> None:
     record = _normalization_record({
@@ -57,6 +77,7 @@ def test_lifecycle_entry_point_imports_from_clean_checkout() -> None:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env.pop("GITHUB_REPOSITORY", None)
+    env.pop("PR_NUMBER", None)
     completed = subprocess.run(
         [sys.executable, "scripts/complete_merged_ticket.py"],
         cwd=ROOT,
