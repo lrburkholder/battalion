@@ -44,6 +44,16 @@ from battalion.integrations.github import (
     github_work_source_factory,
     github_work_source_registration,
 )
+from battalion.integrations.webhook import (
+    HttpWebhookOutboundEventSink,
+    HttpWebhookTransport,
+    SecretResolver,
+    WebhookRejected,
+    environment_secret_resolver,
+    http_webhook_outbound_event_sink_factory,
+    http_webhook_outbound_event_sink_registration,
+    http_webhook_transport_factory,
+)
 from battalion.integrations.runtime import (
     AdapterBinding,
     AdapterRegistration,
@@ -150,4 +160,12 @@ __all__ = [
     "EventRunProvenance",
     "github_work_source_factory",
     "github_work_source_registration",
+    "HttpWebhookOutboundEventSink",
+    "HttpWebhookTransport",
+    "SecretResolver",
+    "WebhookRejected",
+    "environment_secret_resolver",
+    "http_webhook_outbound_event_sink_factory",
+    "http_webhook_outbound_event_sink_registration",
+    "http_webhook_transport_factory",
 ]
