@@ -124,10 +124,12 @@ def test_registered_event_envelopes_have_deterministic_ids_and_minimized_data():
     assert event.event_id == events_for_state(interrupted)[0].event_id
     assert event.occurred_at == NOW
     assert event.provenance.run_id == interrupted.run_id
+    assert event.provenance.work_item_id == interrupted.ticket_id
     assert event.data.model_dump() == {
         "kind": "human_interrupt",
         "interrupt_id": "run-btn-73:interrupt:0",
         "trigger": "budget-exceeded",
+        "phase": "pause",
     }
     assert "context" not in event.model_dump_json()
 

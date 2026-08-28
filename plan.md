@@ -299,6 +299,13 @@ destinations, disabled channels, policy denial, unavailable integrations, and
 delivery failures independently without allowing notification delivery to
 mutate HumanInterrupt state.
 
+BTN-79 is in progress: the outbound-only Discord webhook adapter consumes only
+the minimized `human_interrupt` event, renders bounded Run/work-item/phase/
+reason details with a CLI return route, and resolves its webhook token below
+the OutboundEventSink boundary. It has no Discord inbound, reply, Actor, or Run
+mutation path; confirmed failures, duplicates, and ambiguous outcomes use the
+shared BTN-70 side-effect ledger semantics.
+
 ## Risks and watch items
 
 - Rejection-cause comparison depends on consistent, specific Reviewer output.

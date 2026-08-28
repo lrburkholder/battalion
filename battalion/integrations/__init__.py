@@ -54,6 +54,13 @@ from battalion.integrations.webhook import (
     http_webhook_outbound_event_sink_registration,
     http_webhook_transport_factory,
 )
+from battalion.integrations.discord import (
+    DiscordHumanInterruptSink,
+    DiscordWebhookTransport,
+    discord_human_interrupt_sink_factory,
+    discord_human_interrupt_sink_registration,
+    discord_webhook_transport_factory,
+)
 from battalion.integrations.runtime import (
     AdapterBinding,
     AdapterRegistration,
@@ -170,4 +177,9 @@ __all__ = [
     "http_webhook_outbound_event_sink_factory",
     "http_webhook_outbound_event_sink_registration",
     "http_webhook_transport_factory",
+    "DiscordHumanInterruptSink",
+    "DiscordWebhookTransport",
+    "discord_human_interrupt_sink_factory",
+    "discord_human_interrupt_sink_registration",
+    "discord_webhook_transport_factory",
 ]
