@@ -32,6 +32,16 @@ from battalion.integrations.events import (
     RunCompletedData,
     RunFailedData,
     events_for_state,
+from battalion.integrations.github import (
+    GitHubHttpIssueClient,
+    GitHubIssueClient,
+    GitHubIssueConflict,
+    GitHubIssueMutationPolicy,
+    GitHubIssueMutationService,
+    GitHubIssueNotFound,
+    GitHubIssueWorkSource,
+    github_work_source_factory,
+    github_work_source_registration,
 )
 from battalion.integrations.runtime import (
     AdapterBinding,
@@ -92,6 +102,13 @@ __all__ = [
     "DuplicateSideEffectKey",
     "HumanInteractionPort",
     "HumanInterruptData",
+    "GitHubHttpIssueClient",
+    "GitHubIssueClient",
+    "GitHubIssueConflict",
+    "GitHubIssueMutationPolicy",
+    "GitHubIssueMutationService",
+    "GitHubIssueNotFound",
+    "GitHubIssueWorkSource",
     "IntegrationCancelled",
     "IntegrationConfigurationError",
     "IntegrationError",
@@ -130,4 +147,6 @@ __all__ = [
     "request_digest",
     "events_for_state",
     "EventRunProvenance",
+    "github_work_source_factory",
+    "github_work_source_registration",
 ]
