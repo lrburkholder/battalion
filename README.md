@@ -161,6 +161,15 @@ Battalion requires Python 3.11 or newer. Core installation includes the
 validated LangGraph 1.x runtime. The desktop extra adds pinned PySide6 and
 Nuitka packaging tools.
 
+### Releases
+
+Battalion is pre-1.0. Its single application/package version is declared in
+`pyproject.toml`; a maintainer-created matching tag (for example `v0.1.0`) is
+the only release trigger. Merges and pushes to `main` do not publish artifacts.
+The [release and distribution guide](docs/release.md) documents SemVer policy,
+the deterministic release gates, GitHub Release artifacts and checksums, the
+Windows desktop ZIP, and the intentionally separate first-run onboarding path.
+
 ### Configure Models
 
 Battalion uses LiteLLM model identifiers such as `openai/gpt-4.1-mini` or
