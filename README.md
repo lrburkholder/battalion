@@ -195,7 +195,7 @@ references. The current transport values are `native-local`, `http-rest`,
 `work-source`, `knowledge-source`, `repository-service`, `notification`,
 `outbound-event-sink`, and `human-interaction`.
 
-### Outbound Event Contract (BTN-73; HTTP delivery in BTN-74, in progress)
+### Outbound Event Contract (BTN-73; HTTP delivery in BTN-74; Discord in BTN-79, in progress)
 
 Configured `outbound-event-sink` bindings receive one-way, versioned machine
 events after the corresponding Run state is durable. Schema `1.0` supports
@@ -239,6 +239,32 @@ project:
       credential_references:
         authorization:
           reference: env://AUTOMATION_WEBHOOK_AUTHORIZATION
+```
+
+The built-in `discord` webhook sink is deliberately narrower: it accepts only
+the `human_interrupt` event and sends an outbound incoming-webhook message. It
+includes the bounded Run ID, work-item ID, phase, interrupt reason, and a
+copyable `battalion status <run-id> --human` route. Discord has no inbound
+command, reply, Actor, or Run-mutation authority. Its numeric webhook ID is a
+provider destination setting below the `outbound-event-sink` boundary; the
+secret webhook token is a required symbolic reference and is never part of the
+shareable configuration.
+
+```yaml
+# battalion.integrations.yaml — safe to share
+project:
+  integrations:
+    discord-operations:
+      integration_id: discord-operations-primary
+      provider: discord
+      transport: webhook
+      capabilities: [outbound-event-sink]
+      settings:
+        webhook_id: "123456789012345678"
+        timeout_seconds: 10
+      credential_references:
+        webhook_token:
+          reference: env://DISCORD_WEBHOOK_TOKEN
 ```
 
 References may use `env://NAME` or `keyring://service/account`; their values

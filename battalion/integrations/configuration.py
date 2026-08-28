@@ -59,6 +59,7 @@ _SENSITIVE_SETTING_NAMES = frozenset(
         "privatekey",
         "secret",
         "token",
+        "webhooktoken",
     }
 )
 

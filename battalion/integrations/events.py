@@ -38,6 +38,9 @@ class EventRunProvenance(BaseModel):
     run_id: str = Field(min_length=1, max_length=200)
     run_alias: str | None = Field(default=None, max_length=200)
     project_id: UUID | None = None
+    # Optional schema-1.0 extension.  Existing consumers can ignore it, while
+    # human-facing sinks can identify the work item without receiving a Run.
+    work_item_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class HumanInterruptData(BaseModel):
@@ -48,6 +51,10 @@ class HumanInterruptData(BaseModel):
     kind: Literal["human_interrupt"] = "human_interrupt"
     interrupt_id: str = Field(min_length=1, max_length=300)
     trigger: str = Field(min_length=1, max_length=100)
+    # Optional schema-1.0 extension.  It is populated for every event created
+    # from a Run; old serialized envelopes remain valid for consumers that do
+    # not need a human-readable phase.
+    phase: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class RunFailedData(BaseModel):
@@ -151,6 +158,7 @@ def events_for_state(
         run_id=state.run_id,
         run_alias=state.run_alias,
         project_id=state.project_id,
+        work_item_id=state.ticket_id,
     )
     if state.status is RunStatus.AWAITING_HUMAN and state.interrupt_log:
         index = len(state.interrupt_log) - 1
@@ -165,6 +173,7 @@ def events_for_state(
                 data=HumanInterruptData(
                     interrupt_id=f"{state.run_id}:interrupt:{index}",
                     trigger=interrupt.trigger,
+                    phase=state.phase,
                 ),
             ),
         )
