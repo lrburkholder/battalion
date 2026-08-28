@@ -57,6 +57,7 @@ Current work status is generated from the canonical [GitHub Issues](https://gith
 | `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | Complete (BTN-66) |
 | `battalion.integrations.runtime` | Validated capability-to-adapter-to-bounded-transport resolution with typed failures | Complete (BTN-67) |
 | `battalion.integrations.effects` | Durable side-effect ledger, replay-safe logical operation identity, and typed reconciliation evidence | Complete (BTN-70) |
+| `battalion.notifications` | Actor-targeted notification routing, configured channel selection, and per-delivery evidence | In progress (BTN-75) |
 | `battalion.setup` | Provider discovery, configuration, and connectivity checks | Complete (BTN-15) |
 | `battalion.progress` | Human-readable CLI progress events | Complete |
 | `battalion.cli` | Typer CLI - run/resume/status/setup | Complete (BTN-9, BTN-15) |
@@ -218,6 +219,30 @@ organization allow-list and Actor preferences can only narrow or select project
 bindings, so they cannot grant a provider or capability forbidden by project
 policy. Provider adapter binding, secret resolution, health checks, and
 operation authorization remain separate follow-up work.
+
+Notification routing adds project-owned channel defaults, optional disabled
+channels, and explicitly named Actor groups beneath the same integration
+configuration. A caller supplies durable Actor IDs or one named group; the
+router resolves provider subjects only at the Notification adapter boundary.
+Raw email addresses, Discord IDs, and device tokens never enter graph state or
+notification requests.
+
+```yaml
+project:
+  notification_defaults: [discord-operations, email-work]
+  disabled_notification_integrations: [email-work]
+  notification_actor_groups:
+    on-call:
+      - "0c0560b2-3de8-4e07-9bf5-f4d3efa6c41d"
+```
+
+When an Actor has a permitted `notification` preference, it selects a configured
+channel for that Actor; otherwise the project defaults fan out across their
+configured channels. If no defaults are declared, every configured Notification
+channel is considered. Missing destinations, disabled channels, policy denials,
+unavailable integrations, confirmed failures, and ambiguous delivery are
+reported separately. Delivery itself remains outbound-only and cannot resolve
+or mutate a HumanInterrupt.
 
 ### Run Battalion
 

@@ -282,6 +282,15 @@ individual provider operations remain BTN-68, BTN-69, and BTN-71 through
 BTN-80; the capability contracts consume the ledger rather than redefining
 delivery semantics.
 
+BTN-75 is in progress: its notification router accepts only Battalion Actor
+IDs or explicitly configured Actor groups, applies the configured project and
+permitted Actor channel selection, resolves provider subjects from
+integration-scoped external identity mappings at the adapter boundary, and
+records every actual delivery through BTN-70's ledger. It reports missing
+destinations, disabled channels, policy denial, unavailable integrations, and
+delivery failures independently without allowing notification delivery to
+mutate HumanInterrupt state.
+
 ## Risks and watch items
 
 - Rejection-cause comparison depends on consistent, specific Reviewer output.

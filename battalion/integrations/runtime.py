@@ -137,6 +137,24 @@ class TransportResponse:
     payload: Any
 
 
+@dataclass(frozen=True)
+class NotificationDelivery:
+    """One bounded provider-facing delivery resolved from an Actor target.
+
+    ``external_subject`` is intentionally present only at the Notification
+    capability boundary.  Graph and application callers use Battalion Actor
+    IDs; the notification router resolves this provider-scoped value from a
+    credential-free ExternalIdentity immediately before invoking an adapter.
+    """
+
+    logical_notification_id: str
+    classification: str
+    template_data: Mapping[str, Any]
+    return_route: str
+    external_subject: str
+    idempotency_key: str
+
+
 class Transport(Protocol):
     """A transport implementation hidden behind an adapter-specific facade."""
 
@@ -210,7 +228,10 @@ class RepositoryServicePort(CapabilityPort, Protocol):
 
 
 class NotificationPort(CapabilityPort, Protocol):
-    """Provider-neutral Notification port; operations arrive with BTN-75."""
+    """Provider-neutral outbound notification delivery port."""
+
+    def send(self, delivery: NotificationDelivery) -> Any:
+        """Deliver one Actor-resolved notification through this provider."""
 
 
 class OutboundEventSinkPort(CapabilityPort, Protocol):
@@ -352,6 +373,12 @@ class IntegrationRuntime:
                         f"{definition.provider!r}, transport {definition.transport.value!r}, "
                         f"and capability {capability.value!r}"
                     )
+
+    @property
+    def configuration(self) -> IntegrationConfiguration:
+        """Return the immutable routing configuration admitted to this runtime."""
+
+        return self._configuration
 
     def work_source(self, integration_name: str | None = None) -> WorkSourcePort:
         """Resolve an admitted WorkSource port."""
@@ -536,6 +563,8 @@ def _has_capability(adapter: object, capability: CapabilitySurface) -> bool:
                 and callable(getattr(adapter, "get"))
                 and callable(getattr(adapter, "refresh"))
             )
+        if capability is CapabilitySurface.NOTIFICATION:
+            return callable(getattr(adapter, "send"))
         return True
     except Exception:
         return False
