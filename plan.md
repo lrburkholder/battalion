@@ -44,6 +44,12 @@ policy vocabulary and read-only registry required by accepted RFC-0012. The
 existing full Implementation Run is its initial default/fallback recipe;
 admission, compact execution, durable selected-recipe state, and graph dispatch
 remain follow-up work.
+BTN-139 is in progress: it adds a credential-free, deterministic assessment of
+bounded, revision-pinned admission evidence. The assessment records its policy
+and evidence identities, fails closed for configured hard-risk surfaces, and
+leaves stale, contradictory, or insufficient evidence explicitly uncertain.
+It does not invoke Tactician, authorize human choices, persist an admission, or
+dispatch a recipe; those remain BTN-140 through BTN-143 work.
 
 ## Architecture overview
 
@@ -155,6 +161,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0028](docs/adrs/adr0028.md) | Authorize Battalion operations, not identities or transports |
 | [ADR-0029](docs/adrs/adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity |
 | [ADR-0032](docs/adrs/adr0032.md) | Register finite, versioned WorkflowRecipe policy artifacts |
+| [ADR-0033](docs/adrs/adr0033.md) | Classify workflow admission from bounded deterministic evidence |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human
