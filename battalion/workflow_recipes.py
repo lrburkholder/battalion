@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from enum import Enum
 from types import MappingProxyType
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 
 class WorkflowRecipeError(ValueError):
@@ -24,6 +24,10 @@ class MalformedWorkflowRecipe(WorkflowRecipeError):
 
 class DuplicateWorkflowRecipe(WorkflowRecipeError):
     """Two policy artifacts claim the same stable identity and version."""
+
+
+class IncompatibleWorkflowRecipe(WorkflowRecipeError):
+    """A policy artifact violates the assurance contract for its workflow kind."""
 
 
 class UnknownWorkflowRecipe(WorkflowRecipeError):
@@ -138,6 +142,12 @@ class WorkflowRecipeRegistry:
                 raise MalformedWorkflowRecipe(
                     "workflow registries accept validated WorkflowRecipe policy artifacts only"
                 )
+            try:
+                WorkflowRecipe.model_validate(recipe.model_dump())
+            except ValidationError as exc:
+                raise IncompatibleWorkflowRecipe(
+                    f"incompatible workflow recipe {recipe.recipe_id!r}: {exc}"
+                ) from exc
             identity = (recipe.recipe_id, recipe.recipe_version)
             if identity in indexed:
                 raise DuplicateWorkflowRecipe(

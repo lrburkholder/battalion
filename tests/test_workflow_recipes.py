@@ -16,6 +16,7 @@ from battalion.workflow_recipes import (
     DEFAULT_WORKFLOW_RECIPE_REGISTRY,
     DuplicateWorkflowRecipe,
     FULL_IMPLEMENTATION_RECIPE,
+    IncompatibleWorkflowRecipe,
     MalformedWorkflowRecipe,
     UnknownWorkflowRecipe,
     WorkflowRecipe,
@@ -57,6 +58,15 @@ def test_registry_rejects_unknown_duplicate_and_model_supplied_recipes() -> None
         WorkflowRecipeRegistry((FULL_IMPLEMENTATION_RECIPE, FULL_IMPLEMENTATION_RECIPE))
     with pytest.raises(MalformedWorkflowRecipe):
         WorkflowRecipeRegistry(({"recipe_id": "model-invented"},))  # type: ignore[arg-type]
+
+
+def test_registry_rejects_an_incompatible_recipe_even_if_validation_was_bypassed() -> None:
+    incompatible = FULL_IMPLEMENTATION_RECIPE.model_copy(
+        update={"mandatory_verification": frozenset()}
+    )
+
+    with pytest.raises(IncompatibleWorkflowRecipe, match="required verification"):
+        WorkflowRecipeRegistry((incompatible,))
 
 
 def test_recipe_validation_cannot_omit_required_assurance() -> None:
