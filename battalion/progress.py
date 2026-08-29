@@ -8,10 +8,10 @@ streams — the model's tokens/reasoning as they arrive (the "agent traces"
 effect seen in tools like OpenCode and VS Code Copilot).
 
 Two modes:
-  * Interactive terminal (default): a rich.Live region that redraws in
-    place — spinner, current node, budget, and a bounded live tail of the
-    current stream. Completed nodes are printed in full into terminal
-    scrollback for later reading.
+  * Interactive terminal (default): a compact rich.Live region that redraws
+    in place — spinner, current node, and budget. Completed nodes are printed
+    in full into terminal scrollback: reasoning as text and structured file
+    output as syntax-highlighted source, rather than an escaped JSON blob.
   * Non-interactive (pipes, CI, the click test runner): one plain text line
     per lifecycle event, so output stays readable and assertable.
 """
@@ -25,8 +25,10 @@ from typing import Any, TextIO
 from rich.columns import Columns
 from rich.console import Console, Group
 from rich.live import Live
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.spinner import Spinner
+from rich.syntax import Syntax
 from rich.text import Text
 
 from battalion.interrupts.triggers import get_trigger_name
@@ -74,6 +76,8 @@ class ProgressDisplay:
         self._node: str | None = None
         self._node_label = ""
         self._trace: list[str] = []
+        self._reasoning: list[str] = []
+        self._content: list[str] = []
         self._last_trace_kind: str | None = None
         self._budget: dict[str, Any] = {}
 
@@ -101,18 +105,15 @@ class ProgressDisplay:
             self._node = node if isinstance(node, str) else None
             self._node_label = _NODE_LABELS.get(node or "", node or "")
             self._trace = []
+            self._reasoning = []
+            self._content = []
             self._last_trace_kind = None
             self._budget = event.get("budget") or {}
             if not self._interactive:
                 self._console.print(f"[run] {self._node_label}...")
         elif etype == "node_end":
             if self._interactive and self._trace:
-                # Console.print is routed above the active Live region, so the
-                # completed node remains in terminal scrollback while the next
-                # node gets its own live panel.
-                self._console.print(self._render())
-                self._trace = []
-                self._last_trace_kind = None
+                self._print_completed_node()
             elif not self._interactive:
                 self._console.print(
                     f"[run] {self._node_label} -> {event.get('phase')}"
@@ -123,6 +124,11 @@ class ProgressDisplay:
             if not self._interactive:
                 self._console.print(f"[pause] {trigger} - awaiting human")
         elif etype == "node_error":
+            if self._interactive and self._trace:
+                # Validation happens after a streamed response has completed.
+                # Preserve that response for the operator before reporting the
+                # interrupt instead of letting Live erase it on shutdown.
+                self._print_completed_node(title_suffix="rejected output")
             if not self._interactive:
                 self._console.print(
                     f"[error] {self._node_label}: {event.get('error')}"
@@ -140,29 +146,78 @@ class ProgressDisplay:
             if self._last_trace_kind != "reasoning":
                 self._trace.append("[reasoning] ")
             self._trace.append(content)
+            self._reasoning.append(content)
         else:
             self._trace.append(content)
+            self._content.append(content)
         self._last_trace_kind = kind
         self._write_trace_event(kind, content)
 
-    def _trace_for_live_panel(self) -> tuple[str, str | None]:
-        """Return a screen-sized tail while retaining the full node trace.
+    def _print_completed_node(self, title_suffix: str | None = None) -> None:
+        """Print a full, static transcript above Live and reset its buffers."""
+        self._console.print(self._render_completed_node(title_suffix))
+        self._trace = []
+        self._reasoning = []
+        self._content = []
+        self._last_trace_kind = None
 
-        Rich redraws a Live panel in place. Letting that panel grow beyond the
-        terminal height causes visible erase/repaint flashing on Windows.
-        The full trace remains in memory until node completion, when it is
-        emitted as a static scrollback panel.
+    @staticmethod
+    def _file_output(content: str) -> dict[str, str] | None:
+        """Best-effort extract a Driver/Refactorer ``files`` object.
+
+        Rendering is presentation only: the node remains the authority that
+        validates structured output before a write.  This permissive reader
+        lets an operator inspect a malformed response as source when possible.
         """
-        trace = "".join(self._trace)
-        width = max(self._console.width, 40)
-        limit = min(1_600, max(900, width * 10))
-        if len(trace) <= limit:
-            return trace, None
-        omitted = len(trace) - limit
-        return (
-            trace[-limit:],
-            f"[live tail: {omitted} earlier characters retained for node completion]",
-        )
+        decoder = json.JSONDecoder()
+        for offset, character in enumerate(content):
+            if character != "{":
+                continue
+            try:
+                candidate, _ = decoder.raw_decode(content[offset:])
+            except json.JSONDecodeError:
+                continue
+            files = candidate.get("files") if isinstance(candidate, dict) else None
+            if (
+                isinstance(files, dict)
+                and all(isinstance(path, str) and isinstance(text, str)
+                        for path, text in files.items())
+            ):
+                return files
+        return None
+
+    def _render_completed_output(self):
+        content = "".join(self._content)
+        if not content:
+            return None
+        files = self._file_output(content)
+        if files:
+            return Group(*[
+                Panel(
+                    Syntax(text, Syntax.guess_lexer(path, text), word_wrap=True),
+                    title=f"Output file: {path}",
+                    border_style="green",
+                )
+                for path, text in files.items()
+            ])
+        if self._node == "architect":
+            return Panel(Markdown(content), title="Output: plan.md", border_style="green")
+        return Panel(Text(content), title="Model output", border_style="green")
+
+    def _render_completed_node(self, title_suffix: str | None = None) -> Panel:
+        header = self._header()
+        parts: list[object] = [header]
+        if self._reasoning:
+            parts.append(Panel(
+                Text("".join(self._reasoning)),
+                title="Reasoning (full transcript)",
+                border_style="dim",
+            ))
+        output = self._render_completed_output()
+        if output is not None:
+            parts.append(output)
+        title = "Battalion" if title_suffix is None else f"Battalion — {title_suffix}"
+        return Panel(Group(*parts), title=title)
 
     def _write_trace_event(self, kind: object, content: str) -> None:
         """Append opt-in raw stream text as operator-owned JSON Lines output."""
@@ -186,7 +241,7 @@ class ProgressDisplay:
         self._trace_output.write("\n")
         self._trace_output.flush()
 
-    def _render(self) -> Panel:
+    def _header(self):
         header = Text(self._node_label, style="bold cyan")
         if self._budget:
             header.append(
@@ -194,13 +249,14 @@ class ProgressDisplay:
                 style="dim",
             )
         top = Columns([Spinner("dots"), header], equal=False, expand=False)
-        if self._trace:
-            trace, notice = self._trace_for_live_panel()
-            body = (
-                Group(top, Text(notice, style="dim"), Text(trace))
-                if notice is not None
-                else Group(top, Text(trace))
-            )
-        else:
-            body = Group(top, Text("working...", style="dim"))
+        return top
+
+    def _render(self) -> Panel:
+        body = Group(
+            self._header(),
+            Text(
+                "streaming; full reasoning and rendered output follow when this node finishes",
+                style="dim",
+            ) if self._trace else Text("working...", style="dim"),
+        )
         return Panel(body, title="Battalion")

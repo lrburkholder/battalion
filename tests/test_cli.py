@@ -351,6 +351,41 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
     assert "Resume when ready: battalion resume " in result.output
 
 
+def test_run_describes_role_output_failure_without_calling_it_a_provider_error(tmp_path, monkeypatch):
+    import battalion.application as application_module
+    from battalion.interrupts.triggers import TRIGGER_INFRA_FAILURE
+    from battalion.state.models import InterruptLogEntry
+    from datetime import datetime, timezone
+
+    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
+        return initial_state.model_copy(update={
+            "status": RunStatus.AWAITING_HUMAN,
+            "phase": "awaiting_human",
+            "interrupt_log": [InterruptLogEntry(
+                trigger=TRIGGER_INFRA_FAILURE,
+                timestamp=datetime.now(timezone.utc),
+                resolution=None,
+                context={
+                    "failure_kind": "role-output",
+                    "error": "GREEN mode must not produce test files",
+                },
+            )],
+        })
+
+    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
+    spec_file = tmp_path / "spec.md"
+    spec_file.write_text("# Test Spec")
+
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        result = runner.invoke(app, ["run", "BTN-129-test", "--spec", str(spec_file)])
+
+    assert result.exit_code == 0
+    assert "role response violated Battalion's output contract" in result.output
+    assert "Validation error: GREEN mode must not produce test files" in result.output
+    assert "Provider error:" not in result.output
+
+
 def test_run_with_config_file(tmp_path, monkeypatch):
     """Test that run command loads config from YAML file."""
     import battalion.application as application_module

@@ -39,6 +39,7 @@ from battalion.state.models import (
     Budget,
     CheckpointType,
     InterruptLogEntry,
+    RejectionRecord,
     RunState,
     RunStatus,
 )
@@ -353,6 +354,7 @@ class TestRoleOutputFailuresPause:
         assert final["phase"] == NODE_PAUSE
         interrupt = final["interrupt_log"][-1]
         assert interrupt.trigger == "infra-failure"
+        assert interrupt.context["failure_kind"] == "role-output"
         assert interrupt.context["next_phase"] == NODE_DRIVER_RED
         assert "RED mode" in interrupt.context["error"]
 
@@ -582,3 +584,55 @@ class TestExecutionContext:
         assert "IMPLEMENTATION_SENTINEL" not in green
         assert "TEST_SENTINEL" in refactor
         assert "IMPLEMENTATION_SENTINEL" in refactor
+
+    def test_driver_context_includes_prior_role_output_feedback_for_same_phase(self, tmp_path):
+        state = make_run_state().model_copy(update={
+            "interrupt_log": [
+                InterruptLogEntry(
+                    trigger="infra-failure",
+                    timestamp=datetime.now(timezone.utc),
+                    context={
+                        "failure_kind": "role-output",
+                        "next_phase": NODE_DRIVER_GREEN,
+                        "error": "GREEN mode must not produce test files",
+                    },
+                )
+            ]
+        })
+
+        green = driver_context(state, tmp_path, "green")
+        red = driver_context(state, tmp_path, "red")
+
+        assert "## Previous output validation failure" in green
+        assert "GREEN mode must not produce test files" in green
+        assert "Previous output validation failure" not in red
+
+    def test_retry_context_includes_only_the_matching_reviewer_feedback(self, tmp_path):
+        state = make_run_state().model_copy(update={
+            "reviewer_rejection_history": [
+                RejectionRecord(
+                    cause="RED_CAUSE", cycle_number=1,
+                    checkpoint=CheckpointType.RED_CHECK,
+                ),
+                RejectionRecord(
+                    cause="GREEN_CAUSE", cycle_number=2,
+                    checkpoint=CheckpointType.GREEN_CHECK,
+                ),
+                RejectionRecord(
+                    cause="REFACTOR_CAUSE", cycle_number=1,
+                    checkpoint=CheckpointType.REFACTOR_CHECK,
+                ),
+            ]
+        })
+
+        red = driver_context(state, tmp_path, "red")
+        green = driver_context(state, tmp_path, "green")
+        refactor = refactorer_context(state, tmp_path)
+
+        assert "Reviewer feedback" in red
+        assert "RED_CAUSE" in red
+        assert "GREEN_CAUSE" not in red
+        assert "GREEN_CAUSE" in green
+        assert "RED_CAUSE" not in green
+        assert "REFACTOR_CAUSE" in refactor
+        assert "GREEN_CAUSE" not in refactor

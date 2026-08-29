@@ -33,6 +33,8 @@ def test_red_and_green_prompts_preserve_mode_authority():
 
     assert "Do not write or modify production implementation" in red
     assert "must not be modified" in green
+    assert "accepted RED tests already exist" in green
+    assert "response containing any test file is rejected" in " ".join(green.split())
     assert "No returned basename may start with `test_`" in green
 
 
@@ -80,6 +82,7 @@ def test_architect_prompt_requires_evidence_bounded_plan():
     assert "Do not fill the gap with a generic architecture" in prompt
     assert "Output only the plan content suitable for `plan.md`" in prompt
     assert "target 250 words or fewer" in prompt
+    assert "Do not prescribe or perform commits, pushes, deployments" in prompt
 
 
 def test_refactorer_prompt_preserves_behavior_and_architecture():

@@ -42,7 +42,7 @@ Current work status is generated from the canonical [GitHub Issues](https://gith
 | `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | Complete (BTN-36) |
 | `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | Complete (BTN-42–43) |
 | `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | Complete (BTN-16, BTN-19, BTN-35) |
-| `battalion.context` | Bounded role context assembly and Instinct injection | Complete (BTN-26) |
+| `battalion.context` | Bounded role context assembly, checkpoint-specific retry feedback, and Instinct injection | Complete (BTN-26, BTN-129) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | Complete |
 | `battalion.nodes.architect` | Architecture planning node | Complete |
@@ -102,7 +102,8 @@ The versioned state contract includes:
 - `status`: Current run status (not-started, in-progress, blocked, awaiting-human, done, failed-infra)
 - `phase`: Current node/phase (architect, driver, reviewer, refactorer, pause, or done)
 - `write_scope`: Per-node declared write permissions
-- `reviewer_rejection_history`: Tracking for interrupt trigger #1
+- `reviewer_rejection_history`: Tracking for interrupt trigger #1 and the
+  normalized, checkpoint-specific feedback supplied to a corrective retry
 - `retry_bound`: Configurable retry limits
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
@@ -118,7 +119,7 @@ The versioned state contract includes:
 | 2 | Out-of-scope write attempt | Node tries to write outside declared scope | Hard block, mechanical check |
 | 3 | Budget exceeded | Per-graph-run budget limit reached | Pause, show spend, ask to continue |
 | 4 | Role-definition edit | Any modification to Battalion role definitions | Always interrupt |
-| 5 | Infra failure | Node crash, malformed state, LiteLLM failure | Distinct failure state |
+| 5 | Infra failure | Node crash, malformed state, provider failure, or role-output contract violation | Distinct failure state; role-output failures remain resumable with validation feedback |
 | 6 | Manual checkpoint | User-declared pause point | Graph pauses unconditionally |
 
 ### Write Scope Model

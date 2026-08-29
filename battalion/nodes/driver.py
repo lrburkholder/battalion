@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
+from hashlib import sha256
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Callable, Literal
 
+from battalion.execution import record_unchanged_test_echo
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.nodes.errors import RoleOutputError, WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
@@ -53,6 +55,106 @@ class InvalidModeOutput(RoleOutputError):
 
 def _looks_like_test_file(relative_path: str) -> bool:
     return bool(_TEST_FILE_RE.match(Path(relative_path).name))
+
+
+def _safe_relative_path(path: str) -> str | None:
+    """Return a normalized project-relative path, or ``None`` if unsafe."""
+    normalized = path.replace("\\", "/")
+    candidate = PurePosixPath(normalized)
+    if (
+        candidate.is_absolute()
+        or PureWindowsPath(path).is_absolute()
+        or any(part in {".", ".."} for part in candidate.parts)
+    ):
+        return None
+    return candidate.as_posix()
+
+
+def _latest_red_artifacts(state: RunState) -> dict[str, str]:
+    """Return the artifact digest for the most recent successful RED attempt."""
+    for execution in reversed(state.execution_record.node_executions):
+        if execution.phase == "driver_red" and execution.outcome == "succeeded":
+            return {artifact.path: artifact.sha256 for artifact in execution.artifact_provenance}
+    return {}
+
+
+def _candidate_workspace_paths(
+    returned_path: str, green_scope_entries: list[str]
+) -> set[str]:
+    """Map a GREEN output key to its possible project-relative identities.
+
+    A single GREEN root permits root-relative output (``test_x.py``), while
+    models also commonly return a workspace-relative key (``src/test_x.py``).
+    This helper only creates candidates for safe relative paths; it never
+    resolves or writes the model-supplied path.
+    """
+    relative = _safe_relative_path(returned_path)
+    if relative is None:
+        return set()
+    candidates = {relative}
+    for root in green_scope_entries:
+        if not root.endswith("/"):
+            continue
+        normalized_root = _safe_relative_path(root.rstrip("/"))
+        if normalized_root is not None:
+            candidates.add(f"{normalized_root}/{relative}")
+    return candidates
+
+
+def _same_text_except_transport_newlines(returned: str, recorded: str) -> bool:
+    """Allow only CRLF/LF transport differences and one final newline.
+
+    Whitespace inside a file can be behaviorally meaningful (and Python source
+    is indentation-sensitive), so this intentionally does not strip or
+    otherwise normalize it.
+    """
+    def normalize(value: str) -> str:
+        value = value.replace("\r\n", "\n")
+        return value[:-1] if value.endswith("\n") else value
+
+    return normalize(returned) == normalize(recorded)
+
+
+def _unchanged_red_echoes(
+    files: dict[str, str],
+    state: RunState,
+    base_dir: str | Path,
+    green_scope_entries: list[str],
+) -> set[str]:
+    """Find GREEN test entries that exactly repeat accepted RED artifacts.
+
+    The on-disk artifact must still match the RED provenance digest. This keeps
+    the exception read-only and prevents a later manual test edit from being
+    silently treated as a model echo.
+    """
+    red_artifacts = _latest_red_artifacts(state)
+    if not red_artifacts:
+        return set()
+
+    root = Path(base_dir).resolve()
+    ignored: set[str] = set()
+    for returned_path, returned_content in files.items():
+        if not _looks_like_test_file(returned_path):
+            continue
+        matching_paths = (
+            _candidate_workspace_paths(returned_path, green_scope_entries)
+            & red_artifacts.keys()
+        )
+        for artifact_path in matching_paths:
+            target = (root / artifact_path).resolve()
+            if not target.is_relative_to(root) or not target.is_file():
+                continue
+            recorded_bytes = target.read_bytes()
+            if sha256(recorded_bytes).hexdigest() != red_artifacts[artifact_path]:
+                continue
+            try:
+                recorded_content = recorded_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            if _same_text_except_transport_newlines(returned_content, recorded_content):
+                ignored.add(returned_path)
+                break
+    return ignored
 
 
 def extract_files(response: Any) -> dict[str, str]:
@@ -152,10 +254,24 @@ def run_driver(
         response = call_llm_fn("driver", llm_config, messages)
     files = extract_files(response)
 
+    if mode == "green":
+        ignored_test_echoes = _unchanged_red_echoes(
+            files,
+            state,
+            base_dir,
+            state.write_scope.get(scope_key, []),
+        )
+        for path in ignored_test_echoes:
+            record_unchanged_test_echo(path)
+        files = {
+            path: content for path, content in files.items()
+            if path not in ignored_test_echoes
+        }
+
     if not files:
         raise EmptyDriverOutput(
-            "Driver LLM call returned no files — refusing to advance the "
-            "ticket to 'reviewer' having written nothing."
+            "Driver LLM call returned no writable files — refusing to advance "
+            "the ticket to 'reviewer' having written nothing."
         )
 
     if mode == "red":

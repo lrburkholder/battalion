@@ -228,7 +228,17 @@ def check_any_trigger(
     if error is not None:
         fired, trigger_id = check_infra_failure(error)
         if fired:
-            return True, trigger_id, {"error": str(error)}
+            # Trigger #5 intentionally covers both transport/provider failures
+            # and invalid role output.  Preserve that distinction in durable
+            # interrupt context: a human cannot fix a model's JSON or
+            # mode-boundary violation by debugging provider connectivity.
+            failure_kind = (
+                "role-output" if isinstance(error, RoleOutputError) else "provider"
+            )
+            return True, trigger_id, {
+                "error": str(error),
+                "failure_kind": failure_kind,
+            }
         
         fired, trigger_id = check_scope_violation(error)
         if fired:

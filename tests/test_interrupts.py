@@ -310,6 +310,19 @@ class TestTrigger6ManualCheckpoint:
 # =============================================================================
 
 class TestCheckAnyTrigger:
+    def test_role_output_failure_has_distinct_durable_context(self):
+        fired, trigger_id, context = check_any_trigger(
+            make_state(),
+            error=RoleOutputError("GREEN mode must not produce test files"),
+        )
+
+        assert fired is True
+        assert trigger_id == TRIGGER_INFRA_FAILURE
+        assert context == {
+            "error": "GREEN mode must not produce test files",
+            "failure_kind": "role-output",
+        }
+
     def test_manual_checkpoint_highest_priority(self):
         """Manual checkpoint (trigger #6) should take precedence over all others."""
         state = make_state(

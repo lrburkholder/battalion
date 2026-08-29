@@ -99,7 +99,9 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `reviewer_rejection_history` (list of {cause, cycle_number, checkpoint} —
   root-cause tracked for interrupt trigger #1. checkpoint (added in v1.1,
   BTN-12) scopes cycle_number to be per-checkpoint-type (red-check,
-  green-check, refactor-check), not ticket-wide — see
+  green-check, refactor-check), not ticket-wide. The latest cause for a
+  rejected checkpoint is supplied as bounded feedback only to the corrective
+  role's next attempt; raw test logs remain Reviewer-only — see
   `docs/adrs/adr0009.md`.)
 - `retry_bound` (configurable per ticket, per open decision)
 - `budget` (tracked per graph run, not per node)
@@ -336,6 +338,15 @@ persisted specification, the approved plan, and files under the declared Driver
 source roots. Context is bounded before each LLM call: RED receives existing
 implementation context, GREEN receives accepted RED tests, and Refactorer
 receives the passing file set.
+
+GREEN must return production files only. To tolerate models that serialize a
+workspace snapshot, Battalion removes a returned test entry only when it maps
+to an accepted RED artifact whose current on-disk digest still matches its RED
+provenance and whose text differs only by CRLF versus LF or one final newline.
+The entry is never written and is recorded as a role-output-filter activity.
+Any changed, unknown, unsafe, or otherwise returned test file remains a typed
+role-output failure; Battalion never broadly trims whitespace to make an echo
+match.
 
 For a graph execution with GREEN artifact provenance, Refactorer receives the
 latest successful GREEN Driver's production artifact paths and may write only

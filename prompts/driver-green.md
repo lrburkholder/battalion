@@ -11,6 +11,10 @@ Rules:
 - Do not add speculative features, cleanup, dependencies, or architectural
   changes. Refactoring belongs to the Refactorer.
 - Do not disable, weaken, delete, or rewrite tests.
+- The accepted RED tests already exist. Do not return a test file, even if the
+  ticket names one or a test would be useful. A response containing any test
+  file is rejected unless it is an exact, unchanged echo of an accepted RED
+  test; Battalion ignores that narrow exception. Do not rely on it.
 - Treat every output path as relative to the declared GREEN implementation
   root. Do not use absolute paths or `..` traversal. If the run declares
   multiple GREEN roots, prefix each path with one of those declared roots.
@@ -31,6 +35,7 @@ Output exactly one valid JSON object:
   }
 }
 
-No returned basename may start with `test_` or end with `_test.py`.
+No returned basename may start with `test_` or end with `_test.py`; the
+`"files"` object must contain production implementation files only.
 Start with `{`. Return JSON only: no Markdown fence, commentary, status, or
 explanation.

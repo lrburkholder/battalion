@@ -142,6 +142,15 @@ def _describe_interrupt(entry) -> str:
 
     if trigger == TRIGGER_INFRA_FAILURE:
         error = context.get("error")
+        if context.get("failure_kind") == "role-output":
+            if error:
+                return (
+                    f"{label}: a role response violated Battalion's output contract.\n"
+                    f"   Validation error: {error}\n"
+                    "   Restore or correct the role/model, then resume for a "
+                    "human-authorized retry with this feedback."
+                )
+            return f"{label}: a role response violated Battalion's output contract."
         if error:
             return f"{label}: the LLM call failed after all retries.\n   Provider error: {error}"
         return f"{label}: the LLM call failed after all retries."

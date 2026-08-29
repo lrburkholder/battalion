@@ -254,6 +254,7 @@ class ExecutionCapture:
     before_files: dict[str, str]
     base_dir: Path
     written_paths: set[str]
+    ignored_read_only_echoes: set[str]
     llm_calls: list[LLMCallCost]
     streamed_reasoning_characters: int
     streamed_content_characters: int
@@ -282,6 +283,7 @@ class ExecutionCapture:
             before_files=_snapshot(root, _scope_entries(state, node_name)),
             base_dir=root,
             written_paths=set(),
+            ignored_read_only_echoes=set(),
             llm_calls=[],
             streamed_reasoning_characters=0,
             streamed_content_characters=0,
@@ -327,6 +329,15 @@ class ExecutionCapture:
             ToolActivity(tool="scoped-write", action="write", target=path, outcome="succeeded")
             for path in sorted(changed)
         ]
+        tools.extend(
+            ToolActivity(
+                tool="role-output-filter",
+                action="ignore-unchanged-test-echo",
+                target=path,
+                outcome="succeeded",
+            )
+            for path in sorted(self.ignored_read_only_echoes)
+        )
 
         new_interrupt_indexes = list(
             range(len(old_state.interrupt_log), len(new_state.interrupt_log))
@@ -494,6 +505,17 @@ def record_scoped_write(target: Path) -> None:
     except ValueError:
         return
     capture.written_paths.add(relative)
+
+
+def record_unchanged_test_echo(path: str) -> None:
+    """Record a GREEN response that repeated, but did not alter, a RED test.
+
+    This is an output-filter observation rather than a scoped write: the
+    returned test is deliberately never written by GREEN.
+    """
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        capture.ignored_read_only_echoes.add(path)
 
 
 def record_llm_call(call: LLMCallCost) -> None:

@@ -4,6 +4,9 @@ implementation: this ticket's AC doesn't require actually executing the
 red-green-refactor cycle (real pytest runs), just producing scoped file
 writes. See module docstring in driver.py for the deferred-capability note.
 """
+from datetime import datetime, timezone
+from hashlib import sha256
+
 import pytest
 
 from battalion.nodes.driver import (
@@ -16,7 +19,12 @@ from battalion.nodes.driver import (
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig, call_llm
 from battalion.scope.tool_binding import ScopeViolationError
-from battalion.state.models import RunStatus
+from battalion.state.models import (
+    ArtifactProvenance,
+    ExecutionRecord,
+    NodeExecution,
+    RunStatus,
+)
 
 
 from conftest import make_run_state
@@ -35,6 +43,28 @@ def make_state(write_scope=None, **overrides):
 def files_response(files: dict) -> dict:
     import json
     return {"choices": [{"message": {"content": json.dumps({"files": files})}}]}
+
+
+def state_with_red_artifact(path: str, content: bytes):
+    now = datetime.now(timezone.utc)
+    red_execution = NodeExecution(
+        execution_id="node-red",
+        role="driver",
+        phase="driver_red",
+        model_identity="test-model",
+        started_at=now,
+        ended_at=now,
+        outcome="succeeded",
+        artifact_provenance=[ArtifactProvenance(
+            path=path,
+            sha256=sha256(content).hexdigest(),
+            originating_run_id="run-001",
+            originating_node_execution_id="node-red",
+        )],
+    )
+    return make_state(execution_record=ExecutionRecord(
+        node_executions=[red_execution]
+    ))
 
 
 def fenced_files_response(files: dict) -> dict:
@@ -358,6 +388,104 @@ def test_run_driver_green_mode_rejects_test_files(tmp_path):
             mode="green",
         )
     assert not (tmp_path / "src" / "test_module.py").exists()
+
+
+def test_green_ignores_unchanged_accepted_red_test_echo(tmp_path, monkeypatch):
+    red_content = b"def test_widget():\r\n    assert True\r\n"
+    red_test = tmp_path / "src" / "test_widget.py"
+    red_test.parent.mkdir()
+    red_test.write_bytes(red_content)
+    observed = []
+    monkeypatch.setattr(
+        "battalion.nodes.driver.record_unchanged_test_echo", observed.append
+    )
+
+    updated = run_driver(
+        state_with_red_artifact("src/test_widget.py", red_content),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: files_response({
+            # Root-relative to GREEN's sole src/ scope. This has LF instead of
+            # CRLF and omits the one terminal newline, which is tolerated.
+            "test_widget.py": "def test_widget():\n    assert True",
+            "widget.py": "def widget(): return True\n",
+        }),
+        mode="green",
+    )
+
+    assert red_test.read_bytes() == red_content
+    assert (tmp_path / "src" / "widget.py").read_text() == "def widget(): return True\n"
+    assert observed == ["test_widget.py"]
+    assert updated.phase == "reviewer"
+
+
+@pytest.mark.parametrize("returned_test", [
+    "def test_widget():\n    assert False\n",
+    "def test_widget():\n  assert True\n",
+])
+def test_green_rejects_changed_accepted_red_test_echo(tmp_path, returned_test):
+    red_content = b"def test_widget():\n    assert True\n"
+    red_test = tmp_path / "src" / "test_widget.py"
+    red_test.parent.mkdir()
+    red_test.write_bytes(red_content)
+
+    with pytest.raises(InvalidModeOutput, match="must not produce test files"):
+        run_driver(
+            state_with_red_artifact("src/test_widget.py", red_content),
+            ticket_text="ticket",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({
+                "test_widget.py": returned_test,
+                "widget.py": "def widget(): return True\n",
+            }),
+            mode="green",
+        )
+
+    assert red_test.read_bytes() == red_content
+    assert not (tmp_path / "src" / "widget.py").exists()
+
+
+def test_green_rejects_unknown_test_even_when_a_red_artifact_exists(tmp_path):
+    red_content = b"def test_widget():\n    assert True\n"
+    red_test = tmp_path / "src" / "test_widget.py"
+    red_test.parent.mkdir()
+    red_test.write_bytes(red_content)
+
+    with pytest.raises(InvalidModeOutput, match="test_other.py"):
+        run_driver(
+            state_with_red_artifact("src/test_widget.py", red_content),
+            ticket_text="ticket",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({
+                "test_other.py": "def test_other(): assert True\n",
+                "widget.py": "def widget(): return True\n",
+            }),
+            mode="green",
+        )
+
+    assert not (tmp_path / "src" / "widget.py").exists()
+
+
+def test_green_echo_without_production_file_cannot_advance(tmp_path):
+    red_content = b"def test_widget():\n    assert True\n"
+    red_test = tmp_path / "src" / "test_widget.py"
+    red_test.parent.mkdir()
+    red_test.write_bytes(red_content)
+
+    with pytest.raises(EmptyDriverOutput, match="no writable files"):
+        run_driver(
+            state_with_red_artifact("src/test_widget.py", red_content),
+            ticket_text="ticket",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({
+                "test_widget.py": red_content.decode(),
+            }),
+            mode="green",
+        )
 
 
 def test_run_driver_mode_none_skips_test_file_enforcement(tmp_path):

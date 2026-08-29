@@ -110,16 +110,39 @@ def test_completed_interactive_node_is_preserved_in_terminal_history():
     assert display._trace == []
 
 
-def test_live_panel_bounds_its_view_without_discarding_the_node_trace():
+def test_live_panel_stays_compact_while_retaining_the_full_node_trace():
     display = ProgressDisplay(stream=io.StringIO(), show_stream=True)
     display.handle_token({"type": "token", "content": "begin "})
     display.handle_token({"type": "token", "content": "x" * 2_000})
 
-    visible, notice = display._trace_for_live_panel()
+    live = display._render()
 
-    assert notice is not None
-    assert visible.endswith("x" * 100)
+    assert "live tail" not in str(live)
     assert "".join(display._trace).startswith("begin ")
+
+
+def test_completed_file_output_renders_decoded_source_not_escaped_json():
+    class LiveStub:
+        def refresh(self):
+            pass
+
+    buf = io.StringIO()
+    display = ProgressDisplay(stream=buf, show_stream=True)
+    display._interactive = True
+    display._live = LiveStub()
+
+    display.handle_event({"type": "node_start", "node": "driver_green"})
+    display.handle_token({
+        "type": "token",
+        "content": '{"files":{"src/greeting.py":"def greet(name: str):\\n    return f\\"Hello, {name}!\\"\\n"}}',
+    })
+    display.handle_event({"type": "node_end", "node": "driver_green", "phase": "reviewer"})
+
+    output = buf.getvalue()
+    assert "Output file: src/greeting.py" in output
+    assert "def greet(name: str):" in output
+    assert "return f\"Hello, {name}!\"" in output
+    assert '\\n    return' not in output
 
 
 def test_trace_output_records_node_associated_token_and_reasoning_events():

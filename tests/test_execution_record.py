@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from battalion.graph import build_graph, resume_ticket
-from battalion.execution import ExecutionCapture
+from battalion.execution import ExecutionCapture, record_unchanged_test_echo
 from battalion.llm.litellm_client import NodeLLMConfig
 from battalion.state.models import (
     Budget, CheckpointType, CodeProvenance, EvidenceReference, ExecutionRecord,
@@ -182,6 +182,28 @@ def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(
         )
     with pytest.raises(ValidationError, match="complete repository evidence"):
         CodeProvenance(repository_available=True)
+
+
+def test_execution_record_captures_ignored_unchanged_red_test_echo(tmp_path):
+    state = _state()
+    capture = ExecutionCapture.start(
+        state, "driver_green", "driver-model", tmp_path,
+        model_configuration=NodeLLMConfig(model="driver-model"),
+    )
+    record_unchanged_test_echo("tests/test_widget.py")
+    completed = capture.finish(
+        state,
+        state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS}),
+    )
+
+    assert [item.model_dump() for item in completed.execution_record.node_executions[-1].tool_activity] == [
+        {
+            "tool": "role-output-filter",
+            "action": "ignore-unchanged-test-echo",
+            "target": "tests/test_widget.py",
+            "outcome": "succeeded",
+        }
+    ]
 
 
 def test_dirty_git_workspace_is_explicitly_not_exactly_reconstructable(tmp_path):
