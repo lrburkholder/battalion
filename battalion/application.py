@@ -86,6 +86,13 @@ from battalion.workflow_recipes import (
     WorkflowRecipe,
     WorkflowRecipeRegistry,
 )
+from battalion.workflow_admission import (
+    DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    WorkflowAdmissionAssessment,
+    WorkflowAdmissionEvidence,
+    WorkflowAdmissionPolicy,
+    assess_workflow_admission as _assess_workflow_admission,
+)
 from battalion.workers import (
     DEFAULT_WORKER_DIR,
     WorkerRecord,
@@ -311,6 +318,18 @@ class InspectWorkflowRecipe:
 
     recipe_id: str
     recipe_version: str
+
+
+@dataclass(frozen=True)
+class AssessWorkflowAdmission:
+    """Create a deterministic pre-admission assessment from bounded evidence."""
+
+    evidence: WorkflowAdmissionEvidence
+
+
+@dataclass(frozen=True)
+class InspectWorkflowAdmissionPolicy:
+    """Read the versioned deterministic admission policy without executing it."""
 
 
 @dataclass(frozen=True)
@@ -887,6 +906,25 @@ def inspect_workflow_recipe(
 ) -> WorkflowRecipe:
     """Inspect exact registered recipe semantics without selecting a graph."""
     return registry.resolve(query.recipe_id, query.recipe_version)
+
+
+def assess_workflow_admission(
+    command: AssessWorkflowAdmission,
+    *,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+) -> WorkflowAdmissionAssessment:
+    """Assess admission evidence through the application boundary, without model IO."""
+    return _assess_workflow_admission(command.evidence, policy=policy)
+
+
+def inspect_workflow_admission_policy(
+    query: InspectWorkflowAdmissionPolicy,
+    *,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+) -> WorkflowAdmissionPolicy:
+    """Inspect admission policy without graph, persistence, provider, or model access."""
+    del query
+    return policy
 
 
 def _actor_inspection(registry: ActorRegistry) -> ActorInspection:

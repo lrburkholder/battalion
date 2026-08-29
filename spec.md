@@ -38,10 +38,11 @@ run automatically.
   dogfooding model is "used to build Battalion's next work," not autonomous
   self-editing.
 - Dynamic workflow admission or graph dispatch. BTN-138 provides a finite,
-  versioned `WorkflowRecipe` policy vocabulary and exact historical lookup for
-  post-v2 work, but it does not alter the v1 graph or allow model-produced node
-  lists. Admission, compact execution, persistence, and dispatch remain
-  separately scoped follow-up work under RFC-0012.
+  versioned `WorkflowRecipe` policy vocabulary and BTN-139 provides an
+  inspectable deterministic evidence assessment for post-v2 work, but neither
+  alters the v1 graph or allows model-produced node lists. Compact execution,
+  admission persistence, and dispatch remain separately scoped follow-up work
+  under RFC-0012.
 
 ## Accepted Post-v1 Inference Contract (delivery pending)
 
