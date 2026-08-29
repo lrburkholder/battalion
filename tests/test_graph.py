@@ -42,6 +42,7 @@ from battalion.state.models import (
     RunState,
     RunStatus,
 )
+from battalion.scope.tool_binding import ScopeViolationError
 from unittest.mock import patch
 
 from conftest import (
@@ -340,21 +341,121 @@ class TestRoleOutputFailuresPause:
     requiring a live provider.
     """
 
-    def test_driver_mode_violation_pauses_and_retries_the_same_phase(self, tmp_path):
-        def invalid_red_response(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
-            assert mode == "red"
-            raise InvalidModeOutput("RED mode must only produce test files")
+    def test_driver_mode_violation_retries_same_phase_with_durable_evidence(self, tmp_path):
+        calls = []
+        checkpoints = []
+
+        def invalid_then_corrected(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            calls.append((mode, ticket_text))
+            if mode == "red" and len([call for call in calls if call[0] == "red"]) == 1:
+                raise InvalidModeOutput(
+                    "RED mode must only produce test files",
+                    offending_paths=("widget.py",),
+                )
+            return state.model_copy(update={"phase": "reviewer"})
 
         final = invoke_graph(
-            make_run_state(), tmp_path, recursion_limit=5, driver=invalid_red_response
+            make_run_state(), tmp_path, recursion_limit=10, driver=invalid_then_corrected,
+            on_state_checkpoint=checkpoints.append,
         )
 
-        assert final["status"] == RunStatus.AWAITING_HUMAN
-        assert final["phase"] == NODE_PAUSE
-        interrupt = final["interrupt_log"][-1]
-        assert interrupt.trigger == "infra-failure"
-        assert interrupt.context["next_phase"] == NODE_DRIVER_RED
-        assert "RED mode" in interrupt.context["error"]
+        completed = RunState.model_validate(final)
+        assert completed.status == RunStatus.DONE
+        assert [mode for mode, _ in calls].count("red") == 2
+        assert "Battalion automatic correction" in calls[1][1]
+        assert "widget.py" in calls[1][1]
+        attempts = [
+            item for item in completed.execution_record.node_executions
+            if item.phase == NODE_DRIVER_RED
+        ]
+        assert len(attempts) == 2
+        assert attempts[0].outcome == "rejected"
+        assert attempts[0].attempt_disposition == "corrected"
+        assert attempts[0].role_contract_violation.reason_code == "driver-mode-artifact"
+        assert attempts[0].role_contract_violation.offending_paths == ["widget.py"]
+        assert attempts[0].role_contract_violation.mutation_applied is False
+        assert attempts[0].role_contract_violation.resulting_disposition == "retry"
+        assert attempts[1].attempt_disposition == "accepted"
+        assert completed.budget.used == 8
+        correction_checkpoint = next(
+            state for state in checkpoints
+            if state.execution_record.node_executions[-1].role_contract_violation is not None
+        )
+        assert correction_checkpoint.phase == NODE_DRIVER_RED
+        assert correction_checkpoint.resume_target == NODE_DRIVER_RED
+
+    def test_repeated_role_contract_violation_escalates_after_one_retry(self, tmp_path):
+        calls = []
+
+        def invalid_red_response(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            calls.append((mode, ticket_text))
+            raise InvalidModeOutput(
+                "RED mode must only produce test files",
+                offending_paths=("widget.py",),
+            )
+
+        final = RunState.model_validate(invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=5, driver=invalid_red_response
+        ))
+
+        assert final.status == RunStatus.AWAITING_HUMAN
+        assert final.phase == NODE_PAUSE
+        assert [mode for mode, _ in calls] == ["red", "red"]
+        assert final.interrupt_log[-1].trigger == "infra-failure"
+        assert final.interrupt_log[-1].context["next_phase"] == NODE_DRIVER_RED
+        attempts = [
+            item for item in final.execution_record.node_executions
+            if item.phase == NODE_DRIVER_RED
+        ]
+        assert [item.role_contract_violation.attempt_number for item in attempts] == [1, 2]
+        assert [item.role_contract_violation.resulting_disposition for item in attempts] == [
+            "retry", "escalation"
+        ]
+        assert final.budget.used == 3
+
+    def test_green_test_file_violation_retries_green_without_advancing(self, tmp_path):
+        calls = []
+
+        def invalid_green_then_corrected(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            calls.append((mode, ticket_text))
+            if mode == "green" and len([call for call in calls if call[0] == "green"]) == 1:
+                raise InvalidModeOutput(
+                    "GREEN mode must not produce test files",
+                    offending_paths=("tests/test_widget.py",),
+                )
+            return state.model_copy(update={"phase": "reviewer"})
+
+        final = RunState.model_validate(invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=10, driver=invalid_green_then_corrected
+        ))
+
+        assert final.status == RunStatus.DONE
+        assert [mode for mode, _ in calls].count("green") == 2
+        green_attempts = [
+            item for item in final.execution_record.node_executions
+            if item.phase == NODE_DRIVER_GREEN
+        ]
+        assert len(green_attempts) == 2
+        assert green_attempts[0].attempt_disposition == "corrected"
+        assert green_attempts[0].role_contract_violation.offending_paths == [
+            "tests/test_widget.py"
+        ]
+        assert green_attempts[1].attempt_disposition == "accepted"
+
+    def test_scope_violation_is_not_downgraded_to_a_contract_correction(self, tmp_path):
+        calls = []
+
+        def scope_violation(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            calls.append(mode)
+            raise ScopeViolationError("attempted out-of-scope write")
+
+        final = RunState.model_validate(invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=5, driver=scope_violation
+        ))
+
+        assert final.status == RunStatus.AWAITING_HUMAN
+        assert calls == ["red"]
+        assert final.interrupt_log[-1].trigger == "out-of-scope-write"
 
     def test_refactorer_non_json_pauses_and_retries_refactoring(self, tmp_path):
         def malformed_response(state, refactor_text, llm_config, base_dir, prompts_dir=None):

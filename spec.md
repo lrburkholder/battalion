@@ -199,7 +199,7 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.3` (BTN-129); persisted `1.0` through
+`execution_record.schema_version` is `1.4` (BTN-154); persisted `1.0` through
 `1.2` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
@@ -235,6 +235,14 @@ reconstructability.
 Version `1.3` adds bounded counts of streamed reasoning and content characters
 for each node attempt. These counts support model/phase comparison without
 persisting raw provider reasoning or creating a second trace store.
+
+Version `1.4` distinguishes an accepted role outcome from a rejected model
+candidate. A typed pre-write role-contract violation records its reason,
+offending paths where safe, correction attempt number, no-mutation guarantee,
+and retry or escalation disposition. Battalion supplies one deterministic
+automatic correction retry to the same role and phase; it consumes the normal
+Run budget. A repeated violation pauses through the established human-interrupt
+path. This never weakens scoped-write or other authority-violation handling.
 
 ### Instinct data contract
 

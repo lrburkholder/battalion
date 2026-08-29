@@ -133,7 +133,37 @@ start a new run. Verify all of the following:
 - After correcting the configuration, `battalion resume` records the supplied
   resolution and retries from the saved target.
 
-## 5. Negative robustness checks
+## 5. Role-contract correction: simple Hello World
+
+Use a disposable Hello World ticket and a controlled Driver response that first
+returns a test file during GREEN, then returns the required implementation on
+its next response. The first candidate must be valid Driver JSON; it is the
+artifact category, not JSON validity, that is intentionally wrong.
+
+```powershell
+battalion run BTN-UAT-5 `
+  --spec "Create src/hello.py with hello() returning Hello World, plus a RED test." `
+  --budget 12
+```
+
+Pass criteria:
+
+- The CLI says Battalion caught a role-contract violation, confirms the
+  prohibited test output was not written, and announces correction/retry of
+  Driver GREEN.
+- The final Run is `done` after the corrected GREEN attempt, rather than being
+  reported as a successful first attempt or an immediate human interrupt.
+- The saved execution record contains the rejected GREEN attempt with reason
+  code, offending test path, correction attempt number, model identity,
+  `mutation_applied: false`, and `resulting_disposition: retry`; the following
+  GREEN attempt is accepted and retains its normal token/cost evidence.
+
+Repeat the controlled invalid response once more. The second violation must
+stop at the existing human-interrupt path rather than loop indefinitely. A
+real scope violation remains an immediate authority interrupt and receives no
+automatic correction retry.
+
+## 6. Negative robustness checks
 
 Capture the console output and saved state for each case:
 
@@ -141,13 +171,14 @@ Capture the console output and saved state for each case:
 - unknown run ID for `status` and `resume`;
 - a duplicate run invocation;
 - a foreground interruption after a durable node checkpoint; and
-- an invalid RED response that contains an implementation file as well as test
-  files; and
-- malformed, empty, or non-JSON Driver, Reviewer, or Refactorer output.
+- malformed, empty, or non-JSON Architect, Driver, Reviewer, or Refactorer
+  output.
 
-Each role-output failure must pause with `infra-failure`, retain the actionable
-error in `battalion status <RUN_UUID> --human`, and leave a resumable run. It
-must not emit a Python traceback or leave the run `in-progress`.
+Malformed, empty, or non-JSON role output must pause with `infra-failure`,
+retain the actionable error in `battalion status <RUN_UUID> --human`, and leave
+a resumable run. It must not emit a Python traceback or leave the run
+`in-progress`. Pre-write RED/GREEN artifact-category violations instead follow
+the bounded correction flow above.
 
 ## Evidence to retain
 

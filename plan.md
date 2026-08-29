@@ -321,6 +321,12 @@ the OutboundEventSink boundary. It has no Discord inbound, reply, Actor, or Run
 mutation path; confirmed failures, duplicates, and ambiguous outcomes use the
 shared BTN-70 side-effect ledger semantics.
 
+BTN-154 is in progress: pre-write, mechanically detected RED/GREEN role
+contract violations receive one transparent, budgeted correction retry in the
+shared execution scaffold. The original rejected attempt remains durable
+evidence; write-scope violations remain hard authority interrupts
+(ADR-0035).
+
 ## Risks and watch items
 
 - Rejection-cause comparison depends on consistent, specific Reviewer output.

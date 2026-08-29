@@ -64,6 +64,7 @@ from battalion.state.models import (
     OperatorSummary,
     PromptProvenance,
     ReviewResult,
+    RoleContractViolationEvidence,
     RunState,
     RunStatus,
     TestOutcome as ExecutionTestOutcome,
@@ -294,6 +295,28 @@ def test_execution_inspector_exposes_provenance_verification_and_cost_semantics(
     assert "Review: green-check · accepted" in rendered
     assert "input=120 · output=45 · cost=0.125 USD · source=provider-reported" in rendered
     assert "unknown-call" in rendered and "cost=unknown · source=unknown" in rendered
+
+
+def test_execution_inspector_exposes_nonblocking_contract_correction_evidence():
+    execution = _execution().model_copy(update={
+        "outcome": "rejected",
+        "attempt_disposition": "corrected",
+        "role_contract_violation": RoleContractViolationEvidence(
+            reason_code="driver-mode-artifact",
+            detail="GREEN mode must not produce test files",
+            offending_paths=["tests/test_widget.py"],
+            attempt_number=1,
+            resulting_disposition="retry",
+        ),
+    })
+
+    rendered = render_execution(execution)
+
+    assert "Attempt disposition: corrected" in rendered
+    assert "ROLE-CONTRACT CORRECTION" in rendered
+    assert "Mutation applied: no" in rendered
+    assert "Disposition: retry" in rendered
+    assert "tests/test_widget.py" in rendered
 
 
 def test_window_presents_work_history_and_human_action_surfaces(qt_app, tmp_path):

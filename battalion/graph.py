@@ -45,13 +45,14 @@ from battalion.interrupts.triggers import (
     log_interrupt,
 )
 from battalion.llm.litellm_client import InfraFailure
-from battalion.nodes.errors import RoleOutputError
+from battalion.nodes.errors import RoleContractViolation, RoleOutputError
 from battalion.execution import ExecutionCapture
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import (
     CheckpointType,
     InterventionDisposition,
     RejectionRecord,
+    RoleContractViolationEvidence,
     RunState,
     RunStatus,
 )
@@ -236,7 +237,7 @@ def _scaffold_node(
     llm_roles: tuple[str, ...],
     runner: Callable[..., RunState],
     build_inputs: Callable[
-        [RunState, tuple[AcceptedInstinct, ...], str], dict[str, Any]
+        [RunState, tuple[AcceptedInstinct, ...], str, str | None], dict[str, Any]
     ],
     audience: InstinctAudience | None,
     llm_configs: dict[str, Any],
@@ -273,94 +274,160 @@ def _scaffold_node(
       error_/check_/pause_resume_node: routing values for the failure,
                               interrupt-check, and paused-resume paths
 
-    InfraFailure and RoleOutputError (trigger #5) and ScopeViolationError
+    Recoverable RoleContractViolation instances receive one automatic retry in
+    the same role and phase. InfraFailure and the remaining RoleOutputError
+    instances (trigger #5) and ScopeViolationError
     (trigger #2) route to an AWAITING_HUMAN pause through _handle_node_error;
     any other exception is a bug and propagates unchanged.
     """
     def node(state: RunState) -> RunState:
-        entered_state = state
-        model_config = _resolve_llm_config(llm_configs, llm_roles)
-        capture = ExecutionCapture.start(
-            state, node_name, getattr(model_config, "model", "unconfigured"),
-            base_dir, prompts_dir=prompts_dir, model_configuration=model_config,
-        )
-        if delivers_interventions:
-            state = _deliver_interventions(
-                state, node_name, capture.execution_id, on_state_checkpoint
+        correction_context: str | None = None
+        correction_attempt = 0
+        while True:
+            entered_state = state
+            model_config = _resolve_llm_config(llm_configs, llm_roles)
+            capture = ExecutionCapture.start(
+                state, node_name, getattr(model_config, "model", "unconfigured"),
+                base_dir, prompts_dir=prompts_dir, model_configuration=model_config,
             )
-            capture.include_human_interventions(state)
-        # Increment budget for this LLM call.
-        state = increment_budget(state)
+            if delivers_interventions:
+                state = _deliver_interventions(
+                    state, node_name, capture.execution_id, on_state_checkpoint
+                )
+                capture.include_human_interventions(state)
+            # Increment budget for every model call, including corrections.
+            state = increment_budget(state)
 
-        instincts = (
-            _role_instincts(instinct_retriever, state, audience)
-            if instinct_retriever is not None and audience is not None
-            else ()
-        )
-        inputs = build_inputs(state, instincts, capture.execution_id)
+            instincts = (
+                _role_instincts(instinct_retriever, state, audience)
+                if instinct_retriever is not None and audience is not None
+                else ()
+            )
+            inputs = build_inputs(
+                state, instincts, capture.execution_id, correction_context
+            )
 
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_start",
-                "node": node_name,
-                "budget": {"used": state.budget.used, "limit": state.budget.limit},
-            })
-        try:
-            # on_stream is passed only when a token callback exists, matching
-            # the historical per-factory call shape (mocked runners in tests
-            # bind narrow signatures).
-            call_kwargs: dict[str, Any] = {
-                "state": state,
-                "llm_config": model_config,
-                "base_dir": base_dir,
-                "prompts_dir": prompts_dir,
-                **(static_kwargs or {}),
-                **inputs,
-            }
-            if on_token is not None:
-                call_kwargs["on_stream"] = on_token
-            new_state = runner(**call_kwargs)
-        except (InfraFailure, RoleOutputError, ScopeViolationError) as exc:
             if on_node_event is not None:
                 on_node_event({
-                    "type": "node_error",
+                    "type": "node_start",
                     "node": node_name,
-                    "error": str(exc),
+                    "budget": {"used": state.budget.used, "limit": state.budget.limit},
                 })
-            paused = _handle_node_error(
-                state, exc,
-                next_phase=_next_phase_value(error_next_phase, state),
-                resume_node=error_resume_node,
-                node_name=node_name,
-                on_node_event=on_node_event,
-            )
-            return capture.finish(entered_state, paused, checkpoint=finish_checkpoint)
+            try:
+                # on_stream is passed only when a token callback exists, matching
+                # the historical per-factory call shape (mocked runners in tests
+                # bind narrow signatures).
+                call_kwargs: dict[str, Any] = {
+                    "state": state,
+                    "llm_config": model_config,
+                    "base_dir": base_dir,
+                    "prompts_dir": prompts_dir,
+                    **(static_kwargs or {}),
+                    **inputs,
+                }
+                if on_token is not None:
+                    call_kwargs["on_stream"] = on_token
+                new_state = runner(**call_kwargs)
+            except RoleContractViolation as exc:
+                correction_attempt += 1
+                evidence = RoleContractViolationEvidence(
+                    reason_code=exc.reason_code,
+                    detail=str(exc),
+                    offending_paths=list(exc.offending_paths),
+                    attempt_number=correction_attempt,
+                    resulting_disposition=(
+                        "retry" if correction_attempt == 1 else "escalation"
+                    ),
+                )
+                if correction_attempt == 1:
+                    state = capture.finish(
+                        entered_state,
+                        state,
+                        checkpoint=finish_checkpoint,
+                        role_contract_violation=evidence,
+                    )
+                    # Make a process interruption between correction attempts
+                    # resumable at this exact role rather than restarting the
+                    # graph from Architect. The durable record is already
+                    # complete and no candidate mutation was applied.
+                    state = state.model_copy(update={
+                        "phase": node_name,
+                        "resume_target": node_name,
+                    })
+                    if on_state_checkpoint is not None:
+                        on_state_checkpoint(state)
+                    correction_context = exc.correction_context()
+                    if on_node_event is not None:
+                        on_node_event({
+                            "type": "role_contract_correction",
+                            "node": node_name,
+                            "reason_code": exc.reason_code,
+                            "offending_paths": list(exc.offending_paths),
+                            "mutation_applied": False,
+                            "attempt_number": correction_attempt,
+                        })
+                    continue
 
-        # Check interrupts after successful node execution.
-        should_pause, trigger_id, context = check_any_trigger(
-            new_state, old_state=state,
-            next_phase=_next_phase_value(check_next_phase, new_state),
-        )
-        if should_pause:
-            context = {**context, "next_phase": pause_resume_node}
-            new_state = log_interrupt(new_state, trigger_id, context)
-            new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
+                if on_node_event is not None:
+                    on_node_event({
+                        "type": "node_error",
+                        "node": node_name,
+                        "error": str(exc),
+                    })
+                paused = _handle_node_error(
+                    state, exc,
+                    next_phase=_next_phase_value(error_next_phase, state),
+                    resume_node=error_resume_node,
+                    node_name=node_name,
+                    on_node_event=on_node_event,
+                )
+                return capture.finish(
+                    entered_state,
+                    paused,
+                    checkpoint=finish_checkpoint,
+                    role_contract_violation=evidence,
+                )
+            except (InfraFailure, RoleOutputError, ScopeViolationError) as exc:
+                if on_node_event is not None:
+                    on_node_event({
+                        "type": "node_error",
+                        "node": node_name,
+                        "error": str(exc),
+                    })
+                paused = _handle_node_error(
+                    state, exc,
+                    next_phase=_next_phase_value(error_next_phase, state),
+                    resume_node=error_resume_node,
+                    node_name=node_name,
+                    on_node_event=on_node_event,
+                )
+                return capture.finish(entered_state, paused, checkpoint=finish_checkpoint)
+
+            # Check interrupts after successful node execution.
+            should_pause, trigger_id, context = check_any_trigger(
+                new_state, old_state=state,
+                next_phase=_next_phase_value(check_next_phase, new_state),
+            )
+            if should_pause:
+                context = {**context, "next_phase": pause_resume_node}
+                new_state = log_interrupt(new_state, trigger_id, context)
+                new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
+                if on_node_event is not None:
+                    on_node_event({
+                        "type": "interrupt",
+                        "node": node_name,
+                        "trigger": trigger_id,
+                        "context": context,
+                    })
+
             if on_node_event is not None:
                 on_node_event({
-                    "type": "interrupt",
+                    "type": "node_end",
                     "node": node_name,
-                    "trigger": trigger_id,
-                    "context": context,
+                    "phase": new_state.phase,
+                    "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
                 })
-
-        if on_node_event is not None:
-            on_node_event({
-                "type": "node_end",
-                "node": node_name,
-                "phase": new_state.phase,
-                "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
-            })
-        return capture.finish(entered_state, new_state, checkpoint=finish_checkpoint)
+            return capture.finish(entered_state, new_state, checkpoint=finish_checkpoint)
 
     return node
 
@@ -381,6 +448,7 @@ def _make_architect_node(
         state: RunState,
         instincts: tuple[AcceptedInstinct, ...],
         execution_id: str,
+        _correction_context: str | None,
     ) -> dict[str, Any]:
         return {
             "spec_text": architect_context(
@@ -434,11 +502,13 @@ def _make_driver_node(
         state: RunState,
         instincts: tuple[AcceptedInstinct, ...],
         execution_id: str,
+        correction_context: str | None,
     ) -> dict[str, Any]:
         return {
             "ticket_text": driver_context(
                 state, base_dir, mode,
                 instincts=instincts, node_execution_id=execution_id,
+                automatic_correction=correction_context,
             )
         }
 
@@ -493,6 +563,7 @@ def _make_reviewer_node(
         state: RunState,
         instincts: tuple[AcceptedInstinct, ...],
         execution_id: str,
+        _correction_context: str | None,
     ) -> dict[str, Any]:
         if instincts:
             return {"instinct_context": reviewer_context(state, instincts=instincts)}
@@ -540,6 +611,7 @@ def _make_refactorer_node(
         state: RunState,
         instincts: tuple[AcceptedInstinct, ...],
         execution_id: str,
+        _correction_context: str | None,
     ) -> dict[str, Any]:
         return {
             "refactor_text": refactorer_context(

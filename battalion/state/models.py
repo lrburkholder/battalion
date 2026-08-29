@@ -302,6 +302,17 @@ class LLMCallCost(BaseModel):
         return self
 
 
+class RoleContractViolationEvidence(BaseModel):
+    """Inspectable evidence for a rejected pre-write role candidate."""
+
+    reason_code: str = Field(min_length=1, max_length=200)
+    detail: str = Field(min_length=1, max_length=2000)
+    offending_paths: list[str] = Field(default_factory=list, max_length=100)
+    attempt_number: int = Field(ge=1, le=100)
+    mutation_applied: Literal[False] = False
+    resulting_disposition: Literal["retry", "escalation"]
+
+
 class NodeExecution(BaseModel):
     """Durable evidence for one attempt to execute one graph role node."""
 
@@ -315,6 +326,10 @@ class NodeExecution(BaseModel):
     started_at: datetime
     ended_at: datetime
     outcome: Literal["succeeded", "rejected", "interrupted"]
+    attempt_disposition: Literal[
+        "accepted", "corrected", "rejected", "infra-failure"
+    ] | None = None
+    role_contract_violation: RoleContractViolationEvidence | None = None
     tool_activity: list[ToolActivity] = Field(default_factory=list, max_length=100)
     test_outcome: TestOutcome | None = None
     review_result: ReviewResult | None = None
@@ -331,7 +346,7 @@ class NodeExecution(BaseModel):
 class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
-    schema_version: Literal["1.0", "1.1", "1.2", "1.3"] = "1.3"
+    schema_version: Literal["1.0", "1.1", "1.2", "1.3", "1.4"] = "1.4"
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 

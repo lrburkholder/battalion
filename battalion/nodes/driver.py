@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
-from battalion.nodes.errors import RoleOutputError, WriteScopeMisconfigured
+from battalion.nodes.errors import RoleContractViolation, RoleOutputError, WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import (
     build_write_tools,
@@ -43,12 +43,24 @@ class EmptyDriverOutput(RoleOutputError):
     written nothing."""
 
 
-class InvalidModeOutput(RoleOutputError):
+class InvalidModeOutput(RoleContractViolation):
     """Raised when a mode-scoped Driver call (BTN-11) produces files that
     violate what that mode is allowed to write: RED mode must only write
     test files, GREEN mode must not write any. Without this, mode is just
     a prompt suggestion an uncooperative LLM response can silently ignore —
     same reasoning as ADR-002's structural-over-trust write scope."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        offending_paths: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(
+            message,
+            reason_code="driver-mode-artifact",
+            offending_paths=offending_paths,
+        )
 
 
 def _looks_like_test_file(relative_path: str) -> bool:
@@ -163,13 +175,15 @@ def run_driver(
         if non_test_files:
             raise InvalidModeOutput(
                 f"RED mode must only produce test files, got non-test "
-                f"file(s): {non_test_files}"
+                f"file(s): {non_test_files}",
+                offending_paths=tuple(non_test_files),
             )
     elif mode == "green":
         test_files = [p for p in files if _looks_like_test_file(p)]
         if test_files:
             raise InvalidModeOutput(
-                f"GREEN mode must not produce test files, got: {test_files}"
+                f"GREEN mode must not produce test files, got: {test_files}",
+                offending_paths=tuple(test_files),
             )
 
     try:
