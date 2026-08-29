@@ -107,6 +107,7 @@ def render_execution(execution: NodeExecution) -> str:
         f"Phase: {execution.phase}",
         f"Model: {execution.model_identity}",
         f"Outcome: {execution.outcome}",
+        f"Attempt disposition: {execution.attempt_disposition or 'Unavailable (legacy)'}",
         f"Started: {execution.started_at.isoformat()}",
         f"Ended: {execution.ended_at.isoformat()}",
         "",
@@ -157,6 +158,20 @@ def render_execution(execution: NodeExecution) -> str:
                 if reference.observed_bytes is not None
                 else "Unavailable"
             ),
+        ))
+
+    lines.extend(("", "ROLE-CONTRACT CORRECTION"))
+    violation = execution.role_contract_violation
+    if violation is None:
+        lines.append("None recorded")
+    else:
+        lines.extend((
+            f"Reason: {violation.reason_code}",
+            f"Detail: {violation.detail}",
+            f"Correction attempt: {violation.attempt_number}",
+            f"Mutation applied: {_yes_no(violation.mutation_applied)}",
+            f"Disposition: {violation.resulting_disposition}",
+            "Offending paths: " + (", ".join(violation.offending_paths) or "None recorded"),
         ))
 
     lines.extend(("", "ARTIFACTS"))

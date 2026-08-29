@@ -127,6 +127,18 @@ class ProgressDisplay:
                 self._console.print(
                     f"[error] {self._node_label}: {event.get('error')}"
                 )
+        elif etype == "role_contract_correction":
+            paths = event.get("offending_paths") or []
+            path_text = ", ".join(paths) if paths else "no artifact paths retained"
+            message = (
+                f"[caught] {self._node_label}: rejected role-contract output "
+                f"({event.get('reason_code')}); prohibited output was not written "
+                f"({path_text}). Correcting and retrying the same role."
+            )
+            if not self._interactive:
+                self._console.print(message)
+            else:
+                self._trace.append(message)
         if self._live is not None:
             self._live.refresh()
 

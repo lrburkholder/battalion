@@ -348,7 +348,7 @@ def test_run_driver_green_mode_accepts_implementation_files(tmp_path):
 
 
 def test_run_driver_green_mode_rejects_test_files(tmp_path):
-    with pytest.raises(InvalidModeOutput):
+    with pytest.raises(InvalidModeOutput) as exc_info:
         run_driver(
             make_state(),
             ticket_text="ticket",
@@ -357,6 +357,9 @@ def test_run_driver_green_mode_rejects_test_files(tmp_path):
             call_llm_fn=lambda *a, **kw: files_response({"test_module.py": "def test_x(): pass"}),
             mode="green",
         )
+    assert exc_info.value.reason_code == "driver-mode-artifact"
+    assert exc_info.value.offending_paths == ("test_module.py",)
+    assert "prohibited output was not written" in exc_info.value.correction_context()
     assert not (tmp_path / "src" / "test_module.py").exists()
 
 

@@ -108,7 +108,9 @@ The versioned state contract includes:
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
 - `execution_record`: Durable node evidence, including per-call tokens and
-  nullable decimal cost with separate currency and source
+  nullable decimal cost with separate currency and source. It retains rejected
+  pre-write role-contract candidates separately from successful role outcomes,
+  including the correction attempt and proof that no prohibited write occurred.
 
 ### Interrupt Taxonomy (v1)
 
@@ -525,6 +527,12 @@ review remains in the append-only Intel decision repository. Both CLI and
 desktop resume through the same application command and graph path. A delivered
 intervention is tied to one node-attempt ID, included through a named bounded
 context section, and recorded in execution context provenance.
+
+[ADR-0035](docs/adrs/adr0035.md) guides the in-progress BTN-154 work to correct
+one mechanically detected, pre-write role-contract mistake in the same
+role/phase. The rejected candidate remains visible in CLI and desktop evidence,
+consumes normal run budget, and never downgrades an actual write-scope
+violation.
 
 See the [complete ADR index](docs/adrs/README.md) for all accepted architecture
 decisions and their implementation status.

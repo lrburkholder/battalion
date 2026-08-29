@@ -24,6 +24,7 @@ from battalion.state.models import (
     OperatorSummary,
     PromptProvenance,
     ReviewResult,
+    RoleContractViolationEvidence,
     RunState,
     TestOutcome,
     ToolActivity,
@@ -301,6 +302,7 @@ class ExecutionCapture:
         new_state: RunState,
         *,
         checkpoint: CheckpointType | None = None,
+        role_contract_violation: RoleContractViolationEvidence | None = None,
     ) -> RunState:
         after_files = _snapshot(
             self.base_dir, _scope_entries(old_state, self.node_name)
@@ -342,6 +344,7 @@ class ExecutionCapture:
         test = None
         verdict = None
         outcome = "interrupted" if interrupted else "succeeded"
+        attempt_disposition = "accepted"
         output_reference = artifacts[0].path if len(artifacts) == 1 else None
 
         if checkpoint is not None:
@@ -375,15 +378,27 @@ class ExecutionCapture:
             verdict = review.verdict if cause is None else cause
             if not accepted and not interrupted:
                 outcome = "rejected"
+                attempt_disposition = "rejected"
             output_reference = f"review:{checkpoint.value}"
         elif interrupted:
             verdict = new_state.interrupt_log[-1].trigger
+            attempt_disposition = "infra-failure"
         elif artifacts:
             output_reference = ",".join(item.path for item in artifacts)[:1000]
         elif self.no_change_reason is not None:
             output_reference = "refactorer:no-change"
         else:
             output_reference = f"state:phase={new_state.phase}"
+
+        if role_contract_violation is not None:
+            outcome = "rejected"
+            attempt_disposition = (
+                "corrected"
+                if role_contract_violation.resulting_disposition == "retry"
+                else "rejected"
+            )
+            verdict = role_contract_violation.detail
+            output_reference = "role-contract-violation"
 
         code_data = dict(self.code_start)
         if code_data["repository_available"]:
@@ -439,6 +454,8 @@ class ExecutionCapture:
             started_at=self.started_at,
             ended_at=_utcnow(),
             outcome=outcome,
+            attempt_disposition=attempt_disposition,
+            role_contract_violation=role_contract_violation,
             tool_activity=tools,
             test_outcome=test,
             review_result=review,
@@ -453,7 +470,7 @@ class ExecutionCapture:
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.3",
+                "schema_version": "1.4",
                 "node_executions": new_state.execution_record.node_executions
                 + [execution]
             }

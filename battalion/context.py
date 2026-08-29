@@ -184,6 +184,7 @@ def driver_context(
     *,
     instincts: Sequence[AcceptedInstinct] = (),
     node_execution_id: str | None = None,
+    automatic_correction: str | None = None,
 ) -> str:
     selection = "implementation" if mode == "red" else "tests"
     file_kind = "Existing implementation" if mode == "red" else "Accepted RED tests"
@@ -193,6 +194,8 @@ def driver_context(
     )
     if intervention is not None:
         sections.append(("Human intervention", intervention))
+    if automatic_correction is not None:
+        sections.append(("Battalion automatic correction", automatic_correction))
     sections.append(("Approved plan", _plan_text(base_dir)))
     sections.extend(
         (f"{file_kind}: {relative}", content)

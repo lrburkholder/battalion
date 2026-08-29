@@ -45,6 +45,26 @@ def test_node_error_line_printed_in_non_interactive_mode():
     assert "[error] Architect - producing plan.md: boom" in buf.getvalue()
 
 
+def test_role_contract_correction_is_visible_without_claiming_a_write():
+    buf = io.StringIO()
+    display = ProgressDisplay(stream=buf)
+
+    display.handle_event({"type": "node_start", "node": "driver_green"})
+    display.handle_event({
+        "type": "role_contract_correction",
+        "node": "driver_green",
+        "reason_code": "driver-mode-artifact",
+        "offending_paths": ["tests/test_widget.py"],
+        "mutation_applied": False,
+        "attempt_number": 1,
+    })
+
+    output = buf.getvalue()
+    assert "[caught] Driver (GREEN)" in output
+    assert "prohibited output was not written" in output
+    assert "Correcting and retrying the same role" in output
+
+
 def test_token_events_suppressed_when_show_stream_false():
     buf = io.StringIO()
     display = ProgressDisplay(stream=buf, show_stream=False)
