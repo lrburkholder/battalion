@@ -26,6 +26,7 @@ PROMPT_CONTRACT_VERSIONS = {
     "reviewer": "reviewer/v1",
     "refactorer": "refactorer/v3",
     "recon": "recon/v1",
+    "tactician": "tactician/v1",
 }
 
 

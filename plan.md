@@ -162,6 +162,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0029](docs/adrs/adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity |
 | [ADR-0032](docs/adrs/adr0032.md) | Register finite, versioned WorkflowRecipe policy artifacts |
 | [ADR-0033](docs/adrs/adr0033.md) | Classify workflow admission from bounded deterministic evidence |
+| [ADR-0034](docs/adrs/adr0034.md) | Keep Tactician advisory and outside Implementation Runs |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human

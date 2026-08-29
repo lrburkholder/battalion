@@ -93,6 +93,11 @@ from battalion.workflow_admission import (
     WorkflowAdmissionPolicy,
     assess_workflow_admission as _assess_workflow_admission,
 )
+from battalion.tactician import (
+    TacticianAssessment,
+    TacticianAssessmentInput,
+    run_tactician as _run_tactician,
+)
 from battalion.workers import (
     DEFAULT_WORKER_DIR,
     WorkerRecord,
@@ -325,6 +330,14 @@ class AssessWorkflowAdmission:
     """Create a deterministic pre-admission assessment from bounded evidence."""
 
     evidence: WorkflowAdmissionEvidence
+
+
+@dataclass(frozen=True)
+class AssessTactician:
+    """Request an advisory assessment for deterministic admission uncertainty."""
+
+    assessment_input: TacticianAssessmentInput
+    config: BattalionConfig
 
 
 @dataclass(frozen=True)
@@ -915,6 +928,30 @@ def assess_workflow_admission(
 ) -> WorkflowAdmissionAssessment:
     """Assess admission evidence through the application boundary, without model IO."""
     return _assess_workflow_admission(command.evidence, policy=policy)
+
+
+def assess_tactician(
+    command: AssessTactician,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    call_llm_fn: Callable[..., Any] | None = None,
+) -> TacticianAssessment:
+    """Run Tactician through normal model resolution, never graph dispatch.
+
+    The ``tactician`` configuration is optional and inherits ``default`` when
+    absent.  The role cannot select a model itself; provider failure leaves no
+    assessment capable of authorizing compact execution.
+    """
+    llm_config = (
+        command.config.models.get("tactician")
+        or command.config.models.get("default")
+    )
+    if llm_config is None:
+        raise ApplicationError("No Tactician or default model is configured")
+    kwargs: dict[str, Any] = {"registry": registry}
+    if call_llm_fn is not None:
+        kwargs["call_llm_fn"] = call_llm_fn
+    return _run_tactician(command.assessment_input, llm_config, **kwargs)
 
 
 def inspect_workflow_admission_policy(
