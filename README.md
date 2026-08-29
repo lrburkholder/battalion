@@ -395,6 +395,7 @@ battalion/
 ├── __init__.py
 ├── __main__.py                 # `python -m battalion`
 ├── application.py              # Shared typed command/query boundary (BTN-30)
+├── workflow_recipes.py         # Finite, versioned workflow-policy registry (BTN-138)
 ├── desktop/                    # PySide6 operator console (BTN-42–43)
 │   ├── app.py                  # Qt Widgets and desktop entry point
 │   ├── controller.py           # Background application queries and reconnect

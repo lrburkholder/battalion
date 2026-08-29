@@ -81,6 +81,11 @@ from battalion.state.models import (
     RunStatus,
 )
 from battalion.state.persistence import load_state, save_state
+from battalion.workflow_recipes import (
+    DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    WorkflowRecipe,
+    WorkflowRecipeRegistry,
+)
 from battalion.workers import (
     DEFAULT_WORKER_DIR,
     WorkerRecord,
@@ -293,6 +298,19 @@ class InspectIntel:
     """Read-only request for accepted Intel and immutable Recon candidates."""
 
     project_root: str | Path
+
+
+@dataclass(frozen=True)
+class ListWorkflowRecipes:
+    """Read-only request for Battalion-owned registered workflow recipes."""
+
+
+@dataclass(frozen=True)
+class InspectWorkflowRecipe:
+    """Read one exact versioned recipe without graph or storage access."""
+
+    recipe_id: str
+    recipe_version: str
 
 
 @dataclass(frozen=True)
@@ -850,6 +868,25 @@ def inspect_intel(query: InspectIntel) -> IntelInspection:
         candidates=tuple(entry.candidate for entry in entries),
         candidate_entries=tuple(entries),
     )
+
+
+def list_workflow_recipes(
+    query: ListWorkflowRecipes,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> tuple[WorkflowRecipe, ...]:
+    """Enumerate finite policy artifacts through the application boundary."""
+    del query
+    return registry.list()
+
+
+def inspect_workflow_recipe(
+    query: InspectWorkflowRecipe,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowRecipe:
+    """Inspect exact registered recipe semantics without selecting a graph."""
+    return registry.resolve(query.recipe_id, query.recipe_version)
 
 
 def _actor_inspection(registry: ActorRegistry) -> ActorInspection:
