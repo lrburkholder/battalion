@@ -101,3 +101,12 @@ def test_recon_prompt_preserves_post_completion_human_authority():
     assert "no authority to publish knowledge" in prompt
     assert "independent human review" in prompt
     assert "Do not assign confidence" in prompt
+
+
+def test_tactician_prompt_preserves_advisory_uncertainty_authority():
+    prompt = load_system_prompt("tactician")
+
+    assert "advisory" in prompt
+    assert "do not authorize" in prompt
+    assert "Do not expose private chain-of-thought" in prompt
+    assert '"recommendation_kind"' in prompt

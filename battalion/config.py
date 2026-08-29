@@ -61,7 +61,7 @@ def load_config(
 
     # 2. Apply environment variable overrides
     env_models = {}
-    for node in ("architect", "driver", "reviewer", "refactorer"):
+    for node in ("architect", "driver", "reviewer", "refactorer", "tactician"):
         model_key = f"BATTALION_MODEL_{node.upper()}"
         if model_key in os.environ:
             env_models[node] = NodeLLMConfig(model=os.environ[model_key])
