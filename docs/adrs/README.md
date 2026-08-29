@@ -41,6 +41,7 @@ status states whether it is part of the shipped system.
 | [ADR-0033](adr0033.md) | Classify workflow admission from bounded deterministic evidence | Accepted | BTN-139 |
 | [ADR-0034](adr0034.md) | Keep Tactician advisory and outside Implementation Runs | Accepted | BTN-140 |
 | [ADR-0035](adr0035.md) | Correct pre-write role-contract violations in-run | Accepted | BTN-154 |
+| [ADR-0036](adr0036.md) | Keep human workflow admission separate from evidence and execution | Accepted | BTN-141 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique
