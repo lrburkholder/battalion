@@ -59,6 +59,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "benchmarks/desktop/pyside6/findings.md",
             "benchmarks/desktop/electron/findings.md",
             "docs/status.md",
+            "docs/release.md",
         }
         assert all(
             not ({"recon", "intel", "ui"} & set(Path(path).parts))
@@ -101,6 +102,7 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert index.count("layout: default") == 1
         assert "assets/screenshots/battalion-work.png" in index
         assert "docs/operator/workflow.html" in index
+        assert "docs/release.html" in index
         assert "Roadmap ≠ shipped behavior" in index
         assert "assets/favicon.ico" in layout
         assert "assets/mark-transparent.svg" in layout

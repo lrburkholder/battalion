@@ -79,7 +79,7 @@ layout: default
   <div>
     <p class="eyebrow">What exists today</p>
     <h2>The v1 graph and production desktop operator workflow are implemented.</h2>
-    <p>Start with the <a href="spec.html">shipped contract</a>, trace decisions in the <a href="docs/adrs/">ADR index</a>, inspect current delivery status in <a href="docs/status.html">project status</a>, or browse the <a href="https://github.com/lrburkholder/battalion/issues">canonical GitHub Issues backlog</a>.</p>
+    <p>Start with the <a href="spec.html">shipped contract</a>, trace decisions in the <a href="docs/adrs/">ADR index</a>, inspect current delivery status in <a href="docs/status.html">project status</a>, read the <a href="docs/release.html">release guide</a>, or browse the <a href="https://github.com/lrburkholder/battalion/issues">canonical GitHub Issues backlog</a>.</p>
   </div>
   <aside>
     <strong>Roadmap ≠ shipped behavior</strong>
