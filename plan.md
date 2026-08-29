@@ -50,6 +50,11 @@ and evidence identities, fails closed for configured hard-risk surfaces, and
 leaves stale, contradictory, or insufficient evidence explicitly uncertain.
 It does not invoke Tactician, authorize human choices, persist an admission, or
 dispatch a recipe; those remain BTN-140 through BTN-143 work.
+BTN-141 is in progress: its shared application operations let an active human
+Actor inspect current deterministic/Tactician evidence and choose full, compact,
+clarification, or cancellation. It fails closed on changed evidence or policy,
+keeps human and Tactician records distinct, and leaves compact execution plus
+durable admission/Run linkage to BTN-142 and BTN-143 respectively.
 
 ## Architecture overview
 
@@ -163,6 +168,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0032](docs/adrs/adr0032.md) | Register finite, versioned WorkflowRecipe policy artifacts |
 | [ADR-0033](docs/adrs/adr0033.md) | Classify workflow admission from bounded deterministic evidence |
 | [ADR-0034](docs/adrs/adr0034.md) | Keep Tactician advisory and outside Implementation Runs |
+| [ADR-0036](docs/adrs/adr0036.md) | Keep human workflow admission separate from evidence and execution |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human

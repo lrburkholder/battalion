@@ -39,7 +39,8 @@ run automatically.
   self-editing.
 - Dynamic workflow admission or graph dispatch. BTN-138 provides a finite,
   versioned `WorkflowRecipe` policy vocabulary and BTN-139 provides an
-  inspectable deterministic evidence assessment for post-v2 work, but neither
+  inspectable deterministic evidence assessment for post-v2 work. BTN-141 adds
+  a pre-execution, Actor-authorized human decision contract, but none of these
   alters the v1 graph or allows model-produced node lists. Compact execution,
   admission persistence, and dispatch remain separately scoped follow-up work
   under RFC-0012.

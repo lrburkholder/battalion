@@ -87,11 +87,17 @@ from battalion.workflow_recipes import (
     WorkflowRecipeRegistry,
 )
 from battalion.workflow_admission import (
+    AdmissionEvidenceSource,
     DEFAULT_WORKFLOW_ADMISSION_POLICY,
     WorkflowAdmissionAssessment,
     WorkflowAdmissionEvidence,
+    WorkflowAdmissionOutcome,
     WorkflowAdmissionPolicy,
     assess_workflow_admission as _assess_workflow_admission,
+)
+from battalion.workflow_admission_decisions import (
+    WorkflowAdmissionDecision,
+    WorkflowAdmissionDisposition,
 )
 from battalion.tactician import (
     TacticianAssessment,
@@ -201,6 +207,14 @@ class ActorRegistryFailed(ApplicationError):
 
 class HumanActionRejected(ApplicationError):
     """Raised when a requested human action violates durable authority policy."""
+
+
+class WorkflowAdmissionRejected(ApplicationError):
+    """Raised when a human workflow-admission choice is not currently valid."""
+
+
+class StaleWorkflowAdmission(WorkflowAdmissionRejected):
+    """Raised when an assessment no longer matches the supplied current evidence/policy."""
 
 
 class CandidateReviewFailed(ApplicationError):
@@ -343,6 +357,30 @@ class AssessTactician:
 @dataclass(frozen=True)
 class InspectWorkflowAdmissionPolicy:
     """Read the versioned deterministic admission policy without executing it."""
+
+
+@dataclass(frozen=True)
+class InspectWorkflowAdmission:
+    """Inspect current admission evidence and the choices it can support."""
+
+    assessment: WorkflowAdmissionAssessment
+    evidence: WorkflowAdmissionEvidence
+    tactician_assessment: TacticianAssessment | None = None
+
+
+@dataclass(frozen=True)
+class DecideWorkflowAdmission:
+    """Record an authorized human choice from current admission evidence."""
+
+    project_root: str | Path
+    assessment: WorkflowAdmissionAssessment
+    evidence: WorkflowAdmissionEvidence
+    disposition: WorkflowAdmissionDisposition
+    actor_id: UUID | None = None
+    tactician_assessment: TacticianAssessment | None = None
+    recipe_id: str | None = None
+    recipe_version: str | None = None
+    annotation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -501,6 +539,24 @@ class ExternalIdentityResolution:
 
     identity: ExternalIdentity
     actor: Actor
+
+
+@dataclass(frozen=True)
+class WorkflowAdmissionInspection:
+    """Current decision surface derived from pre-admission evidence only."""
+
+    assessment: WorkflowAdmissionAssessment
+    tactician_assessment: TacticianAssessment | None
+    available_dispositions: tuple[WorkflowAdmissionDisposition, ...]
+    compact_unavailable_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class WorkflowAdmissionDecisionResult:
+    """An authorized admission choice and any exact recipe it selected."""
+
+    decision: WorkflowAdmissionDecision
+    recipe: WorkflowRecipe | None
 
 
 @dataclass(frozen=True)
@@ -962,6 +1018,203 @@ def inspect_workflow_admission_policy(
     """Inspect admission policy without graph, persistence, provider, or model access."""
     del query
     return policy
+
+
+def inspect_workflow_admission(
+    query: InspectWorkflowAdmission,
+    *,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+) -> WorkflowAdmissionInspection:
+    """Inspect the current human decision surface without authorizing a choice."""
+    assessment = _require_current_workflow_assessment(
+        query.assessment, query.evidence, policy
+    )
+    _validate_tactician_assessment(assessment, query.tactician_assessment)
+    compact_reason = _compact_unavailable_reason(assessment, query.tactician_assessment)
+    choices = [
+        WorkflowAdmissionDisposition.FULL,
+        WorkflowAdmissionDisposition.CLARIFICATION,
+        WorkflowAdmissionDisposition.CANCELLED,
+    ]
+    if compact_reason is None:
+        choices.insert(1, WorkflowAdmissionDisposition.COMPACT)
+    return WorkflowAdmissionInspection(
+        assessment=assessment,
+        tactician_assessment=query.tactician_assessment,
+        available_dispositions=tuple(choices),
+        compact_unavailable_reason=compact_reason,
+    )
+
+
+def decide_workflow_admission(
+    command: DecideWorkflowAdmission,
+    *,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    _clock: Callable[[], datetime] | None = None,
+    _decision_id: str | None = None,
+) -> WorkflowAdmissionDecisionResult:
+    """Authorize and record one human workflow choice without graph dispatch.
+
+    The operation is deliberately pre-execution. BTN-143 will persist its
+    immutable output alongside distinct assessment and Tactician evidence.
+    """
+    assessment = _require_current_workflow_assessment(
+        command.assessment, command.evidence, policy
+    )
+    _validate_tactician_assessment(assessment, command.tactician_assessment)
+    actor = _resolve_human_actor(command.project_root, command.actor_id)
+    recipe = _recipe_for_admission_choice(command, assessment, policy, registry)
+    risk_flags = set(assessment.hard_risk_flags)
+    if command.tactician_assessment is not None:
+        risk_flags.update(command.tactician_assessment.risk_flags)
+    occurred_at = (_clock or (lambda: datetime.now(timezone.utc)))()
+    try:
+        decision = WorkflowAdmissionDecision(
+            decision_id=_decision_id or f"admission-{uuid4()}",
+            disposition=command.disposition,
+            admission_assessment_id=assessment.assessment_id,
+            tactician_assessment_id=(
+                command.tactician_assessment.assessment_id
+                if command.tactician_assessment is not None
+                else None
+            ),
+            selected_recipe_id=recipe.recipe_id if recipe is not None else None,
+            selected_recipe_version=recipe.recipe_version if recipe is not None else None,
+            approving_actor_id=actor.actor_id,
+            approving_actor_display_name=actor.display_name,
+            occurred_at=occurred_at,
+            work_item_revision=assessment.work_item_revision,
+            specification_revision=assessment.specification_revision,
+            policy_id=assessment.policy_id,
+            policy_version=assessment.policy_version,
+            admitted_risk_flags=tuple(risk_flags),
+            annotation=command.annotation,
+        )
+    except ValueError as exc:
+        raise WorkflowAdmissionRejected(str(exc)) from exc
+    return WorkflowAdmissionDecisionResult(decision=decision, recipe=recipe)
+
+
+def _require_current_workflow_assessment(
+    supplied: WorkflowAdmissionAssessment,
+    evidence: WorkflowAdmissionEvidence,
+    policy: WorkflowAdmissionPolicy,
+) -> WorkflowAdmissionAssessment:
+    """Fail closed when current evidence or policy differs from the assessment."""
+    current = _assess_workflow_admission(evidence, policy=policy)
+    if supplied != current:
+        raise StaleWorkflowAdmission(
+            "Admission assessment is stale or does not match current evidence and policy; "
+            "reassess before choosing a workflow"
+        )
+    return current
+
+
+def _validate_tactician_assessment(
+    assessment: WorkflowAdmissionAssessment,
+    tactician_assessment: TacticianAssessment | None,
+) -> None:
+    """Ensure advisory evidence belongs to the current uncertain admission input."""
+    if tactician_assessment is None:
+        return
+    if assessment.outcome is not WorkflowAdmissionOutcome.UNCERTAIN:
+        raise WorkflowAdmissionRejected(
+            "Tactician evidence is valid only for an uncertain deterministic admission"
+        )
+    references = {
+        reference.evidence_id: reference for reference in assessment.evidence_references
+    }
+    for reference in tactician_assessment.input_evidence_references:
+        current = references.get(reference.evidence_id)
+        if current is None or (
+            current.source is not reference.source
+            or current.source_revision != reference.source_revision
+        ):
+            raise WorkflowAdmissionRejected(
+                "Tactician evidence does not match the current admission assessment"
+            )
+    if not any(
+        reference.source is AdmissionEvidenceSource.WORK_ITEM
+        and reference.source_revision == assessment.work_item_revision
+        for reference in tactician_assessment.input_evidence_references
+    ):
+        raise WorkflowAdmissionRejected(
+            "Tactician evidence must include the assessed work-item revision"
+        )
+    if assessment.specification_revision is not None and not any(
+        reference.source is AdmissionEvidenceSource.SPECIFICATION
+        and reference.source_revision == assessment.specification_revision
+        for reference in tactician_assessment.input_evidence_references
+    ):
+        raise WorkflowAdmissionRejected(
+            "Tactician evidence must include the assessed specification revision"
+        )
+
+
+def _compact_unavailable_reason(
+    assessment: WorkflowAdmissionAssessment,
+    tactician_assessment: TacticianAssessment | None,
+) -> str | None:
+    if assessment.outcome is WorkflowAdmissionOutcome.FULL_REQUIRED:
+        return "Deterministic admission requires the full workflow"
+    if (
+        assessment.outcome is WorkflowAdmissionOutcome.UNCERTAIN
+        and tactician_assessment is None
+    ):
+        return (
+            "Uncertain admission requires a Tactician assessment before compact may be chosen"
+        )
+    return None
+
+
+def _recipe_for_admission_choice(
+    command: DecideWorkflowAdmission,
+    assessment: WorkflowAdmissionAssessment,
+    policy: WorkflowAdmissionPolicy,
+    registry: WorkflowRecipeRegistry,
+) -> WorkflowRecipe | None:
+    """Resolve an exact registered recipe only for a valid execution choice."""
+    if command.disposition in {
+        WorkflowAdmissionDisposition.CLARIFICATION,
+        WorkflowAdmissionDisposition.CANCELLED,
+    }:
+        if command.recipe_id is not None or command.recipe_version is not None:
+            raise WorkflowAdmissionRejected(
+                "Clarification and cancellation cannot select an execution recipe"
+            )
+        return None
+    if command.disposition is WorkflowAdmissionDisposition.FULL:
+        expected_recipe_id = policy.full_recipe_id
+        if command.recipe_id is not None and command.recipe_id != expected_recipe_id:
+            raise WorkflowAdmissionRejected(
+                "Full admission must select the policy's full workflow recipe"
+            )
+        recipe_id = expected_recipe_id
+    else:
+        reason = _compact_unavailable_reason(assessment, command.tactician_assessment)
+        if reason is not None:
+            raise WorkflowAdmissionRejected(reason)
+        if command.recipe_id is None:
+            if len(policy.compact_recipe_ids) != 1:
+                raise WorkflowAdmissionRejected(
+                    "Compact admission requires an explicit recipe when policy offers multiple recipes"
+                )
+            recipe_id = policy.compact_recipe_ids[0]
+        else:
+            recipe_id = command.recipe_id
+        if recipe_id not in policy.compact_recipe_ids:
+            raise WorkflowAdmissionRejected(
+                "Compact admission must select a policy-declared compact recipe"
+            )
+    try:
+        return (
+            registry.resolve(recipe_id, command.recipe_version)
+            if command.recipe_version is not None
+            else registry.resolve_unversioned(recipe_id)
+        )
+    except ValueError as exc:
+        raise WorkflowAdmissionRejected(str(exc)) from exc
 
 
 def _actor_inspection(registry: ActorRegistry) -> ActorInspection:
