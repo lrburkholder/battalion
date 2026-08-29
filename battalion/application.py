@@ -86,6 +86,14 @@ from battalion.workflow_recipes import (
     WorkflowRecipe,
     WorkflowRecipeRegistry,
 )
+from battalion.workflow_execution import (
+    WorkflowExecutionState,
+    WorkflowStageEvidence,
+    WorkflowUpgradeTrigger,
+    record_workflow_stage as _record_workflow_stage,
+    start_workflow_execution as _start_workflow_execution,
+    upgrade_workflow_execution as _upgrade_workflow_execution,
+)
 from battalion.workflow_admission import (
     AdmissionEvidenceSource,
     DEFAULT_WORKFLOW_ADMISSION_POLICY,
@@ -337,6 +345,32 @@ class InspectWorkflowRecipe:
 
     recipe_id: str
     recipe_version: str
+
+
+@dataclass(frozen=True)
+class StartWorkflowExecution:
+    """Initialize execution from one exact admitted WorkflowRecipe."""
+
+    recipe_id: str
+    recipe_version: str
+
+
+@dataclass(frozen=True)
+class RecordWorkflowStage:
+    """Retain behavioral or review evidence for one selected-recipe stage."""
+
+    execution: WorkflowExecutionState
+    evidence: WorkflowStageEvidence
+
+
+@dataclass(frozen=True)
+class UpgradeWorkflowExecution:
+    """Apply the irreversible compact-to-stronger-workflow policy."""
+
+    execution: WorkflowExecutionState
+    trigger: WorkflowUpgradeTrigger
+    reason: str
+    evidence_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -975,6 +1009,39 @@ def inspect_workflow_recipe(
 ) -> WorkflowRecipe:
     """Inspect exact registered recipe semantics without selecting a graph."""
     return registry.resolve(query.recipe_id, query.recipe_version)
+
+
+def start_workflow_execution(
+    command: StartWorkflowExecution,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Initialize exact registered recipe semantics through application policy."""
+    return _start_workflow_execution(registry.resolve(command.recipe_id, command.recipe_version))
+
+
+def record_workflow_stage(
+    command: RecordWorkflowStage,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Record stage evidence without presentation or graph mutation."""
+    return _record_workflow_stage(command.execution, command.evidence, registry=registry)
+
+
+def upgrade_workflow_execution(
+    command: UpgradeWorkflowExecution,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Apply deterministic upgrade policy through the shared application boundary."""
+    return _upgrade_workflow_execution(
+        command.execution,
+        trigger=command.trigger,
+        reason=command.reason,
+        evidence_ids=command.evidence_ids,
+        registry=registry,
+    )
 
 
 def assess_workflow_admission(

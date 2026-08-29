@@ -223,4 +223,29 @@ FULL_IMPLEMENTATION_RECIPE = WorkflowRecipe(
 )
 
 
-DEFAULT_WORKFLOW_RECIPE_REGISTRY = WorkflowRecipeRegistry((FULL_IMPLEMENTATION_RECIPE,))
+COMPACT_IMPLEMENTATION_RECIPE = WorkflowRecipe(
+    recipe_id="compact-implementation-run",
+    recipe_version="1.0",
+    workflow_kind=WorkflowKind.IMPLEMENTATION_RUN,
+    stages=(
+        WorkflowStage.DRIVER_RED,
+        WorkflowStage.DRIVER_GREEN,
+        WorkflowStage.REVIEW_GREEN,
+    ),
+    capabilities=frozenset(WorkflowCapability),
+    mandatory_verification=frozenset(VerificationRequirement),
+    independent_review_required=True,
+    interrupt_policy=PolicyReference(policy_id="v1-interrupts", policy_version="1.0"),
+    eligibility_policy=PolicyReference(
+        policy_id="workflow-admission", policy_version="1.0"
+    ),
+    upgrade_triggers=(
+        PolicyReference(policy_id="upgrade-only-ratchet", policy_version="1.0"),
+    ),
+)
+"""The initial proportionate Implementation Run recipe from RFC-0012."""
+
+
+DEFAULT_WORKFLOW_RECIPE_REGISTRY = WorkflowRecipeRegistry(
+    (FULL_IMPLEMENTATION_RECIPE, COMPACT_IMPLEMENTATION_RECIPE)
+)
