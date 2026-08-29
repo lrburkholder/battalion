@@ -26,5 +26,7 @@ jobs:
       - name: Validate and close ticket
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        # The script fetches the current PR body so reruns can recover after a
+        # maintainer corrects PR metadata; reruns retain the original event body.
         run: python scripts/complete_merged_ticket.py

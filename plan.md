@@ -144,7 +144,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0024](docs/adrs/adr0024.md) | Keep inference identity and cost policy in Battalion |
 | [ADR-0025](docs/adrs/adr0025.md) | Put provider adapters and transports beneath Battalion capabilities |
 | [ADR-0026](docs/adrs/adr0026.md) | Separate Actor identity, authority, and responsibility |
-| [ADR-0027](docs/adrs/adr0027.md) | Generate status documentation from canonical GitHub Issues |
+| [ADR-0027](docs/adrs/adr0027.md) | Generate status documentation from canonical GitHub Issues and Milestones |
 | [ADR-0031](docs/adrs/adr0031.md) | Separate canonical status validation from public status rendering |
 | [ADR-0028](docs/adrs/adr0028.md) | Authorize Battalion operations, not identities or transports |
 | [ADR-0029](docs/adrs/adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity |
@@ -277,10 +277,34 @@ registered adapters and bounded transports with deterministic typed failures.
 BTN-70 now makes externally visible operations replay-safe: a versioned
 side-effect ledger inside `RunState` records write-ahead intent, typed
 attempt outcomes, and reconciliation evidence under Battalion-minted stable
-logical operation IDs (ADR-0029). Operation policy, health validation, and
-individual provider operations remain BTN-68, BTN-69, and BTN-71 through
-BTN-80; the capability contracts consume the ledger rather than redefining
-delivery semantics.
+logical operation IDs (ADR-0029). Operation policy and health validation
+remain BTN-68 and BTN-69. BTN-73 now adds versioned, minimized outbound
+machine-event envelopes after durable Run transitions. BTN-74 is in progress
+adding a generic, vendor-neutral HTTP webhook OutboundEventSink: configured
+selected event types post through one bounded endpoint with symbolic
+authorization, a stable idempotency identity, and BTN-70 outcome semantics.
+BTN-72 is in progress delivering the GitHub Issues
+WorkSource adapter: repository-bound Issue normalization remains above
+replaceable transports, and any accepted GitHub mutation must pass through
+application policy plus the shared ledger rather than granting graph nodes
+GitHub access. The remaining capability operations continue to consume the
+ledger rather than redefining delivery semantics.
+
+BTN-75 is in progress: its notification router accepts only Battalion Actor
+IDs or explicitly configured Actor groups, applies the configured project and
+permitted Actor channel selection, resolves provider subjects from
+integration-scoped external identity mappings at the adapter boundary, and
+records every actual delivery through BTN-70's ledger. It reports missing
+destinations, disabled channels, policy denial, unavailable integrations, and
+delivery failures independently without allowing notification delivery to
+mutate HumanInterrupt state.
+
+BTN-79 is in progress: the outbound-only Discord webhook adapter consumes only
+the minimized `human_interrupt` event, renders bounded Run/work-item/phase/
+reason details with a CLI return route, and resolves its webhook token below
+the OutboundEventSink boundary. It has no Discord inbound, reply, Actor, or Run
+mutation path; confirmed failures, duplicates, and ambiguous outcomes use the
+shared BTN-70 side-effect ledger semantics.
 
 ## Risks and watch items
 

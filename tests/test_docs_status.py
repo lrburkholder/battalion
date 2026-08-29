@@ -6,9 +6,14 @@ from pathlib import Path
 import pytest
 
 from scripts.sync_status import (
+    GitHubStatusUnavailable,
     IssueNormalizationError,
+    Milestone,
+    ProjectStatus,
     Ticket,
+    fetch_github_status,
     load_tickets,
+    normalize_milestones,
     normalize_issues,
     render_delivery_section,
     sync_documents,
@@ -105,18 +110,70 @@ def test_role_specifier_is_rejected() -> None:
 
 
 def test_rendering_is_pure_and_summarizes_milestones() -> None:
-    rendered = render_delivery_section([
+    rendered = render_delivery_section(ProjectStatus((
         Ticket("BTN-10", "Shipped", "done", "implementation", "P1", "driver", 10, "v1"),
         Ticket("BTN-11", "Planned", "not-started", "design", "unknown", "unknown", 11, "v1"),
         Ticket("BTN-12", "Blocked", "blocked", "implementation", "P1", "driver", 12, "v2"),
         Ticket("BTN-13", "Cancelled", "cancelled", "testing", "P2", "reviewer", 13, "v2"),
-    ])
+    ), (
+        Milestone(2, "v2", "open"),
+        Milestone(1, "v1", "closed"),
+        Milestone(3, "BTN-M9 - Empty", "open"),
+    )))
     assert "### Milestone overview" in rendered
-    assert "| v1 | 2 | 1 | 0 | 1 | 0 |" in rendered
-    assert "| v2 | 2 | 0 | 1 | 0 | 1 |" in rendered
+    assert "| v1 | Closed | 2 | 1 | 1 | 0 | 50% |" in rendered
+    assert "| v2 | Open | 2 | 0 | 1 | 1 | 0% |" in rendered
+    assert "| BTN-M9 - Empty | Open | 0 | 0 | 0 | 0 | 0% |" in rendered
+    assert rendered.index("BTN-M9 - Empty") < rendered.index("v1") < rendered.index("v2")
     assert "| BTN-12 | Blocked | v2 | Blocked |" in rendered
     assert "BTN-10 | Shipped" not in rendered
     assert "Issue-level scope, dependencies" in rendered
+
+
+def test_milestone_normalization_orders_by_battalion_number_not_github_number() -> None:
+    milestones = normalize_milestones([
+        {"number": 1, "title": "BTN-M10 - Later", "state": "open"},
+        {"number": 99, "title": "BTN-M2 - Earlier", "state": "closed"},
+    ])
+    assert [milestone.title for milestone in milestones] == [
+        "BTN-M2 - Earlier", "BTN-M10 - Later"
+    ]
+
+
+def test_rendering_keeps_unassigned_issues_visible() -> None:
+    rendered = render_delivery_section(ProjectStatus(
+        (Ticket("BTN-12", "Unassigned", "not-started", "implementation", "P1", "driver"),),
+        (),
+    ))
+    assert "| Unassigned | — | 1 | 0 | 1 | 0 | 0% |" in rendered
+
+
+def test_fetching_status_requires_both_live_collections() -> None:
+    def unavailable(*args, **kwargs):
+        raise OSError("network unavailable")
+
+    with pytest.raises(GitHubStatusUnavailable, match="no local status fallback"):
+        fetch_github_status(runner=unavailable)
+
+
+def test_fetching_status_uses_canonical_issue_and_milestone_endpoints() -> None:
+    payloads = iter([
+        [[_rest_issue(issue("BTN-12", milestone="BTN-M2 - Delivery"))]],
+        [[{"number": 2, "title": "BTN-M2 - Delivery", "state": "open"}]],
+    ])
+
+    class Completed:
+        def __init__(self, payload: object) -> None:
+            import json
+            self.stdout = json.dumps(payload)
+
+    def runner(command, **kwargs):
+        return Completed(next(payloads))
+
+    status = fetch_github_status(runner=runner)
+    assert [ticket.id for ticket in status.tickets] == ["BTN-12"]
+    assert status.milestones == (Milestone(2, "BTN-M2 - Delivery", "open"),)
+    assert status.tickets[0].url == "https://example.test/issues/12"
 
 
 def test_sync_uses_injected_offline_reader(tmp_path: Path) -> None:
@@ -126,7 +183,7 @@ def test_sync_uses_injected_offline_reader(tmp_path: Path) -> None:
     reader = lambda: [issue("BTN-12", state="CLOSED", reason="COMPLETED")]
     assert sync_documents(tmp_path, issue_reader=reader) == ["docs/status.md"]
     assert sync_documents(tmp_path, check=True, issue_reader=reader) == []
-    assert "| Unassigned | 1 | 1 | 0 | 0 | 0 |" in status.read_text(encoding="utf-8")
+    assert "| Unassigned | — | 1 | 1 | 0 | 0 | 100% |" in status.read_text(encoding="utf-8")
 
 
 def test_readme_links_to_status_without_owning_generated_payload() -> None:
@@ -139,3 +196,13 @@ def test_readme_links_to_status_without_owning_generated_payload() -> None:
 def test_normalization_rejects_malformed_milestone() -> None:
     with pytest.raises(IssueNormalizationError, match="malformed milestone"):
         normalize_issues([issue(milestone="", ) | {"milestone": {"title": ""}}])
+
+
+def _rest_issue(raw: dict[str, object]) -> dict[str, object]:
+    """Make the compact Issue fixture look like the REST endpoint response."""
+
+    return {
+        **raw,
+        "state": str(raw["state"]).lower(),
+        "state_reason": str(raw["stateReason"]).lower() or None,
+    }

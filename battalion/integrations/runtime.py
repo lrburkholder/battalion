@@ -20,7 +20,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from battalion.integrations.configuration import (
     CapabilitySurface,
@@ -30,6 +30,9 @@ from battalion.integrations.configuration import (
     TransportKind,
 )
 from battalion.work import WorkItem
+
+if TYPE_CHECKING:
+    from battalion.integrations.events import ConfiguredOutboundEventSink, OutboundEvent
 
 
 class IntegrationError(Exception):
@@ -137,6 +140,24 @@ class TransportResponse:
     payload: Any
 
 
+@dataclass(frozen=True)
+class NotificationDelivery:
+    """One bounded provider-facing delivery resolved from an Actor target.
+
+    ``external_subject`` is intentionally present only at the Notification
+    capability boundary.  Graph and application callers use Battalion Actor
+    IDs; the notification router resolves this provider-scoped value from a
+    credential-free ExternalIdentity immediately before invoking an adapter.
+    """
+
+    logical_notification_id: str
+    classification: str
+    template_data: Mapping[str, Any]
+    return_route: str
+    external_subject: str
+    idempotency_key: str
+
+
 class Transport(Protocol):
     """A transport implementation hidden behind an adapter-specific facade."""
 
@@ -210,11 +231,91 @@ class RepositoryServicePort(CapabilityPort, Protocol):
 
 
 class NotificationPort(CapabilityPort, Protocol):
-    """Provider-neutral Notification port; operations arrive with BTN-75."""
+    """Provider-neutral outbound notification delivery port."""
+
+    def send(self, delivery: NotificationDelivery) -> Any:
+        """Deliver one Actor-resolved notification through this provider."""
 
 
 class OutboundEventSinkPort(CapabilityPort, Protocol):
-    """Provider-neutral OutboundEventSink port; operations arrive with BTN-76."""
+    """One-way, provider-neutral machine-event publication port (BTN-73)."""
+
+    def publish(self, event: "OutboundEvent", *, idempotency_key: str) -> Any:
+        """Publish one versioned event using Battalion's stable operation ID.
+
+        The port deliberately has no command, actor, Run, or state access.
+        Provider adapters return only bounded delivery evidence; the application
+        retains policy and durable side-effect coordination.
+        """
+
+
+class _ConfiguredOutboundEventSink:
+    """Expose one-way publication plus safe binding evidence, not an adapter."""
+
+    __slots__ = (
+        "__integration_id",
+        "__integration_name",
+        "__provider",
+        "__accepts",
+        "__publish",
+        "__transport",
+    )
+
+    def __init__(
+        self,
+        source: OutboundEventSinkPort,
+        *,
+        integration_name: str,
+        definition: IntegrationDefinition,
+    ) -> None:
+        try:
+            publish = source.publish
+        except AttributeError as exc:
+            raise IntegrationMalformedResponse(
+                "outbound-event-sink adapter must provide publish"
+            ) from exc
+        if not callable(publish):
+            raise IntegrationMalformedResponse(
+                "outbound-event-sink publish must be callable"
+            )
+        accepts = getattr(source, "accepts", lambda event: True)
+        if not callable(accepts):
+            raise IntegrationMalformedResponse("outbound-event-sink accepts must be callable")
+        self.__integration_id = definition.integration_id
+        self.__integration_name = integration_name
+        self.__provider = definition.provider
+        self.__accepts = accepts
+        self.__publish = publish
+        self.__transport = definition.transport
+
+    @property
+    def capability(self) -> CapabilitySurface:
+        return CapabilitySurface.OUTBOUND_EVENT_SINK
+
+    @property
+    def integration_id(self) -> str:
+        return self.__integration_id
+
+    @property
+    def integration_name(self) -> str:
+        return self.__integration_name
+
+    @property
+    def provider(self) -> str:
+        return self.__provider
+
+    @property
+    def transport(self) -> TransportKind:
+        return self.__transport
+
+    def accepts(self, event: "OutboundEvent") -> bool:
+        accepted = self.__accepts(event)
+        if not isinstance(accepted, bool):
+            raise IntegrationMalformedResponse("outbound-event-sink accepts must return a boolean")
+        return accepted
+
+    def publish(self, event: "OutboundEvent", *, idempotency_key: str) -> Any:
+        return self.__publish(event, idempotency_key=idempotency_key)
 
 
 class HumanInteractionPort(CapabilityPort, Protocol):
@@ -353,6 +454,12 @@ class IntegrationRuntime:
                         f"and capability {capability.value!r}"
                     )
 
+    @property
+    def configuration(self) -> IntegrationConfiguration:
+        """Return the immutable routing configuration admitted to this runtime."""
+
+        return self._configuration
+
     def work_source(self, integration_name: str | None = None) -> WorkSourcePort:
         """Resolve an admitted WorkSource port."""
 
@@ -388,12 +495,31 @@ class IntegrationRuntime:
 
     def outbound_event_sink(
         self, integration_name: str | None = None
-    ) -> OutboundEventSinkPort:
+    ) -> "ConfiguredOutboundEventSink":
         """Resolve an admitted OutboundEventSink port."""
-
-        return cast(
+        name, definition = self._select_definition(
+            CapabilitySurface.OUTBOUND_EVENT_SINK, integration_name
+        )
+        source = cast(
             OutboundEventSinkPort,
-            self._resolve(CapabilitySurface.OUTBOUND_EVENT_SINK, integration_name),
+            self._resolve(CapabilitySurface.OUTBOUND_EVENT_SINK, name),
+        )
+        return _ConfiguredOutboundEventSink(
+            source, integration_name=name, definition=definition
+        )
+
+    def outbound_event_sinks(self) -> tuple["ConfiguredOutboundEventSink", ...]:
+        """Resolve every configured, policy-permitted machine event sink.
+
+        Outbound events intentionally fan out to selected configured providers.
+        They are not narrowed to a human Actor's preferred destination.
+        """
+
+        return tuple(
+            self.outbound_event_sink(name)
+            for name, definition in self._configuration.project.integrations.items()
+            if CapabilitySurface.OUTBOUND_EVENT_SINK in definition.capabilities
+            and self._is_allowed(name)
         )
 
     def human_interaction(
@@ -536,6 +662,8 @@ def _has_capability(adapter: object, capability: CapabilitySurface) -> bool:
                 and callable(getattr(adapter, "get"))
                 and callable(getattr(adapter, "refresh"))
             )
+        if capability is CapabilitySurface.NOTIFICATION:
+            return callable(getattr(adapter, "send"))
         return True
     except Exception:
         return False

@@ -47,7 +47,8 @@ from battalion.identity import (
     load_run_catalog,
     register_run,
 )
-from battalion.integrations.runtime import IntegrationRuntime, WorkSourcePort
+from battalion.integrations.events import OutboundEventPublisher, events_for_state
+from battalion.integrations.runtime import IntegrationError, IntegrationRuntime, WorkSourcePort
 from battalion.intel.candidates import (
     CandidateInbox,
     CandidateInboxEntry,
@@ -555,6 +556,7 @@ def start_work_item_run(
             overwrite=command.overwrite,
         ),
         state_dir=state_dir,
+        integration_runtime=integration_runtime,
         on_node_event=on_node_event,
         on_token=on_token,
         on_observation=on_observation,
@@ -566,6 +568,7 @@ def start_run(
     command: StartRun,
     *,
     state_dir: str | Path = DEFAULT_STATE_DIR,
+    integration_runtime: IntegrationRuntime | None = None,
     on_node_event: EventCallback | None = None,
     on_token: EventCallback | None = None,
     on_observation: ObservationCallback | None = None,
@@ -611,6 +614,7 @@ def start_run(
             f"Run identity changed from {initial_state.run_id} to {final_state.run_id}."
         )
     save_state(final_state, path)
+    _publish_durable_outbound_events(final_state, integration_runtime, path)
     return RunOperationResult(
         run_id=final_state.run_id,
         run_alias=final_state.run_alias,
@@ -624,6 +628,7 @@ def resume_run(
     command: ResumeRun,
     *,
     state_dir: str | Path = DEFAULT_STATE_DIR,
+    integration_runtime: IntegrationRuntime | None = None,
     on_node_event: EventCallback | None = None,
     on_token: EventCallback | None = None,
     on_observation: ObservationCallback | None = None,
@@ -678,6 +683,7 @@ def resume_run(
             f"Run identity changed from {state.run_id} to {final_state.run_id}."
         )
     save_state(final_state, path)
+    _publish_durable_outbound_events(final_state, integration_runtime, path)
     return RunOperationResult(
         run_id=final_state.run_id,
         run_alias=final_state.run_alias,
@@ -686,6 +692,44 @@ def resume_run(
         state=final_state,
         warning=warning,
     )
+
+
+def _publish_durable_outbound_events(
+    state: RunState,
+    integration_runtime: IntegrationRuntime | None,
+    path: Path,
+) -> None:
+    """Publish registered machine events after their authoritative state is saved.
+
+    Event delivery is optional and one-way: a configured sink's rejection,
+    timeout, or reconciliation requirement is captured in BTN-70 evidence but
+    never rewrites the completed/paused Run outcome or grants the sink command
+    authority. Unexpected programmer failures still surface after write-ahead
+    intent is durable instead of being misclassified as a provider outcome.
+    """
+
+    if integration_runtime is None:
+        return
+    events = events_for_state(state)
+    if not events:
+        return
+    try:
+        sinks = integration_runtime.outbound_event_sinks()
+    except IntegrationError:
+        return
+
+    publisher = OutboundEventPublisher(state)
+    for sink in sinks:
+        try:
+            publisher.publish(
+                events,
+                sinks=(sink,),
+                persist=lambda: save_state(state, path),
+            )
+        except IntegrationError:
+            # Individual provider outcomes are durable evidence, not a graph
+            # failure. Continue fan-out to independent configured consumers.
+            continue
 
 
 def inspect_run(

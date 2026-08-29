@@ -57,6 +57,7 @@ Current work status is generated from the canonical [GitHub Issues](https://gith
 | `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | Complete (BTN-66) |
 | `battalion.integrations.runtime` | Validated capability-to-adapter-to-bounded-transport resolution with typed failures | Complete (BTN-67) |
 | `battalion.integrations.effects` | Durable side-effect ledger, replay-safe logical operation identity, and typed reconciliation evidence | Complete (BTN-70) |
+| `battalion.notifications` | Actor-targeted notification routing, configured channel selection, and per-delivery evidence | In progress (BTN-75) |
 | `battalion.setup` | Provider discovery, configuration, and connectivity checks | Complete (BTN-15) |
 | `battalion.progress` | Human-readable CLI progress events | Complete |
 | `battalion.cli` | Typer CLI - run/resume/status/setup | Complete (BTN-9, BTN-15) |
@@ -194,30 +195,109 @@ references. The current transport values are `native-local`, `http-rest`,
 `work-source`, `knowledge-source`, `repository-service`, `notification`,
 `outbound-event-sink`, and `human-interaction`.
 
+### Outbound Event Contract (BTN-73; HTTP delivery in BTN-74; Discord in BTN-79, in progress)
+
+Configured `outbound-event-sink` bindings receive one-way, versioned machine
+events after the corresponding Run state is durable. Schema `1.0` supports
+`human_interrupt`, `run_failed`, and `run_completed`. Every envelope contains
+a stable event ID, type, schema version, timezone-aware occurrence time,
+bounded Run/project provenance, and typed minimized data. It never includes
+prompts, transcripts, source content, arbitrary state, model context, or
+secrets.
+
+Within a major schema version, changes must be additive and optional. Removing,
+renaming, changing the meaning of a field, or adding a required field requires
+a new registered schema version. Consumers must ignore unknown optional fields
+and reject unknown major versions. Delivery uses the durable side-effect ledger
+and Battalion-minted idempotency key; receiving an event grants no command,
+Actor, or Run authority.
+
+The built-in, vendor-neutral `http-webhook` adapter POSTs selected envelopes to
+one configured HTTP(S) endpoint. Its portable configuration accepts only an
+endpoint, a bounded timeout, and a non-empty selection of registered event
+types. Authorization is a symbolic `credential_references.authorization`
+reference, never a literal setting. The transport does not follow redirects;
+it sends the same Battalion operation ID in `Idempotency-Key` on a confirmed
+retry. A timeout, cancellation, malformed response, or unavailable endpoint
+is an ambiguous outcome that requires BTN-70 reconciliation before
+redelivery; a non-2xx response is a confirmed rejection and may retry under
+that same event and operation identity.
+
 ```yaml
 # battalion.integrations.yaml — safe to share
 project:
   integrations:
-    github-work:
-      integration_id: github-work-primary
-      provider: github
-      transport: http-rest
-      capabilities: [work-source]
+    automation-events:
+      integration_id: automation-events-primary
+      provider: http-webhook
+      transport: webhook
+      capabilities: [outbound-event-sink]
       settings:
-        repository: example/battalion
-        endpoint: https://api.github.example
+        endpoint: https://automation.example/events
+        event_types: [human_interrupt, run_failed]
+        timeout_seconds: 10
       credential_references:
-        access_token:
-          reference: env://GITHUB_TOKEN
+        authorization:
+          reference: env://AUTOMATION_WEBHOOK_AUTHORIZATION
+```
+
+The built-in `discord` webhook sink is deliberately narrower: it accepts only
+the `human_interrupt` event and sends an outbound incoming-webhook message. It
+includes the bounded Run ID, work-item ID, phase, interrupt reason, and a
+copyable `battalion status <run-id> --human` route. Discord has no inbound
+command, reply, Actor, or Run-mutation authority. Its numeric webhook ID is a
+provider destination setting below the `outbound-event-sink` boundary; the
+secret webhook token is a required symbolic reference and is never part of the
+shareable configuration.
+
+```yaml
+# battalion.integrations.yaml — safe to share
+project:
+  integrations:
+    discord-operations:
+      integration_id: discord-operations-primary
+      provider: discord
+      transport: webhook
+      capabilities: [outbound-event-sink]
+      settings:
+        webhook_id: "123456789012345678"
+        timeout_seconds: 10
+      credential_references:
+        webhook_token:
+          reference: env://DISCORD_WEBHOOK_TOKEN
 ```
 
 References may use `env://NAME` or `keyring://service/account`; their values
-are resolved outside project configuration by a later integration runtime.
+are resolved outside project configuration by an approved transport resolver.
 Literal tokens, passwords, and secret-bearing settings are rejected. An optional
 organization allow-list and Actor preferences can only narrow or select project
 bindings, so they cannot grant a provider or capability forbidden by project
 policy. Provider adapter binding, secret resolution, health checks, and
 operation authorization remain separate follow-up work.
+
+Notification routing adds project-owned channel defaults, optional disabled
+channels, and explicitly named Actor groups beneath the same integration
+configuration. A caller supplies durable Actor IDs or one named group; the
+router resolves provider subjects only at the Notification adapter boundary.
+Raw email addresses, Discord IDs, and device tokens never enter graph state or
+notification requests.
+
+```yaml
+project:
+  notification_defaults: [discord-operations, email-work]
+  disabled_notification_integrations: [email-work]
+  notification_actor_groups:
+    on-call:
+      - "0c0560b2-3de8-4e07-9bf5-f4d3efa6c41d"
+```
+
+When an Actor has a permitted `notification` preference, it selects a configured
+channel for that Actor; otherwise the project defaults fan out across their
+configured channels. If no defaults are declared, every configured Notification
+channel is considered. Missing destinations, disabled channels, policy denials,
+unavailable integrations, confirmed failures, and ambiguous delivery are
+reported separately. Delivery itself remains outbound-only and cannot resolve
+or mutate a HumanInterrupt.
 
 ### Run Battalion
 

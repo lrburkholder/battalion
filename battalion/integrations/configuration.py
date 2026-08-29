@@ -12,6 +12,7 @@ from __future__ import annotations
 from enum import Enum
 import re
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -58,6 +59,7 @@ _SENSITIVE_SETTING_NAMES = frozenset(
         "privatekey",
         "secret",
         "token",
+        "webhooktoken",
     }
 )
 
@@ -149,6 +151,9 @@ class IntegrationLayer(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     integrations: dict[str, IntegrationDefinition] = Field(default_factory=dict)
+    notification_defaults: tuple[str, ...] = ()
+    disabled_notification_integrations: frozenset[str] = frozenset()
+    notification_actor_groups: dict[str, tuple[UUID, ...]] = Field(default_factory=dict)
 
     @field_validator("integrations")
     @classmethod
@@ -167,6 +172,40 @@ class IntegrationLayer(BaseModel):
                 )
             integration_ids.add(definition.integration_id)
         return integrations
+
+    @model_validator(mode="after")
+    def validate_notification_routing(self) -> "IntegrationLayer":
+        """Keep routing choices within named project Notification bindings."""
+
+        notification_bindings = {
+            name
+            for name, definition in self.integrations.items()
+            if CapabilitySurface.NOTIFICATION in definition.capabilities
+        }
+        selected = (
+            set(self.notification_defaults)
+            | set(self.disabled_notification_integrations)
+        )
+        unknown = selected - notification_bindings
+        if unknown:
+            raise ValueError(
+                "notification routing names bindings that do not provide notification: "
+                + ", ".join(sorted(unknown))
+            )
+        if len(self.notification_defaults) != len(set(self.notification_defaults)):
+            raise ValueError("notification defaults must not repeat an integration")
+        for name, actor_ids in self.notification_actor_groups.items():
+            if not _IDENTIFIER.fullmatch(name):
+                raise ValueError(
+                    f"notification Actor group {name!r} must be a lowercase stable identifier"
+                )
+            if not actor_ids:
+                raise ValueError(f"notification Actor group {name!r} must not be empty")
+            if len(actor_ids) != len(set(actor_ids)):
+                raise ValueError(
+                    f"notification Actor group {name!r} must not repeat an Actor"
+                )
+        return self
 
 
 class OrganizationIntegrationPolicy(BaseModel):

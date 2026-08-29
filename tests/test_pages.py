@@ -129,7 +129,7 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         status_page = (output / "docs" / "status.md").read_text(encoding="utf-8")
         assert "BEGIN GENERATED:backlog-delivery" in status_page
         assert "### Milestone overview" in status_page
-        assert "| Milestone | Tickets | Shipped | Active | Planned | Cancelled |" in status_page
+        assert "| Milestone | State | Issues | Completed | Open | Cancelled | Progress |" in status_page
         landing = (output / "index.md").read_text(encoding="utf-8")
         assert "docs/status.html" in landing
         assert not (output / "backlog.json").exists()

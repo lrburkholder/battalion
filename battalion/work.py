@@ -75,8 +75,8 @@ class WorkSourceReadPort(Protocol):
 class WorkSourceMutationPort(Protocol):
     """Separately admitted mutating WorkSource operations.
 
-    Intake deliberately does not accept this protocol. A later operation
-    policy can admit individual mutations with BTN-70 side-effect evidence
+    Intake deliberately does not accept this protocol. Application services
+    admit individual mutations through policy and BTN-70 side-effect evidence,
     without turning ordinary work retrieval into mutation authority.
     """
 
