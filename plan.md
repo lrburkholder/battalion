@@ -39,6 +39,11 @@ Actor attribution for run and Recon evidence. BTN-63 is in progress to add
 credential-free, integration-scoped external identity mappings that resolve to
 Actors without granting authority. Capability enforcement, assignment/ownership,
 and authentication remain BTN-60 through BTN-62.
+BTN-138 is in progress: it establishes the finite, versioned `WorkflowRecipe`
+policy vocabulary and read-only registry required by accepted RFC-0012. The
+existing full Implementation Run is its initial default/fallback recipe;
+admission, compact execution, durable selected-recipe state, and graph dispatch
+remain follow-up work.
 
 ## Architecture overview
 
@@ -69,6 +74,7 @@ resume through the same graph path.
 ```text
 battalion/
   application.py          # shared typed commands, queries, and domain failures
+  workflow_recipes.py     # finite, versioned workflow-policy registry
   actors.py               # durable Actor contract, bootstrap, and local registry
   identity.py             # canonical UUIDs, project markers, and run catalogs
   workers.py              # detached per-run process supervision and recovery
@@ -148,6 +154,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0031](docs/adrs/adr0031.md) | Separate canonical status validation from public status rendering |
 | [ADR-0028](docs/adrs/adr0028.md) | Authorize Battalion operations, not identities or transports |
 | [ADR-0029](docs/adrs/adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity |
+| [ADR-0032](docs/adrs/adr0032.md) | Register finite, versioned WorkflowRecipe policy artifacts |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human

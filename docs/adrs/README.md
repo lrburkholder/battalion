@@ -37,6 +37,7 @@ status states whether it is part of the shipped system.
 | [ADR-0029](adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity | Accepted | BTN-70 substrate; consumed by BTN-71–80 |
 | [ADR-0030](adr0030.md) | Complete explicitly linked tickets after human PR merge | Accepted | BTN-126 |
 | [ADR-0031](adr0031.md) | Separate canonical status validation from public status rendering | Accepted | BTN-128 |
+| [ADR-0032](adr0032.md) | Register finite, versioned WorkflowRecipe policy artifacts | Accepted | BTN-138 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique
