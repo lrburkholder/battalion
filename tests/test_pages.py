@@ -64,6 +64,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "docs/status.md",
             "docs/release.md",
             "docs/getting-started.md",
+            "docs/data-handling.md",
             "docs/troubleshooting.md",
             "docs/contributing.md",
             "docs/uat/cli.md",
@@ -113,6 +114,13 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "docs/release.html" in index
         assert 'href="docs/getting-started.html"' in index
         assert "'/docs/getting-started.html' | relative_url" in layout
+        assert 'href="docs/data-handling.html"' in index
+        assert "'/docs/data-handling.html' | relative_url" in layout
+        disclosure = (output / "docs/data-handling.md").read_text(encoding="utf-8")
+        assert "(troubleshooting.html#state-backup)" in disclosure
+        assert "(operator/workflow.html)" in disclosure
+        assert "(uat/cli.html#data-handling)" in disclosure
+        assert "(uat/desktop.html#data-handling)" in disclosure
         assert 'href="docs/troubleshooting.html"' in index
         assert "'/docs/troubleshooting.html' | relative_url" in layout
         troubleshooting = (output / "docs/troubleshooting.md").read_text(encoding="utf-8")
@@ -120,6 +128,8 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "(uat/cli.html)" in troubleshooting
         assert "(uat/desktop.html)" in troubleshooting
         guide = (output / "docs/getting-started.md").read_text(encoding="utf-8")
+        assert "(data-handling.html)" in guide
+        assert "(data-handling.html#credentials)" in guide
         assert "(uat/cli.html)" in guide
         assert "(uat/desktop.html)" in guide
         assert "(operator/workflow.html)" in guide

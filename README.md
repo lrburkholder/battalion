@@ -189,6 +189,10 @@ unchanged. See [ADR-0002](docs/adrs/adr0002.md) and
 
 ## Usage
 
+Read [Data handling and trust boundaries](docs/data-handling.md) before setup,
+supplying project content, enabling integrations, or exporting traces. It
+inventories model context, local evidence, credentials, and retention limits.
+
 ### Installation
 
 For failures or interrupted Runs, use [Troubleshooting and recovery](docs/troubleshooting.md)
@@ -216,6 +220,10 @@ the deterministic release gates, GitHub Release artifacts and checksums, the
 Windows desktop ZIP, and the intentionally separate first-run onboarding path.
 
 ### Configure Models
+
+The [data-handling guide](docs/data-handling.md#model-context) explains what
+each role may send to its configured model. Setup prints that disclosure before
+its live connectivity check.
 
 Follow the [Getting Started setup steps](docs/getting-started.md#4-choose-models-and-validate-configuration-live-provider-step)
 to select local or remote inference and supply credentials through environment
@@ -268,6 +276,9 @@ local records may contain project-generated diagnostic text.
 
 ### Configure Portable Integrations
 
+Review [integration data handling](docs/data-handling.md#integrations) and
+[credential placement](docs/data-handling.md#credentials) before enabling a binding.
+
 Provider bindings belong in the optional, repository-shareable
 `battalion.integrations.yaml`; credentials never do. Each named project binding
 has a stable Battalion `integration_id`, a provider, a transport, one or more
@@ -279,13 +290,19 @@ references. The current transport values are `native-local`, `http-rest`,
 
 ### Outbound Event Contract (BTN-73; HTTP delivery in BTN-74; Discord in BTN-79, in progress)
 
+These adapters deliver when an application caller supplies a constructed
+integration runtime. Ordinary CLI run/resume and detached workers do not yet
+construct that runtime from YAML alone; a declared binding is not delivery
+evidence. See [current integration boundaries](docs/data-handling.md#integrations).
+
 Configured `outbound-event-sink` bindings receive one-way, versioned machine
 events after the corresponding Run state is durable. Schema `1.0` supports
 `human_interrupt`, `run_failed`, and `run_completed`. Every envelope contains
 a stable event ID, type, schema version, timezone-aware occurrence time,
-bounded Run/project provenance, and typed minimized data. It never includes
-prompts, transcripts, source content, arbitrary state, model context, or
-secrets.
+bounded Run/project provenance, and typed minimized data. The schema excludes
+fields for prompts, transcripts, source content, arbitrary state, model context,
+or credentials. Identifier and alias values are not generally redacted: do not
+put secrets or private prose in them.
 
 Within a major schema version, changes must be additive and optional. Removing,
 renaming, changing the meaning of a field, or adding a required field requires
@@ -351,11 +368,16 @@ project:
 
 References may use `env://NAME` or `keyring://service/account`; their values
 are resolved outside project configuration by an approved transport resolver.
-Literal tokens, passwords, and secret-bearing settings are rejected. An optional
+The bundled webhook/Discord resolver supports `env://` only; `keyring://`
+requires an explicitly supplied environment-specific resolver. Model setup
+uses provider environment variables, not integration keyring references.
+Integration validation rejects recognized secret-bearing settings; this is not
+a general secret scanner or complete redaction guarantee. An optional
 organization allow-list and Actor preferences can only narrow or select project
 bindings, so they cannot grant a provider or capability forbidden by project
 policy. Provider adapter binding, secret resolution, health checks, and
-operation authorization remain separate follow-up work.
+operation authorization are separate boundaries; declaring a capability alone
+does not provide its implementation or authorize an operation.
 
 Notification routing adds project-owned channel defaults, optional disabled
 channels, and explicitly named Actor groups beneath the same integration
@@ -410,7 +432,10 @@ Run `battalion <command> --help` for the authoritative options while the CLI
 is evolving. `python -m battalion <command>` remains an equivalent source-mode
 entry point. `--trace-output` is an explicit local JSONL export of raw streamed
 reasoning and token text; it is not persisted in `RunState`, may contain
-sensitive provider text, and is not acceptance evidence.
+sensitive provider text, and is not acceptance evidence. See
+[raw traces and sharing](docs/data-handling.md#traces) before enabling it;
+run/resume warn before opening the export. Desktop users can reach the same
+guide through **Help -> Data handling (opens browser)**.
 
 ### Browse with the Desktop Console
 

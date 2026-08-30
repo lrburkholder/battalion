@@ -22,7 +22,7 @@ from functools import partial
 ROOT = Path(__file__).resolve().parents[1]
 GUIDE = ROOT / "docs/getting-started.md"
 OPERATOR_DOCS = [
-    GUIDE, ROOT / "docs/troubleshooting.md",
+    GUIDE, ROOT / "docs/troubleshooting.md", ROOT / "docs/data-handling.md",
     ROOT / "docs/uat/cli.md", ROOT / "docs/uat/desktop.md",
 ]
 BLOCKS = dict(re.findall(
@@ -214,6 +214,7 @@ def test_onboarding_publication_inputs_trigger_pages_and_test_workflows():
         for event in ["push", "pull_request"]:
             paths = data[True][event]["paths"]
             assert "docs/getting-started.md" in paths
+            assert "docs/data-handling.md" in paths
             assert "docs/troubleshooting.md" in paths
             assert "docs/uat/**" in paths
 

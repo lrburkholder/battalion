@@ -13,6 +13,11 @@ applicability before relying on crash recovery.
 
 ## 1. Choose an available artifact
 
+Before setup or supplying project content, read
+[Data handling and trust boundaries](data-handling.md). It explains model and
+integration destinations, local evidence, secrets, raw traces, and retention
+limits for both CLI and desktop use.
+
 **There is no public GitHub Release as of 2026-08-30.** A package version in
 source, a green build, or a merge does not mean a release is available.
 
@@ -152,6 +157,11 @@ Repeating this section creates a new project without overwriting a prior Run;
 run setup again in that new directory before starting another scenario.
 
 ## 4. Choose models and validate configuration (live provider step)
+
+Read the [model-context disclosure](data-handling.md#model-context) and
+[credential guidance](data-handling.md#credentials) before the live setup step.
+Setup prints the disclosure URL before validation; `--no-validate` does not
+make later Runs offline.
 
 Choose model identifiers for all four roles. Driver and Reviewer must use
 different identifiers. Use explicit provider/model identifiers recognized by

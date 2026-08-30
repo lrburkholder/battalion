@@ -14,6 +14,7 @@ layout: default
       <a class="button" href="docs/troubleshooting.html">Troubleshoot a Run</a>
     </div>
     <p>No public GitHub Release is available as of 2026-08-30. Getting Started explains named UAT candidates, release availability, and artifact verification.</p>
+    <p>Before configuring models or integrations, read <a href="docs/data-handling.html">Data handling and trust boundaries</a>: model context, local evidence, credentials, traces, and retention limits.</p>
   </div>
   <div class="hero-mark" aria-hidden="true">
     <img src="{{ '/assets/mark-transparent.svg' | relative_url }}" alt="" width="280" height="280">

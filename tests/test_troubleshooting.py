@@ -4,6 +4,8 @@ from pathlib import Path
 import re
 from urllib.parse import unquote, urlsplit
 
+import pytest
+
 from battalion.cli import INTERRUPT_GUIDES
 from battalion.state.models import ProgressStage, TestExecutionClassification as ExecutionClassification
 from scripts.build_pages import PUBLISHED_DOCUMENTS, _rewrite_markdown_links
@@ -20,9 +22,10 @@ def anchors(text: str) -> set[str]:
     return set(explicit + slugs)
 
 
-def test_recovery_links_resolve_in_repository_and_staged_publication():
+@pytest.mark.parametrize("guide", [GUIDE, ROOT / "docs/data-handling.md"])
+def test_operator_links_resolve_in_repository_and_staged_publication(guide):
     documents = [
-        GUIDE, ROOT / "README.md", ROOT / "plan.md", ROOT / "docs/getting-started.md",
+        guide, ROOT / "README.md", ROOT / "plan.md", ROOT / "docs/getting-started.md",
         ROOT / "docs/ui/workflow.md", ROOT / "docs/uat/cli.md", ROOT / "docs/uat/desktop.md",
     ]
     checked = 0
@@ -31,7 +34,7 @@ def test_recovery_links_resolve_in_repository_and_staged_publication():
         text = document.read_text(encoding="utf-8")
         for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)", text):
             link = urlsplit(target)
-            if link.scheme or (document != GUIDE and "troubleshooting.md" not in link.path):
+            if link.scheme or (document != guide and guide.name not in link.path):
                 continue
             path = (document.parent / unquote(link.path)).resolve() if link.path else document
             assert path.is_file(), (source, target)
