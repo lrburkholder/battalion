@@ -14,6 +14,7 @@ from battalion.application import (
 from battalion.workflow_recipes import (
     AmbiguousWorkflowRecipe,
     COMPACT_IMPLEMENTATION_RECIPE,
+    CompletionRequirementKind,
     DEFAULT_WORKFLOW_RECIPE_REGISTRY,
     DuplicateWorkflowRecipe,
     FULL_IMPLEMENTATION_RECIPE,
@@ -54,6 +55,10 @@ def test_compact_recipe_retains_required_assurance_and_omits_only_redundant_pass
         "driver-red",
         "driver-green",
         "review-green",
+    ]
+    assert [requirement.kind for requirement in recipe.completion_requirements] == [
+        CompletionRequirementKind.SEMANTIC_REVIEW,
+        CompletionRequirementKind.HUMAN_ACCEPTANCE,
     ]
 
 

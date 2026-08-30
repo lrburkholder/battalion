@@ -66,6 +66,13 @@ Driver is blocked or must escalate rather than fabricating a mutation. BTN-133
 is in progress: its shared domain submission capability validates role/mode
 policy, observed writes, and references only to the evidence supplied to the
 active node attempt before durable routing and history projection.
+BTN-142 is in progress on its feature branch. It registers the initial compact
+Implementation Run recipe and an application-owned upgrade-only execution
+contract. Compact completion requires independent semantic Review Run evidence
+and authorized human acceptance; the existing checkpoint reviewer remains a
+RejectionAnalyzer rather than a substitute for that review. Durable Run linkage,
+restart/resume, and the independent Review Run implementation remain follow-up
+work under BTN-143 and RFC-0014's implementation decomposition.
 
 ## Architecture overview
 
@@ -180,6 +187,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0033](docs/adrs/adr0033.md) | Classify workflow admission from bounded deterministic evidence |
 | [ADR-0034](docs/adrs/adr0034.md) | Keep Tactician advisory and outside Implementation Runs |
 | [ADR-0036](docs/adrs/adr0036.md) | Keep human workflow admission separate from evidence and execution |
+| [ADR-0037](docs/adrs/adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human

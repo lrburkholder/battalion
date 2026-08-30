@@ -72,6 +72,7 @@ from battalion.observation import (
     RunObservationPublisher,
 )
 from battalion.role_results import RoleResultKind
+from battalion.role_results import RoleExecutionResult
 from battalion.state.models import (
     Budget,
     HumanActionRecord,
@@ -88,12 +89,16 @@ from battalion.workflow_recipes import (
     WorkflowRecipeRegistry,
 )
 from battalion.workflow_execution import (
+    WorkflowCompletionEvidence,
     WorkflowExecutionState,
     WorkflowStageEvidence,
     WorkflowUpgradeTrigger,
     record_workflow_stage as _record_workflow_stage,
     start_workflow_execution as _start_workflow_execution,
     upgrade_workflow_execution as _upgrade_workflow_execution,
+    upgrade_for_driver_result as _upgrade_for_driver_result,
+    record_workflow_completion as _record_workflow_completion,
+    workflow_is_complete as _workflow_is_complete,
 )
 from battalion.workflow_admission import (
     AdmissionEvidenceSource,
@@ -365,12 +370,36 @@ class RecordWorkflowStage:
 
 
 @dataclass(frozen=True)
+class RecordWorkflowCompletion:
+    """Retain required related-review or human-acceptance evidence."""
+
+    execution: WorkflowExecutionState
+    evidence: WorkflowCompletionEvidence
+
+
+@dataclass(frozen=True)
+class InspectWorkflowCompletion:
+    """Determine whether a recipe has all its required execution evidence."""
+
+    execution: WorkflowExecutionState
+
+
+@dataclass(frozen=True)
 class UpgradeWorkflowExecution:
     """Apply the irreversible compact-to-stronger-workflow policy."""
 
     execution: WorkflowExecutionState
     trigger: WorkflowUpgradeTrigger
     reason: str
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class UpgradeWorkflowForDriverResult:
+    """Apply deterministic compact policy to one validated Driver outcome."""
+
+    execution: WorkflowExecutionState
+    result: RoleExecutionResult
     evidence_ids: tuple[str, ...]
 
 
@@ -1037,6 +1066,24 @@ def record_workflow_stage(
     return _record_workflow_stage(command.execution, command.evidence, registry=registry)
 
 
+def record_workflow_completion(
+    command: RecordWorkflowCompletion,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Record a bounded completion requirement through application policy."""
+    return _record_workflow_completion(command.execution, command.evidence, registry=registry)
+
+
+def workflow_is_complete(
+    query: InspectWorkflowCompletion,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> bool:
+    """Inspect completion without graph dispatch or persistence access."""
+    return _workflow_is_complete(query.execution, registry=registry)
+
+
 def upgrade_workflow_execution(
     command: UpgradeWorkflowExecution,
     *,
@@ -1047,6 +1094,20 @@ def upgrade_workflow_execution(
         command.execution,
         trigger=command.trigger,
         reason=command.reason,
+        evidence_ids=command.evidence_ids,
+        registry=registry,
+    )
+
+
+def upgrade_workflow_for_driver_result(
+    command: UpgradeWorkflowForDriverResult,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Consume a typed Driver outcome without letting it select workflow policy."""
+    return _upgrade_for_driver_result(
+        command.execution,
+        command.result,
         evidence_ids=command.evidence_ids,
         registry=registry,
     )
