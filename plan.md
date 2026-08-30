@@ -130,7 +130,8 @@ battalion/
     refactorer.py
     errors.py
   prompts/
-    loader.py             # prompt loading and overrides
+    loader.py             # install-safe package-resource and override boundary
+    *.md                  # Battalion-owned runtime prompt assets
   scope/
     tool_binding.py       # per-node scoped write-tool factory
   interrupts/
@@ -139,7 +140,6 @@ battalion/
   llm/
     litellm_client.py     # per-node model configuration and invocation
 
-prompts/                  # externalized role prompts
 benchmarks/desktop/        # shared disposable framework-spike control case
 tests/                    # unit and end-to-end acceptance tests
 ```
@@ -360,7 +360,10 @@ evidence; write-scope violations remain hard authority interrupts
 - A single node can consume most of a run-level budget. Per-call cost evidence
   is now durable, but it intentionally does not change v1 budget interrupts.
 - Role prompts evolve faster than node code. Prompt changes can still change
-  behavior materially and should be reviewed as role-definition changes.
+  behavior materially and should be reviewed as role-definition changes. BTN-163
+  packages the declared prompt inventory with Python and frozen-worker artifacts,
+  while explicit override directories remain authoritative and fail closed when
+  incomplete.
 - BTN-26 persists the supplied specification in `RunState` and assembles
   deterministic, bounded context for Architect, Driver RED/GREEN, and
   Refactorer through one canonical context path. BTN-129 narrows Refactorer
