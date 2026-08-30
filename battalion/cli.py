@@ -247,11 +247,10 @@ def run(
     # Load spec text
     spec_text = _load_spec_text(spec)
     
-    initial_state = create_initial_state(ticket_id, spec_text, cfg)
-    run_id = initial_state.run_id
-    
-    typer.echo(f"Starting run: {initial_state.run_alias} ({run_id})")
     try:
+        initial_state = create_initial_state(ticket_id, spec_text, cfg)
+        run_id = initial_state.run_id
+        typer.echo(f"Starting run: {initial_state.run_alias} ({run_id})")
         with _open_trace_output(trace_output) as (trace_stream, trace_path):
             if trace_path is not None:
                 typer.echo(f"Trace output: {trace_path}")

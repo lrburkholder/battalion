@@ -48,7 +48,7 @@ def _driver_files(
             keys = ["driver"]
     scopes = {scope for key in keys for scope in state.write_scope.get(key, [])}
     for scope in sorted(scopes):
-        root = (base / scope).resolve()
+        root = (base / scope.replace("\\", "/")).resolve()
         if not root.is_relative_to(base) or not root.exists():
             continue
         paths = root.rglob("*") if root.is_dir() else (root,)

@@ -171,6 +171,22 @@ legacy `driver: ["src/"]` declaration remains supported and is still the
 default when no write scope is configured; RED, GREEN, and Refactorer all fall
 back to it when their phase-specific entry is absent.
 
+BTN-166 containment hardening is implemented on this branch, pending review and
+merge. All configured directory and single-file roots are
+**project-relative authority declarations**,
+not arbitrary filesystem paths. Both slash styles are normalized, and every
+entry must resolve strictly inside the resolved `base_dir`. Absolute paths
+(even inside the project), parent traversal, Windows drive/device forms, and
+symlink or junction escapes are rejected. No v1 role permits a whole-project
+root such as `./`.
+
+Invalid declarations fail with a typed scope/configuration error before a run
+starts or resumes; they never select a broader fallback. Bound paths are
+rechecked before writes. RED/GREEN test-file rules, Architect's `plan.md` output,
+Refactorer's admitted-artifact checks, and Reviewer's lack of write tools remain
+unchanged. See [ADR-0002](docs/adrs/adr0002.md) and
+[ADR-0013](docs/adrs/adr0013.md).
+
 ## Usage
 
 ### Installation

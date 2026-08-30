@@ -48,7 +48,7 @@ from battalion.llm.litellm_client import InfraFailure
 from battalion.nodes.errors import RoleContractViolation, RoleOutputError
 from battalion.execution import ExecutionCapture
 from battalion.recovery import UnsafeRecoveryError, assess_recovery
-from battalion.scope.tool_binding import ScopeViolationError
+from battalion.scope.tool_binding import ScopeViolationError, validate_write_scope
 from battalion.state.models import (
     CheckpointType,
     GraphProgress,
@@ -304,9 +304,13 @@ def _scaffold_node(
     the same role and phase. InfraFailure and the remaining RoleOutputError
     instances (trigger #5) and ScopeViolationError
     (trigger #2) route to an AWAITING_HUMAN pause through _handle_node_error;
-    any other exception is a bug and propagates unchanged.
+    invalid scope configuration fails before the attempt; unexpected exceptions
+    propagate unchanged.
     """
     def node(state: RunState) -> RunState:
+        # Reject authority configuration before snapshots, model calls, budget
+        # consumption, or durable attempts. Node binding rechecks before use.
+        validate_write_scope(state.write_scope, base_dir)
         recovery = assess_recovery(state)
         if recovery is not None and recovery.disposition == "terminal":
             raise UnsafeRecoveryError(recovery.message)

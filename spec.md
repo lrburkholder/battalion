@@ -451,6 +451,27 @@ Driver RED uses `driver_red`, Driver GREEN uses `driver_green`, and Refactorer
 uses `refactorer`. A phase receives tools bound only to that entry; Reviewer
 receives none. An explicitly empty phase entry grants no write authority.
 
+BTN-166 branch contract: every configured directory and single-file root is a
+project-relative authority declaration, not an arbitrary filesystem path.
+Before tools are exposed, normalize both separator styles and prove that each
+root resolves strictly within the resolved project base using native path
+semantics (including Windows case and drive behavior). Reject absolute roots
+even when inside the project, parent components, drive-relative/alternate-drive
+and device paths, Windows path aliases, and symlink/junction escapes. No v1
+role/mode permits a root resolving to the project itself. Internal links may
+resolve to a contained root; binding pins that resolved authority and checks it
+again on use, including single-file tools.
+
+Invalid declarations raise `WriteScopeMisconfigured`; application start/resume
+and worker boundaries expose `InvalidWriteScope` before mutation or execution.
+Validate the complete declaration, including inactive phases, and the saved
+Run's scopes on resume. Do not replace invalid scopes with defaults, retry them
+as model-output corrections, or consume budget for them. This is a configuration
+failure, not a new interrupt condition. A later bound-path redirection is an
+audited `ScopeViolationError` using existing interrupt #2. Role-specific test-file
+rules, Architect's single `plan.md` output, and Refactorer artifact provenance
+restrictions still apply after containment validation.
+
 For backward compatibility, a missing phase entry falls back to `driver`, whose
 default is `["src/"]`. One-root output is relative to that root. Multi-root
 output must prefix each path with a declared root. Absolute paths, traversal,

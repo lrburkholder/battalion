@@ -35,6 +35,7 @@ from battalion.actors import (
     unlink_external_identity as _unlink_external_identity,
 )
 from battalion.config import BattalionConfig
+from battalion.scope.tool_binding import WriteScopeMisconfigured, validate_write_scope
 from battalion.execution import summarize_costs
 from battalion.identity import (
     IdentityError,
@@ -156,6 +157,17 @@ def resume_ticket(*args, **kwargs):
 
 class ApplicationError(Exception):
     """Base class for expected failures exposed to presentation clients."""
+
+
+class InvalidWriteScope(ApplicationError):
+    """The project-relative authority declarations cannot safely be bound."""
+
+
+def _validate_write_scope(write_scope: dict[str, list[str]], base_dir: str | Path) -> None:
+    try:
+        validate_write_scope(write_scope, base_dir)
+    except WriteScopeMisconfigured as exc:
+        raise InvalidWriteScope(str(exc)) from exc
 
 
 class InvalidRunId(ApplicationError):
@@ -699,6 +711,7 @@ def create_initial_state(
     work_item: WorkItem | None = None,
 ) -> RunState:
     """Create one canonical new-run state through the application boundary."""
+    _validate_write_scope(config.write_scope, config.base_dir)
     try:
         project = load_project_identity(config.base_dir, create=True)
         _resolve_human_actor(config.base_dir, None)
@@ -777,6 +790,8 @@ def _execute_graph(
         return result
     except ApplicationError:
         raise
+    except WriteScopeMisconfigured as exc:
+        raise InvalidWriteScope(str(exc)) from exc
     except Exception as exc:
         state = _load_run(run_id, path.parent)
         recovery = assess_recovery(state)
@@ -851,6 +866,7 @@ def start_run(
 ) -> RunOperationResult:
     """Execute a new run through the graph and persist its resulting state."""
     initial_state = command.initial_state
+    _validate_write_scope(initial_state.write_scope, command.config.base_dir)
     path = state_path(initial_state.run_id, state_dir)
     if path.exists() and not command.overwrite:
         raise RunAlreadyExists(initial_state.run_id, path)
@@ -918,6 +934,7 @@ def resume_run(
 ) -> RunOperationResult:
     """Load, resume through the canonical graph behavior, and save one run."""
     state = _load_run(command.run_id, state_dir)
+    _validate_write_scope(state.write_scope, command.config.base_dir)
     actor = _resolve_human_actor(command.config.base_dir, command.actor_id)
     state, replayed, warning = _prepare_resume(state, command, actor)
     path = state_path(command.run_id, state_dir)
@@ -1639,6 +1656,7 @@ def start_worker(
     """Start one isolated process without exposing process handles to clients."""
     operation = command.command
     if isinstance(operation, StartRun):
+        _validate_write_scope(operation.initial_state.write_scope, operation.config.base_dir)
         run_id = operation.initial_state.run_id
         path = state_path(run_id, state_dir)
         if path.exists() and not operation.overwrite:
@@ -1663,6 +1681,7 @@ def start_worker(
 
     state_path(operation.run_id, state_dir)  # validate before using it as a filename
     state = _load_run(operation.run_id, state_dir)
+    _validate_write_scope(state.write_scope, operation.config.base_dir)
     actor = _resolve_human_actor(operation.config.base_dir, operation.actor_id)
     if not operation.resolution.strip():
         raise HumanActionRejected("Interrupt resolution must not be empty")
