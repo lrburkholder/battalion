@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -142,7 +143,12 @@ def _is_alive(pid: int) -> bool:
         return False
     # A terminated orphan can remain a zombie until the host's reaper runs.
     stat_path = Path(f"/proc/{pid}/stat")
-    return not (stat_path.exists() and stat_path.read_text().split()[2] == "Z")
+    if stat_path.exists():
+        try:
+            return stat_path.read_text().split()[2] != "Z"
+        except FileNotFoundError:
+            return False  # Reaped between the existence check and the read.
+    return True
 
 
 @pytest.mark.parametrize("cancel", [False, True])
@@ -167,7 +173,13 @@ def test_hanging_pytest_and_descendant_are_cleaned_up(tmp_path, cancel):
     assert result.cleanup_attempted
     assert result.cleanup_succeeded
     assert child_pid.exists(), result.output
-    assert not _is_alive(int(child_pid.read_text()))
+    pid = int(child_pid.read_text())
+    # SIGKILL delivery is asynchronous, and grandchildren cannot be reaped
+    # through the direct pytest Popen handle. Bound the observation wait.
+    cleanup_deadline = time.monotonic() + 2
+    while _is_alive(pid) and time.monotonic() < cleanup_deadline:
+        time.sleep(0.01)
+    assert not _is_alive(pid), f"pytest descendant {pid} survived cleanup"
     assert result.to_evidence().cancelled is cancel
 
 
