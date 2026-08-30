@@ -199,11 +199,11 @@ def run_driver(
 
     mode (BTN-11, ADR-006), if given, must be "red" or "green":
       - None (default): original BTN-5 combined behavior — loads
-        prompts/driver.md, no restriction on what files come back. Kept
+        battalion/prompts/driver.md, no restriction on what files come back. Kept
         as the default so existing callers are unaffected.
-      - "red": loads prompts/driver-red.md; every returned file must look
+      - "red": loads battalion/prompts/driver-red.md; every returned file must look
         like a test file (structurally enforced, not just prompted for).
-      - "green": loads prompts/driver-green.md; no returned file may look
+      - "green": loads battalion/prompts/driver-green.md; no returned file may look
         like a test file.
 
     Raises InfraFailure, WriteScopeMisconfigured, MalformedDriverOutput,

@@ -33,6 +33,7 @@ include = ["battalion*"]
 
 [tool.setuptools.package-data]
 "battalion.desktop" = ["assets/*", "assets/fonts/*"]
+"battalion.prompts" = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
