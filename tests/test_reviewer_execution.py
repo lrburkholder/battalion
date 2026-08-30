@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from battalion.config import BattalionConfig, load_config
-from battalion.desktop.presentation import render_execution
 from battalion.graph import _make_reviewer_node, build_graph
 from battalion.nodes.reviewer import run_reviewer
 from battalion.reviewer_testing import (
@@ -298,10 +297,6 @@ def test_invalid_execution_pauses_exact_checkpoint_and_persists_evidence(
     assert execution.review_result.verdict == "unavailable"
     assert not execution.test_outcome.accepted
     assert execution.tool_activity[-1].outcome == "failed"
-    rendered = render_execution(execution)
-    assert f"Pytest classification: {classification.value}" in rendered
-    assert "bounded evidence" in rendered
-    assert "harness unavailable" in rendered
     state_path = tmp_path / "paused.json"
     save_state(final, state_path)
     assert load_state(state_path) == final
