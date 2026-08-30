@@ -294,7 +294,7 @@ def test_run_driver_system_prompt_override_takes_effect(tmp_path):
 # --- BTN-11: RED/GREEN mode support ---
 
 def test_run_driver_no_mode_preserves_original_combined_behavior(tmp_path):
-    """Omitting mode entirely must load prompts/driver.md, unchanged from
+    """Omitting mode entirely must load battalion/prompts/driver.md, unchanged from
     BTN-5 -- this is the non-breaking guarantee from BTN-11's AC."""
     captured = {}
 

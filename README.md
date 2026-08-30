@@ -199,6 +199,21 @@ battalion setup \
 Driver and Reviewer must use different model identifiers. Use `--no-validate`
 only when intentionally skipping live provider connectivity checks.
 
+### Configure Role Prompts
+
+Battalion owns and ships the non-empty UTF-8 prompt assets under
+`battalion/prompts/` for Architect, Driver (combined, RED, and GREEN), Reviewer,
+Refactorer, Recon, and Tactician. Default loading uses Python package resources,
+so wheel installs and the frozen desktop worker do not depend on a repository
+checkout or a top-level `prompts/` directory.
+
+`battalion run` and `battalion resume` accept `--prompts-dir` for an explicit
+developer or operator override. Once supplied, that directory is authoritative:
+Battalion does not fill missing files from its packaged defaults. A requested
+missing, empty, or non-UTF-8 override raises a typed error that identifies the
+file and explains that the operator must complete the directory or omit the
+override.
+
 ### Configure Portable Integrations
 
 Provider bindings belong in the optional, repository-shareable
@@ -448,6 +463,16 @@ battalion/
 │   ├── refactorer.py           # Refactorer node (BTN-13)
 │   ├── recon.py                # Post-completion candidate generation (BTN-22)
 │   └── errors.py               # Shared node error types
+├── prompts/
+│   ├── loader.py             # Install-safe package-resource and override boundary
+│   ├── architect.md
+│   ├── driver.md
+│   ├── driver-red.md
+│   ├── driver-green.md
+│   ├── reviewer.md
+│   ├── refactorer.md
+│   ├── recon.md
+│   └── tactician.md
 ├── scope/
 │   ├── __init__.py
 │   └── tool_binding.py        # Write-scope tool binding (BTN-2)
@@ -455,14 +480,6 @@ battalion/
     ├── __init__.py
     ├── models.py              # State models (BTN-1)
     └── persistence.py          # JSON persistence (BTN-1)
-
-prompts/                        # Node system prompts, overridable per node
-├── architect.md
-├── driver.md
-├── driver-red.md
-├── driver-green.md
-├── reviewer.md
-└── refactorer.md
 
 tests/
 ├── test_acceptance.py         # End-to-end v1 acceptance criteria

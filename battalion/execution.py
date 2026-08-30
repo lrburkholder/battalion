@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from battalion.prompts.loader import DEFAULT_PROMPTS_DIR, prompt_contract_version
+from battalion.prompts.loader import load_prompt_template, prompt_contract_version
 from battalion.role_results import (
     RoleExecutionResult,
     RoleResultKind,
@@ -232,20 +232,13 @@ def _prompt_provenance(
     model_identity: str,
 ) -> PromptProvenance | None:
     name = _prompt_name(node_name)
-    path = (Path(prompts_dir) if prompts_dir is not None else DEFAULT_PROMPTS_DIR) / f"{name}.md"
-    if not path.is_file():
-        return None
+    template = load_prompt_template(name, prompts_dir=prompts_dir)
     revision = _git(_BATTALION_ROOT, "rev-parse", "HEAD")
-    resolved_path = path.resolve()
-    try:
-        template_path = resolved_path.relative_to(_BATTALION_ROOT).as_posix()
-    except ValueError:
-        template_path = resolved_path.as_posix()
     return PromptProvenance(
         template_identity=name,
-        template_path=template_path,
+        template_path=template.source,
         contract_version=prompt_contract_version(name),
-        template_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
+        template_hash=hashlib.sha256(template.content_bytes).hexdigest(),
         battalion_revision=revision,
         model_configuration_identity=_configuration_identity(
             model_configuration, model_identity

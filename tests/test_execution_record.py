@@ -213,7 +213,7 @@ def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(
     assert execution.operator_summary.last_node == "architect"
     assert execution.operator_summary.what_should_happen_next == "Continue at phase driver."
     assert execution.prompt_provenance.contract_version == "architect/v1"
-    assert execution.prompt_provenance.template_path == "prompts/architect.md"
+    assert execution.prompt_provenance.template_path == "battalion/prompts/architect.md"
     assert len(execution.prompt_provenance.template_hash) == 64
     assert len(execution.prompt_provenance.model_configuration_identity) == 64
     assert "must-not-be-retained" not in execution.model_dump_json()
