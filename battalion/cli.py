@@ -28,12 +28,14 @@ from battalion.interrupts.triggers import (
     TRIGGER_INFRA_FAILURE,
     TRIGGER_MANUAL_CHECKPOINT,
     TRIGGER_ROLE_EDIT,
+    TRIGGER_ROLE_ESCALATION,
     TRIGGER_SAME_ROOT_CAUSE,
     TRIGGER_SCOPE_VIOLATION,
     get_trigger_name,
 )
 from battalion.progress import ProgressDisplay
 from battalion.state.models import RunState, RunStatus
+from battalion.recovery import assess_recovery
 from battalion.config import load_config, DEFAULT_CONFIG_PATH
 from battalion.llm.litellm_client import ModelDiversityError
 from battalion.setup import (
@@ -43,13 +45,35 @@ from battalion.setup import (
     run_setup,
 )
 
+TROUBLESHOOTING_URL = "https://lrburkholder.github.io/battalion/docs/troubleshooting.html"
+INTERRUPT_GUIDES = {
+    TRIGGER_INFRA_FAILURE: "infra-failure",
+    TRIGGER_SCOPE_VIOLATION: "authority-stop",
+    TRIGGER_ROLE_EDIT: "authority-stop",
+    TRIGGER_BUDGET_EXCEEDED: "human-checkpoints",
+    TRIGGER_MANUAL_CHECKPOINT: "human-checkpoints",
+    TRIGGER_SAME_ROOT_CAUSE: "reviewer-tests",
+    TRIGGER_ROLE_ESCALATION: "role-output",
+}
+
 app = typer.Typer(
     name="battalion",
-    help="Battalion SDLC Orchestrator - run, resume, and check status of tickets.",
+    help=("Battalion SDLC Orchestrator - run, resume, and check status of tickets. "
+          f"Troubleshooting: {TROUBLESHOOTING_URL}"),
     add_completion=False,
 )
 
 STATE_DIR = Path(".battalion/state")
+
+
+def _print_troubleshooting(state: RunState) -> None:
+    if assess_recovery(state) is not None:
+        anchor = "resume-recovery"
+    elif state.interrupt_log:
+        anchor = INTERRUPT_GUIDES.get(state.interrupt_log[-1].trigger, "run-stopped")
+    else:
+        anchor = "run-stopped"
+    typer.echo(f"Troubleshooting: {TROUBLESHOOTING_URL}#{anchor}")
 
 
 def _state_path(run_id: str) -> Path:
@@ -85,6 +109,10 @@ def _print_status(
         typer.echo(f"Status:      {state.status.value}")
         typer.echo(f"Phase:       {state.phase}")
         typer.echo(f"Budget:      {state.budget.used} / {state.budget.limit}")
+        recovery = assess_recovery(state)
+        if recovery is not None:
+            typer.echo(f"Recovery:    {recovery.disposition}")
+            typer.echo(recovery.message)
         if state.manual_checkpoints:
             typer.echo(f"Checkpoints: {', '.join(state.manual_checkpoints)}")
         if state.interrupt_log:
@@ -137,6 +165,10 @@ def _print_status(
                 f"{summary['streamed_content_characters']} content chars, "
                 f"{known}"
             )
+        if recovery is not None or state.status in {
+            RunStatus.AWAITING_HUMAN, RunStatus.BLOCKED, RunStatus.FAILED_INFRA,
+        }:
+            _print_troubleshooting(state)
     else:
         if costs:
             typer.echo(json.dumps(cost_summary or {}, indent=2))
@@ -158,8 +190,8 @@ def _describe_interrupt(entry) -> str:
     if trigger == TRIGGER_INFRA_FAILURE:
         error = context.get("error")
         if error:
-            return f"{label}: the LLM call failed after all retries.\n   Provider error: {error}"
-        return f"{label}: the LLM call failed after all retries."
+            return f"{label}: execution failed.\n   Recorded error: {error}"
+        return f"{label}: execution failed; inspect the saved attempt and interrupt context."
     if trigger == TRIGGER_SCOPE_VIOLATION:
         error = context.get("error")
         if error:
@@ -181,11 +213,17 @@ def _describe_interrupt(entry) -> str:
 
 def _print_pause_reason(state: RunState, run_id: str) -> None:
     """After a run/resume pauses, print why it paused and how to continue."""
+    recovery = assess_recovery(state)
+    if recovery is not None:
+        typer.echo(f"Recovery: {recovery.disposition}. {recovery.message}")
+        _print_troubleshooting(state)
+        return
     if state.status != RunStatus.AWAITING_HUMAN or not state.interrupt_log:
         return
     entry = state.interrupt_log[-1]
     typer.echo("\nRun paused - awaiting human review.")
     typer.echo(f"  {_describe_interrupt(entry)}")
+    _print_troubleshooting(state)
     typer.echo(f"  Resume when ready: battalion resume {run_id}")
 
 
@@ -238,11 +276,10 @@ def run(
     # Load spec text
     spec_text = _load_spec_text(spec)
     
-    initial_state = create_initial_state(ticket_id, spec_text, cfg)
-    run_id = initial_state.run_id
-    
-    typer.echo(f"Starting run: {initial_state.run_alias} ({run_id})")
     try:
+        initial_state = create_initial_state(ticket_id, spec_text, cfg)
+        run_id = initial_state.run_id
+        typer.echo(f"Starting run: {initial_state.run_alias} ({run_id})")
         with _open_trace_output(trace_output) as (trace_stream, trace_path):
             if trace_path is not None:
                 typer.echo(f"Trace output: {trace_path}")
@@ -291,6 +328,9 @@ def resume(
     resolution: str = typer.Option(
         "authorized resume", "--resolution", help="Durable resolution for the latest interrupt"
     ),
+    action_id: str | None = typer.Option(
+        None, "--action-id", help="Stable request ID for idempotent resume replay",
+    ),
 ):
     """Resume a paused/interrupted run from saved state."""
     cfg = load_config(config, {"base_dir": base_dir, "prompts_dir": prompts_dir})
@@ -307,6 +347,7 @@ def resume(
                         config=cfg,
                         actor_id=actor_id,
                         resolution=resolution,
+                        action_id=action_id,
                     ),
                     state_dir=STATE_DIR,
                     on_node_event=display.handle_event,

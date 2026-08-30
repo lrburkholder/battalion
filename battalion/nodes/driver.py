@@ -199,11 +199,11 @@ def run_driver(
 
     mode (BTN-11, ADR-006), if given, must be "red" or "green":
       - None (default): original BTN-5 combined behavior — loads
-        prompts/driver.md, no restriction on what files come back. Kept
+        battalion/prompts/driver.md, no restriction on what files come back. Kept
         as the default so existing callers are unaffected.
-      - "red": loads prompts/driver-red.md; every returned file must look
+      - "red": loads battalion/prompts/driver-red.md; every returned file must look
         like a test file (structurally enforced, not just prompted for).
-      - "green": loads prompts/driver-green.md; no returned file may look
+      - "green": loads battalion/prompts/driver-green.md; no returned file may look
         like a test file.
 
     Raises InfraFailure, WriteScopeMisconfigured, MalformedDriverOutput,
@@ -211,6 +211,12 @@ def run_driver(
     failure — never silently swallows any of them."""
     if mode is not None and mode not in ("red", "green"):
         raise ValueError(f"mode must be 'red', 'green', or None, got {mode!r}")
+
+    phase_scope_key = "driver" if mode is None else f"driver_{mode}"
+    scope_key = scope_key_for_phase(state.write_scope, phase_scope_key)
+    write_tools = build_write_tools(
+        scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
+    )
 
     prompt_node_name = "driver" if mode is None else f"driver-{mode}"
     resolved_prompt = system_prompt or load_system_prompt(
@@ -262,11 +268,6 @@ def run_driver(
         except RoleResultRejected as exc:
             raise MalformedDriverOutput(str(exc)) from exc
 
-    phase_scope_key = "driver" if mode is None else f"driver_{mode}"
-    scope_key = scope_key_for_phase(state.write_scope, phase_scope_key)
-    write_tools = build_write_tools(
-        scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
-    )
     if not write_tools:
         raise WriteScopeMisconfigured(
             f"state.write_scope[{scope_key!r}] declares no write roots — "

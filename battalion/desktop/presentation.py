@@ -64,6 +64,7 @@ def render_run(run: ProjectRunInspection, worker: WorkerRecord | None = None) ->
 
     inspection = run.inspection
     state = inspection.state
+    recovery = None if worker is not None and worker.active else inspection.recovery
     executions = state.execution_record.node_executions
     calls = [call for execution in executions for call in execution.llm_calls]
     lines = [
@@ -78,9 +79,12 @@ def render_run(run: ProjectRunInspection, worker: WorkerRecord | None = None) ->
         f"Tokens: {sum(call.input_tokens for call in calls)} input / "
         f"{sum(call.output_tokens for call in calls)} output",
         f"Cost: {_aggregate_cost(calls)}",
-        f"Worker: {_worker_summary(worker)}",
+        f"Worker: {_worker_summary(worker, allow_replay=recovery is None or recovery.disposition == 'recoverable')}",
     ]
-    if state.status is RunStatus.AWAITING_HUMAN:
+    if recovery is not None:
+        lines.append(f"Recovery: {recovery.disposition} · {recovery.stage.value if recovery.stage else 'unavailable'}")
+        lines.append(recovery.message)
+    elif state.status is RunStatus.AWAITING_HUMAN:
         lines.append("Human action: interrupt resolution and resume available")
     queued_interventions = sum(
         item.disposition.value == "queued" for item in state.interventions
@@ -109,7 +113,7 @@ def render_execution(execution: NodeExecution) -> str:
         f"Outcome: {execution.outcome}",
         f"Attempt disposition: {execution.attempt_disposition or 'Unavailable (legacy)'}",
         f"Started: {execution.started_at.isoformat()}",
-        f"Ended: {execution.ended_at.isoformat()}",
+        f"Ended: {execution.ended_at.isoformat() if execution.ended_at else 'Not completed'}",
         "",
         "PROMPT PROVENANCE",
     ]
@@ -202,6 +206,26 @@ def render_execution(execution: NodeExecution) -> str:
             f"{review.cause or 'no rejection cause'}"
         )
 
+    process = execution.test_execution
+    if process is not None:
+        lines.extend((
+            f"Pytest classification: {process.classification.value}",
+            f"Command: {process.command!r}",
+            f"Working directory: {process.working_directory}",
+            f"Exit code: {process.returncode}",
+            f"Collected: {process.tests_collected}; failures: {process.failures}; errors: {process.errors}",
+            f"Duration: {process.duration_ms} ms; timeout: {process.timeout_seconds:g} s",
+            f"Timed out: {_yes_no(process.timed_out)}; cancelled: {_yes_no(process.cancelled)}",
+            f"Cleanup attempted: {_yes_no(process.cleanup_attempted)}; succeeded: {_yes_no(process.cleanup_succeeded)}",
+            f"Detail: {process.detail or 'None'}",
+            f"STDOUT ({process.stdout_observed_bytes} bytes; truncated={_yes_no(process.stdout_truncated)}):",
+            process.stdout,
+            f"STDERR ({process.stderr_observed_bytes} bytes; truncated={_yes_no(process.stderr_truncated)}):",
+            process.stderr,
+        ))
+    elif execution.role == "reviewer":
+        lines.append("Pytest process evidence: Unavailable (legacy or uncaptured)")
+
     lines.extend(("", "TOKEN AND COST EVIDENCE"))
     if not execution.llm_calls:
         lines.append("No model-call usage recorded")
@@ -288,10 +312,10 @@ def _aggregate_cost(calls: Iterable[LLMCallCost]) -> str:
     return f"{totals}; {unknown} unknown call(s); sources={','.join(sorted(sources)) or 'unknown'}"
 
 
-def _worker_summary(worker: WorkerRecord | None) -> str:
+def _worker_summary(worker: WorkerRecord | None, *, allow_replay: bool = True) -> str:
     if worker is None:
         return "Unavailable (no worker record)"
-    recovery = " · recoverable from durable state" if worker.recoverable else ""
+    recovery = " · recoverable from durable state" if worker.recoverable and allow_replay else ""
     error = f" · {worker.error}" if worker.error else ""
     return f"{worker.status.value}{recovery}{error}"
 

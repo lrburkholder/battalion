@@ -19,6 +19,11 @@ PUBLISHED_DOCUMENTS = {
     "plan.md": "plan.md",
     "docs/status.md": "docs/status.md",
     "docs/release.md": "docs/release.md",
+    "docs/getting-started.md": "docs/getting-started.md",
+    "docs/troubleshooting.md": "docs/troubleshooting.md",
+    "docs/contributing.md": "docs/contributing.md",
+    "docs/uat/cli.md": "docs/uat/cli.md",
+    "docs/uat/desktop.md": "docs/uat/desktop.md",
     "docs/adrs/README.md": "docs/adrs/index.md",
     **{
         f"docs/adrs/adr{number:04d}.md": f"docs/adrs/adr{number:04d}.md"

@@ -1,5 +1,10 @@
 # Releases and distribution
 
+For installation, artifact verification, and a first disposable project, use
+[Getting Started](getting-started.md). It distinguishes a named UAT candidate
+from an available published release; the workflow below does not imply that a
+release already exists. Source contributors use [contributor setup](contributing.md).
+
 ## Release contract
 
 `pyproject.toml` is the single source of truth for the Battalion application
@@ -27,7 +32,10 @@ release workflow. The workflow refuses to proceed unless the tag equals
    before the release tag.
 3. Create and push the matching maintainer-created tag, such as `v0.1.0`.
 4. The tag workflow validates the tag/version pair, runs the credential-free
-   deterministic test suite, then builds artifacts. Canonical Issue validation
+   deterministic test suite, then builds artifacts. It verifies the complete
+   declared prompt inventory in the wheel and sdist, installs the wheel in a
+   clean virtual environment outside the source checkout, exercises
+   `battalion --help`, and loads every shipped prompt. Canonical Issue validation
    is performed separately by the status-governance workflow.
 5. It uploads wheel, source distribution, Windows desktop ZIP, provenance
    metadata, and SHA-256 checksum files to a GitHub Release for that tag.
@@ -57,6 +65,11 @@ desktop executable. This is a deliberate initial packaging mechanism, not a
 claim that a raw Python wheel or a Nuitka directory is a sufficient onboarding
 experience.
 
+The frozen worker explicitly includes Battalion's package-owned role prompts.
+Release validation starts the produced worker in its credential-free prompt
+smoke mode and requires every declared prompt to load from the bundle before
+the desktop ZIP is assembled.
+
 A conventional native installer (for example MSIX or a signed installer) is
 deferred. It needs a separate decision covering code signing, per-user versus
 per-machine scope, upgrade/rollback behavior, uninstall, Windows SmartScreen
@@ -64,6 +77,11 @@ experience, and clean-machine validation. macOS and Linux artifacts are also
 out of scope until their packaging and support evidence exists.
 
 ## First-run onboarding direction
+
+The current artifact-based CLI/configuration and desktop inspection path is
+documented in [Getting Started](getting-started.md), including the frozen
+worker's pytest execution limitation. Prompt smoke validation alone is not
+end-to-end desktop UAT acceptance.
 
 Release packaging is mechanical; onboarding owns user-specific configuration.
 The eventual first-run experience will:

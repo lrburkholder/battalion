@@ -2,6 +2,13 @@
 
 ## Status
 
+BTN-166 is implemented on this branch, pending review and merge: the scoped-tool
+factory validates every directory and single-file authority declaration against the resolved
+project boundary. Application start/resume and worker launch reject invalid
+configuration before execution, with binding and use-time checks preserving
+the existing role limits. The amendments to ADR-0002 and ADR-0013 also require
+future BTN-123 isolated workspaces to reuse this containment rule.
+
 The v1 execution architecture is complete and validated. BTN-16 and BTN-19
 through BTN-28 add durable cost and execution evidence, the human-audited Recon
 and Intel lifecycle, deterministic context assembly, caller-owned run
@@ -73,6 +80,20 @@ and authorized human acceptance; the existing checkpoint reviewer remains a
 RejectionAnalyzer rather than a substitute for that review. Durable Run linkage,
 restart/resume, and the independent Review Run implementation remain follow-up
 work under BTN-143 and RFC-0014's implementation decomposition.
+BTN-164 is in progress on this branch. Reviewer accepts only classified pytest
+pass/failure evidence with collected tests, bounds execution time, and pauses
+invalid harness outcomes at the same checkpoint through interrupt #5. The
+explicit project-input materialization policy and execution-record `1.6`
+evidence amend ADR-0007, ADR-0013, and ADR-0014 without changing role authority.
+
+BTN-165 is in progress on this branch. Durable resume intents preserve the
+original human authorization across process failures. Execution-record `1.7`
+registers unfinished attempts atomically with intervention delivery, and a
+typed graph cursor retains attempt stage, bounded correction context, and the
+exact successor. CLI and desktop classify recovery from this saved evidence.
+Unknown started-attempt outcomes require workspace inspection and a new run;
+they are not automatically replayed. Amendments to ADR-0014 and ADR-0023 keep
+the existing role, write-scope, and six-interrupt authority unchanged.
 
 ## Architecture overview
 
@@ -112,8 +133,10 @@ battalion/
   config.py               # YAML, environment, and CLI configuration merge
   context.py              # bounded role, Instinct, and human-action assembly
   execution.py            # durable node evidence, provenance, and cost views
+  reviewer_testing.py     # admitted test inputs and bounded pytest process lifecycle
   setup.py                # provider discovery and connectivity setup (BTN-15)
   graph.py                # graph construction, routing, pause, and resume
+  recovery.py             # pure classification of durable recovery evidence
   progress.py             # CLI progress projection
   intel/
     models.py             # candidate and accepted Instinct contracts
@@ -130,16 +153,16 @@ battalion/
     refactorer.py
     errors.py
   prompts/
-    loader.py             # prompt loading and overrides
+    loader.py             # install-safe package-resource and override boundary
+    *.md                  # Battalion-owned runtime prompt assets
   scope/
-    tool_binding.py       # per-node scoped write-tool factory
+    tool_binding.py       # project containment and per-node scoped write-tool factory
   interrupts/
     triggers.py           # six v1 interrupt checks
     budget.py             # per-run budget tracking
   llm/
     litellm_client.py     # per-node model configuration and invocation
 
-prompts/                  # externalized role prompts
 benchmarks/desktop/        # shared disposable framework-spike control case
 tests/                    # unit and end-to-end acceptance tests
 ```
@@ -163,10 +186,10 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0004](docs/adrs/adr0004.md) | Implement native Battalion roles |
 | [ADR-0005](docs/adrs/adr0005.md) | Externalize role prompts |
 | [ADR-0006](docs/adrs/adr0006.md) | Split Driver into RED and GREEN modes |
-| [ADR-0007](docs/adrs/adr0007.md) | Review against an expected outcome |
+| [ADR-0007](docs/adrs/adr0007.md) | Review against a classified, bounded expected test outcome |
 | [ADR-0008](docs/adrs/adr0008.md) | Give Refactorer Driver's implementation scope |
 | [ADR-0009](docs/adrs/adr0009.md) | Count rejection causes per checkpoint type |
-| [ADR-0013](docs/adrs/adr0013.md) | Bind write tools to project layout phases |
+| [ADR-0013](docs/adrs/adr0013.md) | Bind write tools to project layout phases and explicitly materialize Reviewer inputs |
 | [ADR-0014](docs/adrs/adr0014.md) | Persist a bounded execution record in RunState |
 | [ADR-0015](docs/adrs/adr0015.md) | Keep Recon outside the completed execution graph |
 | [ADR-0016](docs/adrs/adr0016.md) | Make Instinct promotion an audited human boundary |
@@ -209,6 +232,26 @@ Resume must continue from the recorded graph target rather than restarting the
 ticket or bypassing a checkpoint.
 
 ## Delivery sequence
+
+BTN-171 prepares [Troubleshooting and recovery](docs/troubleshooting.md) on this
+branch, with symptom-based diagnostics, candidate-specific BTN-164/BTN-165
+recovery limits, worker/state backup guidance, stable CLI help/status links,
+and credential-free publication/command checks. CLI and desktop UAT recovery
+scenarios record the operator's 2026-08-30 approval for preparation/PR handoff,
+with further documentation feedback expected during UAT; final live acceptance
+remains BTN-129/BTN-132 after BTN-173. No runtime authority or
+interrupt policy changes, ticket completion, or live Pages deployment are
+implied by guide preparation.
+
+BTN-170 prepares artifact-first [Getting Started](docs/getting-started.md),
+separate [contributor setup](docs/contributing.md), and documentation-driven
+[CLI](docs/uat/cli.md)/[desktop](docs/uat/desktop.md) UAT scripts. The guide uses
+identified wheels/Windows ZIPs, clean Python environments, checksums/provenance,
+and a disposable Run with an explicit checkpoint and canonical UUID. Script
+review and credential-free checks precede integration; final live acceptance
+belongs to BTN-129/BTN-132 after BTN-173. Public Pages availability requires the
+main publication pipeline. The documented frozen-worker pytest limitation
+remains a desktop release-gate finding, not an onboarding workaround.
 
 The v1 implementation landed in this dependency order:
 
@@ -360,7 +403,10 @@ evidence; write-scope violations remain hard authority interrupts
 - A single node can consume most of a run-level budget. Per-call cost evidence
   is now durable, but it intentionally does not change v1 budget interrupts.
 - Role prompts evolve faster than node code. Prompt changes can still change
-  behavior materially and should be reviewed as role-definition changes.
+  behavior materially and should be reviewed as role-definition changes. BTN-163
+  packages the declared prompt inventory with Python and frozen-worker artifacts,
+  while explicit override directories remain authoritative and fail closed when
+  incomplete.
 - BTN-26 persists the supplied specification in `RunState` and assembles
   deterministic, bounded context for Architect, Driver RED/GREEN, and
   Refactorer through one canonical context path. BTN-129 narrows Refactorer

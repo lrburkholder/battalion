@@ -1,41 +1,33 @@
-"""Reviewer node (BTN-6, extended in BTN-12).
+"""Independent Reviewer checkpoint policy (BTN-6, BTN-12, BTN-164).
 
-Reviewer's core mechanism is unchanged from BTN-6: copy the configured project
-root into an isolated location, re-run the tests that exist there via
-subprocess, never trust a self-reported pass/fail. What BTN-12 adds is
-checkpoint-awareness (ADR-007, ADR-009): which outcome counts as "accept"
-depends on the checkpoint being reviewed --
-
-  RED_CHECK:      accept means tests FAIL (the feature genuinely doesn't
-                   exist yet) -- accepting means advancing to Driver(GREEN)
-  GREEN_CHECK:     accept means tests PASS -- advancing to Refactorer
-  REFACTOR_CHECK:  accept means tests still PASS after refactoring --
-                   advancing to 'done'
-
-This corrects a real bug caught during the architecture pass before BTN-7:
-BTN-6's original always-pass-is-accept logic would have silently rejected
-every correctly-written RED-check test.
-
-Reviewer's declared write scope is always empty — it never writes files,
-only reads (to build the clean copy) and calls the LLM to articulate a
-rejection cause.
+RED accepts only a collected-test failure; GREEN and REFACTOR accept only a
+valid pass. Harness outcomes pause through the typed infrastructure path.
+Reviewer has no project write tools; test mechanics own disposable scratch.
 """
 from __future__ import annotations
 
 import shutil
-import subprocess
-import sys
-import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from battalion.execution import (
+    record_review_decision, record_reviewer_workspace, record_test_execution,
+)
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.llm.response import extract_content
 from battalion.nodes.errors import RoleOutputError, WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
+from battalion.reviewer_testing import (
+    DEFAULT_TEST_TIMEOUT_SECONDS,
+    ReviewerTestExecutionError,
+    TestRunResult,
+    make_clean_copy,
+    run_tests_via_subprocess,
+)
 from battalion.scope.tool_binding import build_write_tools
-from battalion.state.models import CheckpointType, RejectionRecord, RunState, RunStatus
+from battalion.state.models import (
+    CheckpointType, RejectionRecord, RunState, RunStatus, TestExecutionClassification,
+)
 
 # expect_pass derived from checkpoint (ADR-007) -- one source of truth,
 # rather than a separate expect_pass param a caller could set
@@ -64,14 +56,6 @@ _RETRY_PHASE_ON_REJECT: dict[CheckpointType, str] = {
 }
 
 
-@dataclass
-class TestRunResult:
-    __test__ = False  # tell pytest this isn't a test class despite the name
-    passed: bool
-    output: str
-    returncode: int
-
-
 class EmptyReviewContent(RoleOutputError):
     """Raised when the LLM returns empty/whitespace-only rejection-cause
     content. Without this check, an unusable cause string could be
@@ -79,42 +63,8 @@ class EmptyReviewContent(RoleOutputError):
     built in BTN-8)."""
 
 
-class SourceTreeMissing(Exception):
+class SourceTreeMissing(RoleOutputError):
     """Backward-compatible name for a missing configured project root."""
-
-
-def make_clean_copy(src_dir: str | Path) -> Path:
-    """Copy src_dir into a fresh temporary directory, independent of the
-    original — this is the "clean tree" in clean-tree re-verification.
-
-    Repository metadata, local environments, and generated caches are not
-    project inputs and can make root-level copies prohibitively large.
-    """
-    dest = Path(tempfile.mkdtemp(prefix="battalion-clean-"))
-    ignore = shutil.ignore_patterns(
-        ".battalion", ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-        ".venv", "__pycache__", "node_modules",
-    )
-    shutil.copytree(src_dir, dest, dirs_exist_ok=True, ignore=ignore)
-    return dest
-
-
-def run_tests_via_subprocess(clean_dir: str | Path) -> TestRunResult:
-    """Run pytest in clean_dir via subprocess. This is the real, un-mocked
-    default — Reviewer never takes Driver's word for pass/fail.
-
-    Uses sys.executable (the interpreter running Battalion) rather than the
-    bare "python" from PATH, so the clean-tree re-run uses the same Python
-    that has Battalion's test dependencies installed regardless of which
-    venv the caller activated."""
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q"],
-        cwd=str(clean_dir),
-        capture_output=True,
-        text=True,
-    )
-    output = proc.stdout + proc.stderr
-    return TestRunResult(passed=proc.returncode == 0, output=output, returncode=proc.returncode)
 
 
 def run_reviewer(
@@ -126,9 +76,11 @@ def run_reviewer(
     system_prompt: str | None = None,
     prompts_dir: str | Path | None = None,
     make_clean_copy_fn: Callable[[Path], Path] = make_clean_copy,
-    run_tests_fn: Callable[[Path], TestRunResult] = run_tests_via_subprocess,
+    run_tests_fn: Callable[[Path], TestRunResult] | None = None,
     on_stream: Callable[[dict], None] | None = None,
     instinct_context: str | None = None,
+    test_timeout_seconds: float = DEFAULT_TEST_TIMEOUT_SECONDS,
+    cancellation_requested: Callable[[], bool] | None = None,
 ) -> RunState:
     """Independently re-run tests from a clean copy of the project root.
 
@@ -157,16 +109,37 @@ def run_reviewer(
 
     clean_dir = make_clean_copy_fn(project_root)
     try:
-        result = run_tests_fn(clean_dir)
+        record_reviewer_workspace(clean_dir)
+        if run_tests_fn is None:
+            result = run_tests_via_subprocess(
+                clean_dir,
+                timeout_seconds=test_timeout_seconds,
+                cancellation_requested=cancellation_requested,
+            )
+        else:
+            result = run_tests_fn(clean_dir)
     finally:
         # Clean-tree copies are single-use scratch space — remove them so
         # repeated review runs don't leak directories under /tmp.
         shutil.rmtree(clean_dir, ignore_errors=True)
 
+    record_test_execution(result.to_evidence())
+    valid_verdicts = {
+        TestExecutionClassification.PASSED,
+        TestExecutionClassification.TEST_FAILED,
+    }
+    if result.classification not in valid_verdicts:
+        raise ReviewerTestExecutionError(result)
+
     expect_pass = _EXPECT_PASS_BY_CHECKPOINT[checkpoint]
-    accepted = result.passed == expect_pass
+    accepted = (
+        result.classification is TestExecutionClassification.PASSED
+        if expect_pass
+        else result.classification is TestExecutionClassification.TEST_FAILED
+    )
 
     if accepted:
+        record_review_decision(checkpoint, accepted=True)
         next_phase = _NEXT_PHASE_ON_ACCEPT[checkpoint]
         next_status = RunStatus.DONE if next_phase == "done" else RunStatus.IN_PROGRESS
         return state.model_copy(update={"phase": next_phase, "status": next_status})
@@ -202,6 +175,7 @@ def run_reviewer(
     new_history = state.reviewer_rejection_history + [
         RejectionRecord(cause=cause.strip(), cycle_number=cycle_number, checkpoint=checkpoint)
     ]
+    record_review_decision(checkpoint, accepted=False, cause=cause.strip())
     return state.model_copy(update={
         "phase": _RETRY_PHASE_ON_REJECT[checkpoint],
         "status": RunStatus.IN_PROGRESS,

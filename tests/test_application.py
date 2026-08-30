@@ -12,6 +12,7 @@ from battalion.application import (
     ResumeRun,
     RunAlreadyExists,
     RunIdentityChanged,
+    RunRecoveryUnsafe,
     RunNotFound,
     StartRun,
     StartWorkItemRun,
@@ -174,7 +175,7 @@ def test_start_run_returns_typed_identity_and_persists_graph_result(tmp_path):
         )
 
     result = start_run(
-        StartRun(initial_state=initial, config=BattalionConfig()),
+        StartRun(initial_state=initial, config=BattalionConfig(reviewer_test_timeout_seconds=17)),
         state_dir=tmp_path,
         _execute=execute,
     )
@@ -186,6 +187,7 @@ def test_start_run_returns_typed_identity_and_persists_graph_result(tmp_path):
     assert result.state_path.exists()
     assert captured["initial_state"] is initial
     assert captured["llm_configs"] == BattalionConfig().models
+    assert captured["reviewer_test_timeout_seconds"] == 17
 
 
 def test_graph_execution_cannot_replace_canonical_run_identity(tmp_path):
@@ -245,13 +247,14 @@ def test_resume_run_loads_canonical_state_and_persists_result(tmp_path):
     result = resume_run(
         ResumeRun(
             run_id=paused.run_id,
-            config=BattalionConfig(base_dir=str(tmp_path)),
+            config=BattalionConfig(base_dir=str(tmp_path), reviewer_test_timeout_seconds=23),
         ),
         state_dir=tmp_path,
         _execute=execute,
     )
 
     assert captured["state"].interrupt_log == paused.interrupt_log
+    assert captured["reviewer_test_timeout_seconds"] == 23
     assert captured["state"].human_action_log[-1].kind == "interrupt-resolution"
     assert captured["state"].human_action_log[-1].target == "legacy-pause"
     assert result.warning is None
@@ -373,7 +376,7 @@ def test_node_checkpoint_preserves_progress_if_worker_crashes(tmp_path):
         kwargs["on_state_checkpoint"](progressed)
         raise RuntimeError("simulated worker crash")
 
-    with pytest.raises(RuntimeError, match="simulated worker crash"):
+    with pytest.raises(RunRecoveryUnsafe, match="No safe replay cursor"):
         start_run(
             StartRun(initial_state=initial, config=BattalionConfig()),
             state_dir=tmp_path,

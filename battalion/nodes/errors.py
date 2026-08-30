@@ -5,6 +5,9 @@ provider responses pause through the documented failure interrupt rather than
 being indistinguishable from an application defect.
 """
 
+# Keep the original import path compatible; scope owns configuration failures.
+from battalion.scope.tool_binding import WriteScopeMisconfigured
+
 
 class RoleOutputError(Exception):
     """A role returned unusable content for its declared response contract.
@@ -45,9 +48,3 @@ class RoleContractViolation(RoleOutputError):
             f"Correct the same role output and return only output that satisfies its role contract."
             f"{path_detail}"
         )
-
-
-class WriteScopeMisconfigured(Exception):
-    """Raised when a node's declared write_scope doesn't grant it the
-    write-tool entry it needs to do its job — a config error, not a
-    runtime scope violation (see battalion.scope.tool_binding for that)."""

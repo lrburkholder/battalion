@@ -9,9 +9,11 @@ layout: default
     <h1>Keep the engineer in command.<br><span>Put the workflow to work.</span></h1>
     <p class="lede">Battalion coordinates specialized AI roles through a transparent delivery loop, with mechanical write scopes, explicit human interrupt points, and durable evidence for every attempt.</p>
     <div class="hero-actions">
-      <a class="button primary" href="https://github.com/lrburkholder/battalion">Explore the repository</a>
+      <a class="button primary" href="docs/getting-started.html">Get started</a>
       <a class="button" href="docs/operator/workflow.html">Read the operator guide</a>
+      <a class="button" href="docs/troubleshooting.html">Troubleshoot a Run</a>
     </div>
+    <p>No public GitHub Release is available as of 2026-08-30. Getting Started explains named UAT candidates, release availability, and artifact verification.</p>
   </div>
   <div class="hero-mark" aria-hidden="true">
     <img src="{{ '/assets/mark-transparent.svg' | relative_url }}" alt="" width="280" height="280">
