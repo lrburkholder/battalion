@@ -200,8 +200,8 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.4` (BTN-154); persisted `1.0` through
-`1.2` records remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.5` (BTN-133); persisted `1.0` through
+`1.4` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
@@ -244,6 +244,18 @@ and retry or escalation disposition. Battalion supplies one deterministic
 automatic correction retry to the same role and phase; it consumes the normal
 Run budget. A repeated violation pauses through the established human-interrupt
 path. This never weakens scoped-write or other authority-violation handling.
+
+Version `1.5` adds an optional, versioned `role_result` to node execution
+evidence. Driver RED/GREEN may record `completed-with-change`, `blocked`, or
+`escalated`; Refactorer also records `completed-with-no-change` when its
+existing explicit no-op contract applies. Battalion validates role/mode policy,
+bounded reason codes, evidence references against the input evidence supplied
+to that node attempt, and observed artifacts before it constructs this record.
+A blocked result preserves the incomplete stage and
+ends the current run until a human records that the missing condition has been
+addressed; an escalated result enters the existing durable human-resolution
+boundary. Neither route advances through the normal success edge, and malformed
+or prohibited output remains a deterministic failure.
 
 ### Instinct data contract
 

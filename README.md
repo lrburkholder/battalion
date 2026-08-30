@@ -42,6 +42,7 @@ Current work status is generated from the canonical [GitHub Issues](https://gith
 | `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | Complete (BTN-36) |
 | `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | Complete (BTN-42–43) |
 | `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | Complete (BTN-16, BTN-19, BTN-35) |
+| `battalion.role_results` | Typed role-result submission policy, canonical construction, and bounded evidence validation | In progress (BTN-133) |
 | `battalion.context` | Bounded role context assembly and Instinct injection | Complete (BTN-26) |
 | `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | Complete |
 | `battalion.llm.litellm_client` | Per-node model configuration | Complete |
@@ -111,6 +112,9 @@ The versioned state contract includes:
   nullable decimal cost with separate currency and source. It retains rejected
   pre-write role-contract candidates separately from successful role outcomes,
   including the correction attempt and proof that no prohibited write occurred.
+  Driver and Refactorer attempts also retain a normalized typed role result
+  when applicable, so valid change, no-change, blocked, and escalated outcomes
+  are inspectable without reconstructing intent from prose.
 
 ### Interrupt Taxonomy (v1)
 

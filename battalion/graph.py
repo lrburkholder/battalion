@@ -67,6 +67,7 @@ NODE_REFACTORER = "refactorer"
 NODE_REVIEWER_REFACTOR = "reviewer_refactor"
 NODE_DONE = "done"
 NODE_PAUSE = "awaiting_human"
+NODE_BLOCKED = "blocked"
 
 
 def _role_instincts(
@@ -403,6 +404,22 @@ def _scaffold_node(
                 )
                 return capture.finish(entered_state, paused, checkpoint=finish_checkpoint)
 
+            # A valid typed blocked/escalated role result owns its routing.
+            # Do not reinterpret it as a normal success edge or let unrelated
+            # post-success triggers overwrite its durable state.
+            if new_state.status in {RunStatus.AWAITING_HUMAN, RunStatus.BLOCKED}:
+                if on_node_event is not None:
+                    on_node_event({
+                        "type": "node_end",
+                        "node": node_name,
+                        "phase": new_state.phase,
+                        "budget": {
+                            "used": new_state.budget.used,
+                            "limit": new_state.budget.limit,
+                        },
+                    })
+                return capture.finish(entered_state, new_state, checkpoint=finish_checkpoint)
+
             # Check interrupts after successful node execution.
             should_pause, trigger_id, context = check_any_trigger(
                 new_state, old_state=state,
@@ -665,6 +682,13 @@ def _make_pause_node() -> Callable[[RunState], RunState]:
     return node
 
 
+def _make_blocked_node() -> Callable[[RunState], RunState]:
+    """Terminal node for a valid role-declared missing prerequisite."""
+    def node(state: RunState) -> RunState:
+        return state.model_copy(update={"status": RunStatus.BLOCKED})
+    return node
+
+
 def _should_check_trigger_1(state: RunState) -> str:
     """Route condition: check if trigger #1 (same root cause twice) fires.
     
@@ -751,6 +775,7 @@ def build_graph(
     )
     done_node = _make_done_node()
     pause_node = _make_pause_node()
+    blocked_node = _make_blocked_node()
 
     def checkpointed(
         node: Callable[[RunState], RunState],
@@ -774,6 +799,7 @@ def build_graph(
     reviewer_refactor_node = checkpointed(reviewer_refactor_node)
     done_node = checkpointed(done_node)
     pause_node = checkpointed(pause_node)
+    blocked_node = checkpointed(blocked_node)
     
     # --- Register nodes ---
     graph.add_node(NODE_ARCHITECT, architect_node)
@@ -785,6 +811,7 @@ def build_graph(
     graph.add_node(NODE_REVIEWER_REFACTOR, reviewer_refactor_node)
     graph.add_node(NODE_DONE, done_node)
     graph.add_node(NODE_PAUSE, pause_node)
+    graph.add_node(NODE_BLOCKED, blocked_node)
     
     # --- Define edges ---
     #
@@ -800,17 +827,19 @@ def build_graph(
         def gate(state: RunState) -> str:
             if state.status == RunStatus.AWAITING_HUMAN:
                 return NODE_PAUSE
+            if state.status == RunStatus.BLOCKED:
+                return NODE_BLOCKED
             return next_node
         return gate
 
     # Architect -> Driver(RED)
     graph.add_conditional_edges(
-        NODE_ARCHITECT, _pause_gate(NODE_DRIVER_RED), [NODE_DRIVER_RED, NODE_PAUSE]
+        NODE_ARCHITECT, _pause_gate(NODE_DRIVER_RED), [NODE_DRIVER_RED, NODE_PAUSE, NODE_BLOCKED]
     )
 
     # Driver(RED) -> Reviewer(RED_CHECK)
     graph.add_conditional_edges(
-        NODE_DRIVER_RED, _pause_gate(NODE_REVIEWER_RED), [NODE_REVIEWER_RED, NODE_PAUSE]
+        NODE_DRIVER_RED, _pause_gate(NODE_REVIEWER_RED), [NODE_REVIEWER_RED, NODE_PAUSE, NODE_BLOCKED]
     )
 
     # Reviewer(RED_CHECK) conditional edges.
@@ -828,15 +857,16 @@ def build_graph(
         NODE_REVIEWER_RED,
         lambda state: (
             NODE_PAUSE if state.status == RunStatus.AWAITING_HUMAN
+            else NODE_BLOCKED if state.status == RunStatus.BLOCKED
             else NODE_DRIVER_GREEN if state.phase == "driver_green"
             else NODE_DRIVER_RED
         ),
-        [NODE_DRIVER_GREEN, NODE_DRIVER_RED, NODE_PAUSE],
+        [NODE_DRIVER_GREEN, NODE_DRIVER_RED, NODE_PAUSE, NODE_BLOCKED],
     )
 
     # Driver(GREEN) -> Reviewer(GREEN_CHECK)
     graph.add_conditional_edges(
-        NODE_DRIVER_GREEN, _pause_gate(NODE_REVIEWER_GREEN), [NODE_REVIEWER_GREEN, NODE_PAUSE]
+        NODE_DRIVER_GREEN, _pause_gate(NODE_REVIEWER_GREEN), [NODE_REVIEWER_GREEN, NODE_PAUSE, NODE_BLOCKED]
     )
 
     # Reviewer(GREEN_CHECK) conditional edges.
@@ -850,15 +880,16 @@ def build_graph(
         NODE_REVIEWER_GREEN,
         lambda state: (
             NODE_PAUSE if state.status == RunStatus.AWAITING_HUMAN
+            else NODE_BLOCKED if state.status == RunStatus.BLOCKED
             else NODE_REFACTORER if state.phase == "refactorer"
             else NODE_DRIVER_GREEN
         ),
-        [NODE_REFACTORER, NODE_DRIVER_GREEN, NODE_PAUSE],
+        [NODE_REFACTORER, NODE_DRIVER_GREEN, NODE_PAUSE, NODE_BLOCKED],
     )
 
     # Refactorer -> Reviewer(REFACTOR_CHECK)
     graph.add_conditional_edges(
-        NODE_REFACTORER, _pause_gate(NODE_REVIEWER_REFACTOR), [NODE_REVIEWER_REFACTOR, NODE_PAUSE]
+        NODE_REFACTORER, _pause_gate(NODE_REVIEWER_REFACTOR), [NODE_REVIEWER_REFACTOR, NODE_PAUSE, NODE_BLOCKED]
     )
 
     # Reviewer(REFACTOR_CHECK) conditional edges.
@@ -868,10 +899,11 @@ def build_graph(
         NODE_REVIEWER_REFACTOR,
         lambda state: (
             NODE_PAUSE if state.status == RunStatus.AWAITING_HUMAN
+            else NODE_BLOCKED if state.status == RunStatus.BLOCKED
             else NODE_DONE if state.phase == "done"
             else NODE_REFACTORER
         ),
-        [NODE_DONE, NODE_REFACTORER, NODE_PAUSE],
+        [NODE_DONE, NODE_REFACTORER, NODE_PAUSE, NODE_BLOCKED],
     )
 
     # PAUSE is a clean terminal within a single invoke() call: whenever an
@@ -881,6 +913,7 @@ def build_graph(
     # conditional entry point below), not by PAUSE routing onward — a single
     # invoke() never continues past a real pause.
     graph.add_edge(NODE_PAUSE, END)
+    graph.add_edge(NODE_BLOCKED, END)
     
     # DONE is terminal - use END constant
     graph.add_edge(NODE_DONE, END)

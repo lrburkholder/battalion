@@ -6,8 +6,16 @@ import pytest
 from pydantic import ValidationError
 
 from battalion.graph import build_graph, resume_ticket
-from battalion.execution import ExecutionCapture
+from battalion.execution import ExecutionCapture, record_role_result
 from battalion.llm.litellm_client import NodeLLMConfig
+from battalion.role_results import (
+    DriverReasonCode,
+    RoleResultEvidenceReference,
+    RoleResultKind,
+    RoleResultRejected,
+    RoleResultSubmission,
+    submit_role_result,
+)
 from battalion.state.models import (
     Budget, CheckpointType, CodeProvenance, EvidenceReference, ExecutionRecord,
     NodeExecution, RunState, RunStatus,
@@ -125,13 +133,47 @@ def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph
 
 
 def test_execution_record_format_is_versioned_and_validated():
-    assert ExecutionRecord().schema_version == "1.4"
+    assert ExecutionRecord().schema_version == "1.5"
     assert ExecutionRecord(schema_version="1.0").schema_version == "1.0"
     assert ExecutionRecord(schema_version="1.1").schema_version == "1.1"
     assert ExecutionRecord(schema_version="1.2").schema_version == "1.2"
     assert ExecutionRecord(schema_version="1.3").schema_version == "1.3"
+    assert ExecutionRecord(schema_version="1.4").schema_version == "1.4"
     with pytest.raises(ValidationError):
         ExecutionRecord(schema_version="2.0")
+
+
+def test_role_result_evidence_must_match_the_capture_inputs(tmp_path):
+    state = _state()
+    result = submit_role_result(
+        RoleResultSubmission(
+            kind=RoleResultKind.ESCALATED,
+            reason_code=DriverReasonCode.SPECIFICATION_AMBIGUITY,
+            summary="The accepted plan conflicts with the ticket objective.",
+            evidence_refs=[
+                RoleResultEvidenceReference(kind="artifact", reference="plan.md")
+            ],
+        ),
+        role="driver",
+        mode="red",
+    )
+    capture = ExecutionCapture.start(state, "driver_red", "driver-model", tmp_path)
+    record_role_result(result)
+    completed = capture.finish(
+        state,
+        state.model_copy(update={"phase": "awaiting_human", "status": RunStatus.AWAITING_HUMAN}),
+    )
+    assert completed.execution_record.node_executions[-1].role_result == result
+
+    capture = ExecutionCapture.start(state, "driver_red", "driver-model", tmp_path)
+    result_with_unknown_evidence = result.model_copy(update={
+        "evidence_refs": [
+            RoleResultEvidenceReference(kind="artifact", reference="unseen.md")
+        ]
+    })
+    with pytest.raises(RoleResultRejected, match="not supplied"):
+        record_role_result(result_with_unknown_evidence)
+    capture.finish(state, state)
 
 
 def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(tmp_path):
