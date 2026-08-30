@@ -377,6 +377,7 @@ def test_malformed_recovery_identity_is_a_typed_read_failure(paused, monkeypatch
     (ProgressStage.ATTEMPT_STARTED, "terminal"),
 ])
 def test_desktop_projects_typed_recovery_and_unfinished_attempt(paused, monkeypatch, stage, disposition):
+    pytest.importorskip("PySide6")
     from battalion.application import ProjectRunInspection
     from battalion.identity import RunCatalogEntry
     from battalion.desktop.presentation import render_run, render_execution
