@@ -11,6 +11,7 @@ layout: default
     <div class="hero-actions">
       <a class="button primary" href="docs/getting-started.html">Get started</a>
       <a class="button" href="docs/operator/workflow.html">Read the operator guide</a>
+      <a class="button" href="docs/troubleshooting.html">Troubleshoot a Run</a>
     </div>
     <p>No public GitHub Release is available as of 2026-08-30. Getting Started explains named UAT candidates, release availability, and artifact verification.</p>
   </div>

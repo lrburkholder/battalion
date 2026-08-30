@@ -233,6 +233,16 @@ ticket or bypassing a checkpoint.
 
 ## Delivery sequence
 
+BTN-171 prepares [Troubleshooting and recovery](docs/troubleshooting.md) on this
+branch, with symptom-based diagnostics, candidate-specific BTN-164/BTN-165
+recovery limits, worker/state backup guidance, stable CLI help/status links,
+and credential-free publication/command checks. CLI and desktop UAT recovery
+scenarios record the operator's 2026-08-30 approval for preparation/PR handoff,
+with further documentation feedback expected during UAT; final live acceptance
+remains BTN-129/BTN-132 after BTN-173. No runtime authority or
+interrupt policy changes, ticket completion, or live Pages deployment are
+implied by guide preparation.
+
 BTN-170 prepares artifact-first [Getting Started](docs/getting-started.md),
 separate [contributor setup](docs/contributing.md), and documentation-driven
 [CLI](docs/uat/cli.md)/[desktop](docs/uat/desktop.md) UAT scripts. The guide uses

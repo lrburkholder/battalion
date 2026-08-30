@@ -1,8 +1,13 @@
 # Desktop UI UAT plan
 
-**Status:** Prepared for operator review under BTN-170; record reviewer, date,
-script revision, and approval decision before formal execution. No final live
-acceptance is claimed. [BTN-132](https://github.com/lrburkholder/battalion/issues/206)
+**Status:** Approved as the BTN-170/BTN-171 preparation baseline for downstream
+UAT. The repository operator authorized commit, push, and PR handoff in the
+BTN-171 task on 2026-08-30, with further documentation feedback expected during
+UAT. Use the commit containing this approval as the reviewed revision; record
+its exact hash, reviewer, date, and approval scope with each candidate's UAT
+evidence. Fixture safety/approval requirements remain in force, and guide
+corrections and required reruns remain UAT findings. No final live acceptance
+is claimed. [BTN-132](https://github.com/lrburkholder/battalion/issues/206)
 owns that acceptance after BTN-173's main-based candidate and BTN-129's CLI gate.
 
 ## Purpose
@@ -113,7 +118,9 @@ Pass criteria:
   CLI.
 - The refreshed run records the human action and either advances or returns to
   a documented interrupt when the provider remains unavailable.
-- Selecting a non-paused run leaves the resume control disabled.
+- Selecting a terminal or unsafe-to-replay Run leaves resume disabled. A
+  BTN-165 candidate may also offer resume for a typed recoverable checkpoint;
+  record its disposition rather than requiring `awaiting-human` in every case.
 - For a runnable candidate, the packaged worker traverses all remaining review
   checkpoints and reaches `done`; inspect CLI JSON status to retain Reviewer
   command, classification, test counts, and cleanup evidence. The known frozen
@@ -151,8 +158,37 @@ Pass criteria:
 - History preserves terminal and unavailable entries with explicit
   limitations.
 - The restarted UI reloads durable state before later live observations.
-- A crashed worker is shown as crashed/recoverable when state exists; the run
-  identity and durable progress remain available.
+- A crashed worker retains its identity and saved progress. State-file
+  existence alone is not proof of safe replay: the BTN-165 recovery disposition
+  must distinguish recoverable checkpoints from terminal started attempts.
+
+## 5a. Documentation-only troubleshooting paths
+
+Use only [Troubleshooting and recovery](../troubleshooting.md), the artifact
+handoff, and approved disposable fixtures. Record reviewer/date/script revision
+and approval before formal execution, using the preparation approval above.
+These paths form the BTN-171 preparation baseline;
+final live acceptance remains BTN-132 after BTN-173 and the CLI gate.
+
+For every path retain the guide anchor, exact paired wheel/ZIP identities,
+project path, Run UUID (or no Run), worker ID/state, recovery disposition,
+sanitized evidence, action taken, and expected/actual result. Any undocumented
+step or maintainer assistance is a documentation defect requiring a clean rerun.
+
+| Scenario | Guide-only action and pass evidence |
+| --- | --- |
+| Incomplete ZIP layout or execution warning | In a separate disposable extraction, use the supplied incomplete-layout fixture or record an actual platform warning. Follow [startup](../troubleshooting.md#installation-startup): stop, record provenance/warning, and re-extract a verified complete ZIP or obtain organizational approval. Never disable protections or replace the packaged worker with source mode. |
+| UI closed while worker is active | Follow [worker recovery](../troubleshooting.md#worker-recovery): reopen the same verified UI/project, refresh and inspect the same UUID. Closing/reopening must not create another Run or resume an active worker. Durable evidence remains inspectable even if transient tokens are absent. |
+| Stale or crashed worker | Use a supplied approved worker fixture. Refresh and distinguish worker metadata from actual process liveness and Run recovery. Missing PID/ambiguous state requires a stop, not deleting metadata or launching a second process. |
+| Recoverable interrupted resume | On an identified BTN-165 fault-injection candidate, follow [resume recovery](../troubleshooting.md#resume-recovery), inspect the Actor/decision/intervention attempt, and resume only a recoverable checkpoint. One authorization is retained and required review checkpoints remain in order. |
+| Terminal started attempt | Use the supplied ambiguous-outcome fixture. The UI must not offer replay; the operator follows the guide's private backup/workspace-review path. A saved state file does not turn this into a recoverable worker restart. |
+| Packaged Reviewer cannot run pytest | Follow [Reviewer guidance](../troubleshooting.md#reviewer-tests), retaining the actual command/classification and first failure. Report the BTN-132 packaging limitation, not a provider outage. A CLI success cannot make the ZIP pass; a corrected artifact and rerun are required. |
+
+Fault/crash fixtures require an identified artifact/source revision, expected
+checkpoint, safety constraints, and approval. Mark unavailable fixtures blocked;
+do not fabricate saved JSON, improvise process termination, or alter the
+installed worker. These fixtures support recovery testing but do not replace
+the normal artifact-only completion gate.
 
 ## 6. Intel review (prepared-fixture check)
 

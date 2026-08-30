@@ -21,10 +21,17 @@ from functools import partial
 
 ROOT = Path(__file__).resolve().parents[1]
 GUIDE = ROOT / "docs/getting-started.md"
-OPERATOR_DOCS = [GUIDE, ROOT / "docs/uat/cli.md", ROOT / "docs/uat/desktop.md"]
+OPERATOR_DOCS = [
+    GUIDE, ROOT / "docs/troubleshooting.md",
+    ROOT / "docs/uat/cli.md", ROOT / "docs/uat/desktop.md",
+]
 BLOCKS = dict(re.findall(
     r"<!-- check:([\w-]+) -->\s*```powershell\n(.*?)\n```",
     GUIDE.read_text(encoding="utf-8"), re.DOTALL,
+))
+RECOVERY_BLOCKS = dict(re.findall(
+    r"<!-- check:([\w-]+) -->\s*```powershell\n(.*?)\n```",
+    (ROOT / "docs/troubleshooting.md").read_text(encoding="utf-8"), re.DOTALL,
 ))
 
 
@@ -207,4 +214,40 @@ def test_onboarding_publication_inputs_trigger_pages_and_test_workflows():
         for event in ["push", "pull_request"]:
             paths = data[True][event]["paths"]
             assert "docs/getting-started.md" in paths
+            assert "docs/troubleshooting.md" in paths
             assert "docs/uat/**" in paths
+
+
+@pytest.mark.parametrize("executable", ["pwsh", "powershell"])
+@pytest.mark.parametrize("destination", ["private", "inside-project", "missing-state"])
+def test_documented_backup_preserves_bytes_and_excludes_unrelated_evidence(tmp_path, executable, destination):
+    project = tmp_path / "project [1]"
+    run_id = "00000000-0000-4000-8000-000000000001"
+    expected = {f"state/{run_id}.json", f"workers/{run_id}.json", "actors.json", "runs.json", "project.json"}
+    for relative in expected | {"state/another-run.json", "traces/private.jsonl", "intel/private.md"}:
+        path = project / ".battalion" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Even malformed state must be preserved byte-for-byte for diagnosis.
+        path.write_bytes(b"original diagnostic bytes: " + relative.encode())
+    if destination == "missing-state":
+        (project / ".battalion/state" / f"{run_id}.json").unlink()
+    before = {p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()}
+    backup_parent = project if destination == "inside-project" else tmp_path / "private [backup]"
+    backup_parent.mkdir(exist_ok=True)
+    result = powershell(
+        "$ErrorActionPreference = 'Stop'\n"
+        f"$Project = {ps_quote(project)}\n$RunId = {ps_quote(run_id)}\n"
+        f"function Read-Host {{ param($Prompt) {ps_quote(backup_parent)} }}\n"
+        + RECOVERY_BLOCKS["backup"], executable,
+    )
+    assert (result.returncode == 0) == (destination == "private"), result.stdout + result.stderr
+    assert {p.relative_to(project): p.read_bytes() for p in project.rglob("*") if p.is_file()} == before
+    backups = list(backup_parent.glob("battalion-recovery-*"))
+    if destination == "private":
+        assert len(backups) == 1
+        actual = {p.relative_to(backups[0]).as_posix(): p.read_bytes() for p in backups[0].rglob("*") if p.is_file()}
+        assert set(actual) == expected
+        for relative, content in actual.items():
+            assert content == before[Path(".battalion") / relative]
+    else:
+        assert backups == []

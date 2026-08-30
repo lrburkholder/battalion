@@ -64,6 +64,83 @@ def test_cli_help_uses_console_safe_separator() -> None:
     assert "Battalion SDLC Orchestrator - run, resume" in result.output
     assert "--trace-output" in _compact_help(runner.invoke(app, ["run", "--help"]).output)
     assert "--trace-output" in _compact_help(runner.invoke(app, ["resume", "--help"]).output)
+    from battalion.cli import TROUBLESHOOTING_URL
+    assert TROUBLESHOOTING_URL in _compact_help(result.output)
+
+
+@pytest.mark.parametrize("trigger,anchor", [
+    ("infra-failure", "infra-failure"),
+    ("out-of-scope-write", "authority-stop"),
+    ("role-definition-edit", "authority-stop"),
+    ("manual-checkpoint", "human-checkpoints"),
+    ("budget-exceeded", "human-checkpoints"),
+    ("same-root-cause-twice", "reviewer-tests"),
+    ("role-escalation", "role-output"),
+    ("future-trigger", "run-stopped"),
+])
+def test_status_maps_stops_to_guide_without_changing_json(tmp_path, monkeypatch, trigger, anchor):
+    from battalion.cli import TROUBLESHOOTING_URL
+    from battalion.state.models import InterruptLogEntry
+
+    monkeypatch.chdir(tmp_path)
+    state = make_paused_state("00000000-0000-4000-8000-000000000001")
+    state.interrupt_log = [InterruptLogEntry(
+        trigger=trigger, timestamp=datetime.now(timezone.utc), context={},
+    )]
+    path = _state_path(state.run_id)
+    save_state(state, path)
+    original = path.read_bytes()
+    human = runner.invoke(app, ["status", state.run_id, "--human"])
+    assert human.exit_code == 0, human.output
+    assert f"{TROUBLESHOOTING_URL}#{anchor}" in human.output
+    structured = runner.invoke(app, ["status", state.run_id])
+    assert structured.exit_code == 0, structured.output
+    assert json.loads(structured.output) == state.model_dump(mode="json")
+    assert path.read_bytes() == original
+
+
+def test_pause_does_not_mislabel_reviewer_harness_failure_as_provider_failure(capsys):
+    from battalion.cli import _print_pause_reason
+    from battalion.state.models import InterruptLogEntry
+
+    state = make_paused_state("guide-harness-failure")
+    state.interrupt_log = [InterruptLogEntry(
+        trigger="infra-failure", timestamp=datetime.now(timezone.utc),
+        context={"error": "Reviewer test execution: collection-usage-internal-error"},
+    )]
+    _print_pause_reason(state, state.run_id)
+    output = capsys.readouterr().out
+    assert "collection-usage-internal-error" in output
+    assert "troubleshooting.html#infra-failure" in output
+    assert "LLM call failed" not in output
+    assert "Provider error" not in output
+
+
+@pytest.mark.parametrize("stage,disposition", [
+    ("interrupted-before-attempt", "recoverable"),
+    ("attempt-started", "terminal"),
+])
+def test_recovery_status_links_to_replay_safety_guidance(tmp_path, monkeypatch, stage, disposition):
+    from battalion.state.models import GraphProgress
+
+    monkeypatch.chdir(tmp_path)
+    state = make_paused_state("guide-recovery")
+    state.status = RunStatus.IN_PROGRESS
+    state.graph_progress = GraphProgress(
+        stage=stage, next_node="driver_red",
+        execution_id="attempt-guide" if stage == "attempt-started" else None,
+    )
+    if stage == "attempt-started":
+        state.execution_record.node_executions = [NodeExecution(
+            execution_id="attempt-guide", role="driver", phase="driver_red",
+            model_identity="offline-guide-model", started_at=datetime.now(timezone.utc),
+            outcome="in-progress",
+        )]
+    save_state(state, _state_path(state.run_id))
+    result = runner.invoke(app, ["status", state.run_id, "--human"])
+    assert result.exit_code == 0, result.output
+    assert f"Recovery:    {disposition}" in result.output
+    assert "troubleshooting.html#resume-recovery" in result.output
 
 
 def test_run_creates_state_file(tmp_path, monkeypatch):

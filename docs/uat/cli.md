@@ -1,13 +1,19 @@
 # CLI UAT plan
 
-**Status:** Prepared for operator review under BTN-170; approval and final live
-execution are separate evidence. This script is not a release-readiness claim.
+**Status:** Approved as the BTN-170/BTN-171 preparation baseline for downstream
+UAT. The repository operator authorized commit, push, and PR handoff in the
+BTN-171 task on 2026-08-30, with further documentation feedback expected during
+UAT. This approves script preparation, not final live acceptance or release
+readiness. Use the commit containing this approval as the reviewed revision;
+record its exact hash with each candidate's UAT evidence.
 
 Before formal execution, record script revision, reviewer, review date, and
 approval decision in the UAT evidence. Final live/documentation-only acceptance
 belongs to [BTN-129](https://github.com/lrburkholder/battalion/issues/203) on the
 main-based candidate handed off by [BTN-173](https://github.com/lrburkholder/battalion/issues/271).
-Script preparation/review does not wait for that final acceptance.
+Script preparation/review does not wait for that final acceptance. Record
+documentation corrections and required reruns as UAT findings; this baseline
+does not freeze the guide or waive fixture safety/approval requirements.
 
 ## Purpose
 
@@ -143,6 +149,10 @@ the canonical graph path.
 
 ## 4. Provider-failure recovery
 
+Use [Troubleshooting: execution failure](../troubleshooting.md#infra-failure)
+and its diagnostic/resume procedure for this scenario. Do not infer recovery
+solely from the `infra-failure` label or an old CLI message mentioning the LLM.
+
 Configure an unavailable local model or disconnect the selected provider, then
 start a new run. Verify all of the following:
 
@@ -153,6 +163,35 @@ start a new run. Verify all of the following:
   target; record insufficient human-readable diagnostics as a defect.
 - After correcting the configuration, `battalion resume` records the supplied
   resolution and retries from the saved target.
+
+## 4a. Documentation-only troubleshooting paths
+
+After the normal onboarding pass, a new operator uses only the published
+[troubleshooting guide](../troubleshooting.md) and identified artifact/fixture
+handoff. Record guide/script revision, reviewer, date, and approval before
+formal execution, using the preparation approval above. Final acceptance
+remains BTN-129 after BTN-173; these scenarios do not claim live results.
+
+For each row, retain artifact identity, project path, Run UUID (or no Run),
+symptom/guide anchor, expected/actual outcome, sanitized bounded evidence,
+whether retry was attempted, and the final disposition. Every required
+undocumented action is a defect, not an informal maintainer workaround.
+
+| Scenario | Operator path and pass evidence |
+| --- | --- |
+| Untrusted or mismatched artifact | Supply a separate disposable artifact copy with a deliberately mismatched checksum. Follow [startup](../troubleshooting.md#installation-startup). Operator stops before installation/execution, records the mismatch, and obtains a verified replacement; original artifacts remain untouched. |
+| Missing credential or invalid model | In a fresh disposable shell/project, omit a required credential or provide a deliberately invalid model ID. Follow [setup](../troubleshooting.md#setup-provider). Record the distinct error, absence of a new Run, and secret-safe correction; do not accept `--no-validate` as successful validation. Do not expose or revoke real credentials for this test. |
+| Manual checkpoint and narrow backup | Use scenario 3's fresh paused Run. Follow [checkpoints](../troubleshooting.md#human-checkpoints), confirm all project writers stopped, then use [backup](../troubleshooting.md#state-backup). Verify only the named Run/worker/identity files were copied, original bytes remain unchanged, and ordinary resume records the reviewed decision. |
+| Reviewer collection error / no tests | Use separately supplied, approved disposable fixtures that produce each outcome at a Reviewer checkpoint. Follow [Reviewer tests](../troubleshooting.md#reviewer-tests). Both must retain classification and bounded output as infrastructure failures, never valid RED. Repair the actual import/discovery issue, then resume the same Reviewer checkpoint. |
+| Reviewer timeout | Use a supplied trusted hanging-test fixture and a reviewed finite timeout. Guide-only diagnosis must find duration, classification and cleanup evidence. Do not retry until cleanup is established; no timeout outcome can pass RED. |
+| Interrupted resume before generation | Use an approved fault-injection candidate/fixture, identified separately from an ordinary release artifact. Follow [resume recovery](../troubleshooting.md#resume-recovery). A BTN-165 candidate reuses the original Actor/resolution/action ID without duplicating the decision/intervention and follows the saved successor. |
+| Started attempt with no saved outcome | Use a separately supplied fault-injection fixture. The operator must stop on terminal/ambiguous recovery, preserve evidence and inspect the workspace; no forced replay or JSON repair is allowed. |
+
+Controlled Reviewer/crash fixtures must include their source/artifact identity,
+expected checkpoint/classification, safety constraints, and approval in the
+handoff. If unavailable, mark the row blocked; do not patch an installed wheel,
+fabricate persisted state, or improvise a live process kill. Automation tests
+are supporting evidence, not substitutes for this operator-only pass.
 
 ## 5. Role-contract correction: simple Hello World
 
