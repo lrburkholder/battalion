@@ -115,6 +115,9 @@ The versioned state contract includes:
   Driver and Refactorer attempts also retain a normalized typed role result
   when applicable, so valid change, no-change, blocked, and escalated outcomes
   are inspectable without reconstructing intent from prose.
+  BTN-164 adds actual Reviewer process evidence on this branch: command,
+  temporary working-directory identity, classification, collected-test counts,
+  bounded stdout/stderr, duration, and timeout/cancellation cleanup disposition.
 
 ### Interrupt Taxonomy (v1)
 
@@ -213,6 +216,33 @@ Battalion does not fill missing files from its packaged defaults. A requested
 missing, empty, or non-UTF-8 override raises a typed error that identifies the
 file and explains that the operator must complete the directory or omit the
 override.
+
+### Configure Reviewer Test Execution
+
+BTN-164 is in progress on this branch. Reviewer runs pytest independently in a
+disposable project snapshot, with a bounded timeout configured in
+`battalion.config.yaml`:
+
+```yaml
+reviewer_test_timeout_seconds: 300
+```
+
+The value must be greater than zero and at most 3600 seconds. It applies to
+RED, GREEN, and REFACTOR checks on start and resume. Only a collected-test
+failure with no harness errors satisfies RED; GREEN and REFACTOR require a
+valid passing execution with tests collected. No tests, collection/setup/usage
+or internal errors, malformed JUnit output, launch failures, timeout, and
+cancellation pause through infrastructure interrupt #5 without an LLM judgment.
+After resolution, the same Reviewer checkpoint runs again.
+
+For Git projects, the snapshot admits tracked files and nonignored untracked
+files, excluding generated build outputs, environments, caches, Battalion state,
+and VCS metadata. Non-Git projects use the same exclusions while walking regular
+project files. Links outside the project are not admitted. The snapshot does
+not grant Reviewer project write tools and is not an OS security sandbox.
+Timeout and cancellation terminate the test process tree. The execution record
+retains at most 64 KiB from each output stream plus truncation metadata; these
+local records may contain project-generated diagnostic text.
 
 ### Configure Portable Integrations
 

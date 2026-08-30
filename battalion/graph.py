@@ -561,6 +561,7 @@ def _make_reviewer_node(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     instinct_retriever: InstinctRetriever | None = None,
+    reviewer_test_timeout_seconds: float = 300.0,
 ) -> Callable[[RunState], RunState]:
     """Create a Reviewer node function for the graph.
 
@@ -594,7 +595,10 @@ def _make_reviewer_node(
         build_inputs=build_inputs,
         audience=InstinctAudience.REVIEWER,
         delivers_interventions=False,
-        static_kwargs={"checkpoint": checkpoint},
+        static_kwargs={
+            "checkpoint": checkpoint,
+            "test_timeout_seconds": reviewer_test_timeout_seconds,
+        },
         finish_checkpoint=checkpoint,
         llm_configs=llm_configs,
         base_dir=base_dir,
@@ -710,6 +714,7 @@ def build_graph(
     on_token: Callable[[dict], None] | None = None,
     intel_repository: IntelRepository | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
+    reviewer_test_timeout_seconds: float = 300.0,
 ) -> StateGraph:
     """Build the Battalion StateGraph with all nodes and edges.
     
@@ -761,17 +766,20 @@ def build_graph(
         on_state_checkpoint=on_state_checkpoint, **shared
     )
     reviewer_red_node = _make_reviewer_node(
-        CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir, **shared
+        CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds, **shared
     )
     reviewer_green_node = _make_reviewer_node(
-        CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir, **shared
+        CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds, **shared
     )
     refactorer_node = _make_refactorer_node(
         llm_configs, base_dir, prompts_dir,
         on_state_checkpoint=on_state_checkpoint, **shared
     )
     reviewer_refactor_node = _make_reviewer_node(
-        CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir, **shared
+        CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds, **shared
     )
     done_node = _make_done_node()
     pause_node = _make_pause_node()
@@ -991,6 +999,7 @@ def resume_ticket(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
+    reviewer_test_timeout_seconds: float = 300.0,
 ) -> RunState:
     """Resume a paused ticket from its saved state.
     
@@ -1029,6 +1038,7 @@ def resume_ticket(
         llm_configs, base_dir, prompts_dir,
         on_node_event=on_node_event, on_token=on_token,
         on_state_checkpoint=on_state_checkpoint,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
     )
     app = graph.compile()
     
@@ -1055,6 +1065,7 @@ def run_ticket(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
+    reviewer_test_timeout_seconds: float = 300.0,
 ) -> RunState:
     """Run a caller-created state through the graph until done or interrupted.
     
@@ -1082,6 +1093,7 @@ def run_ticket(
         llm_configs, base_dir, prompts_dir,
         on_node_event=on_node_event, on_token=on_token,
         on_state_checkpoint=on_state_checkpoint,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
     )
     
     # Compile graph

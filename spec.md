@@ -200,8 +200,8 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.5` (BTN-133); persisted `1.0` through
-`1.4` records remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.6` on the BTN-164 branch; persisted
+`1.0` through `1.5` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
@@ -256,6 +256,16 @@ ends the current run until a human records that the missing condition has been
 addressed; an escalated result enters the existing durable human-resolution
 boundary. Neither route advances through the normal success edge, and malformed
 or prohibited output remains a deterministic failure.
+
+Version `1.6` adds optional `test_execution` evidence to Reviewer attempts:
+the exact command, temporary working-directory identity, exit classification,
+return code, collected-test/failure/error counts when available, duration,
+configured timeout, cancellation/timeout disposition, and process-tree cleanup
+result. Each stdout/stderr stream retains at most 64 KiB with observed-byte and
+truncation metadata. Invalid harness outcomes have an `unavailable` review
+verdict rather than a fabricated test failure or rejection cause. Legacy
+records retain their old inferred outcomes and expose process evidence as
+unavailable. New Reviewer snapshot hashes describe only materialized inputs.
 
 ### Instinct data contract
 
@@ -415,6 +425,40 @@ so test discovery is not coupled to a `src/` directory. For example, Battalion
 itself can use `driver_red: ["tests/"]`, `driver_green: ["battalion/"]`, and
 `refactorer: ["battalion/"]` without granting repository-wide write access.
 See ADR-0013.
+
+### Reviewer test execution (BTN-164 branch contract)
+
+Reviewer runs `python -m pytest -q` with built-in JUnit output from a disposable
+copy of the configured project root. A passing exit (0) requires positive test
+counts and no failures/errors; a test-failure exit (1) requires collected tests,
+positive failure counts, and no harness errors. Only the latter can satisfy
+RED_CHECK. GREEN_CHECK and REFACTOR_CHECK require the former. The opposite valid
+result is a normal Reviewer rejection; no tests (5), collection/usage/internal
+errors (2–4), setup/teardown errors, unsupported exit codes, missing/malformed
+JUnit output, launch failure, timeout, and cancellation never authorize progress.
+They take typed infrastructure interrupt #5, retain evidence, make no
+rejection-cause LLM call, and resume at the same Reviewer checkpoint. JUnit
+parsing is capped at 8 MiB; larger output is an inspectable malformed result.
+
+`reviewer_test_timeout_seconds` in project configuration defaults to 300 and
+must be greater than zero and at most 3600. The bound applies to all Reviewer
+checkpoints on start/resume. Each pytest process has its own process group;
+timeout or cooperative/keyboard cancellation terminates descendants using
+Windows tree termination or POSIX process-group signals with forced cleanup.
+Cleanup attempts/results are recorded separately from test validity. Forced
+termination of Battalion itself is not a cooperative cancellation and cannot
+promise a final execution record.
+
+Git snapshots admit current tracked files and nonignored untracked files, then
+apply explicit generated-content exclusions. Non-Git snapshots walk regular
+files with the same exclusions and prune virtual environments. Build/distribution
+outputs (`build`, `dist`, `target`), coverage outputs, dependency/environment
+directories, caches, `.battalion`, and VCS metadata are not test inputs.
+Deleted tracked files, directory links, and links escaping the project are not
+materialized. Internal file links are copied as independent regular files.
+Snapshot writes remain Battalion-owned temporary IO, not Reviewer project write
+authority or an OS sandbox. BTN-123 may replace the workspace mechanism but
+must preserve this evidence and checkpoint-validity contract.
 
 ## Retry / Loop Bounds
 Configurable per ticket rather than a fixed global constant — set as part of

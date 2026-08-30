@@ -112,7 +112,10 @@ def refactorer_advancing(record=None):
 
 def reviewer_with_phases(phase_for_checkpoint, record=None):
     """Reviewer fake whose verdict per checkpoint maps to a next phase."""
-    def fake(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+    def fake(
+        state, base_dir, llm_config, checkpoint, prompts_dir=None,
+        test_timeout_seconds=300.0,
+    ):
         if record is not None:
             record.append(f"reviewer_{checkpoint.value}")
         phase = phase_for_checkpoint[checkpoint]

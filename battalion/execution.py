@@ -33,6 +33,8 @@ from battalion.state.models import (
     ReviewResult,
     RoleContractViolationEvidence,
     RunState,
+    TestExecutionClassification,
+    TestExecutionEvidence,
     TestOutcome,
     ToolActivity,
 )
@@ -157,6 +159,12 @@ def _input_references(
 ) -> list[EvidenceReference]:
     references: list[EvidenceReference] = []
     for kind, reference, reason in _declared_input_references(node_name):
+        if node_name.startswith("reviewer_"):
+            # The clean snapshot does not exist yet. Hash only the admitted
+            # materialized inputs once Reviewer creates it, not the source
+            # tree's environments, generated outputs, or VCS internals.
+            references.append(EvidenceReference(kind=kind, reference=reference))
+            continue
         if kind == "state":
             digest, truncated, observed, hashed = _bounded_digest(state.spec.encode())
         elif kind == "artifact":
@@ -260,6 +268,8 @@ class ExecutionCapture:
     streamed_content_characters: int
     no_change_reason: str | None
     role_result: RoleExecutionResult | None
+    test_execution: TestExecutionEvidence | None
+    review_decision: ReviewResult | None
     input_references: list[EvidenceReference]
     prompt_provenance: PromptProvenance | None
     code_start: dict[str, object]
@@ -289,6 +299,8 @@ class ExecutionCapture:
             streamed_content_characters=0,
             no_change_reason=None,
             role_result=None,
+            test_execution=None,
+            review_decision=None,
             input_references=_input_references(state, node_name, root),
             prompt_provenance=_prompt_provenance(
                 node_name, prompts_dir, model_configuration, model_identity
@@ -356,16 +368,36 @@ class ExecutionCapture:
                 CheckpointType.GREEN_CHECK: "refactorer",
                 CheckpointType.REFACTOR_CHECK: "done",
             }[checkpoint]
-            accepted = new_state.phase == accepted_phase and not interrupted
-            passed = expected_to_pass if accepted else not expected_to_pass
+            accepted = (
+                self.review_decision.verdict == "accepted"
+                if self.review_decision is not None
+                else new_state.phase == accepted_phase and not interrupted
+            )
+            passed = (
+                self.test_execution.classification
+                is TestExecutionClassification.PASSED
+                if self.test_execution is not None
+                else expected_to_pass if accepted else not expected_to_pass
+            )
             cause = None
             if not accepted and len(new_state.reviewer_rejection_history) > len(
                 old_state.reviewer_rejection_history
             ):
                 cause = new_state.reviewer_rejection_history[-1].cause[:2000]
-            review = ReviewResult(
+            valid_test_execution = (
+                self.test_execution is None and not interrupted
+                or self.test_execution is not None
+                and self.test_execution.classification in {
+                    TestExecutionClassification.PASSED,
+                    TestExecutionClassification.TEST_FAILED,
+                }
+            )
+            review = self.review_decision or ReviewResult(
                 checkpoint=checkpoint,
-                verdict="accepted" if accepted else "rejected",
+                verdict=(
+                    "unavailable" if self.test_execution is not None or interrupted
+                    else "accepted" if accepted else "rejected"
+                ),
                 cause=cause,
             )
             test = TestOutcome(
@@ -374,13 +406,17 @@ class ExecutionCapture:
                 expected_to_pass=expected_to_pass,
                 accepted=accepted,
             )
-            tools.append(
-                ToolActivity(tool="pytest", action="execute", outcome="succeeded")
-            )
+            tools.append(ToolActivity(
+                tool="pytest",
+                action="execute",
+                outcome="succeeded" if valid_test_execution else "failed",
+            ))
             verdict = review.verdict if cause is None else cause
             if not accepted and not interrupted:
                 outcome = "rejected"
                 attempt_disposition = "rejected"
+            elif interrupted and review.verdict == "unavailable":
+                attempt_disposition = "infra-failure"
             output_reference = f"review:{checkpoint.value}"
         elif interrupted and not (
             self.role_result is not None
@@ -430,8 +466,13 @@ class ExecutionCapture:
         code_provenance = CodeProvenance.model_validate(code_data)
         verification = []
         if test is not None:
+            disposition = (
+                self.test_execution.classification.value
+                if self.test_execution is not None
+                else "passed" if test.passed else "failed"
+            )
             verification.append(
-                f"{test.checkpoint.value}: {'passed' if test.passed else 'failed'}; "
+                f"{test.checkpoint.value}: {disposition}; "
                 f"{'accepted' if test.accepted else 'not accepted'}"
             )
         open_questions = []
@@ -482,6 +523,7 @@ class ExecutionCapture:
             role_result=self.role_result,
             tool_activity=tools,
             test_outcome=test,
+            test_execution=self.test_execution,
             review_result=review,
             artifact_provenance=artifacts,
             interrupt_ids=new_interrupt_indexes,
@@ -494,7 +536,7 @@ class ExecutionCapture:
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.5",
+                "schema_version": "1.6",
                 "node_executions": new_state.execution_record.node_executions
                 + [execution]
             }
@@ -588,6 +630,44 @@ def record_role_result(result: RoleExecutionResult) -> None:
             ),
         )
         capture.role_result = result
+
+
+def record_test_execution(evidence: TestExecutionEvidence) -> None:
+    """Attach actual Reviewer subprocess evidence to the active node attempt."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        capture.test_execution = evidence
+
+
+def record_review_decision(
+    checkpoint: CheckpointType, *, accepted: bool, cause: str | None = None,
+) -> None:
+    """Record the decision before later graph interrupts can replace its phase."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        capture.review_decision = ReviewResult(
+            checkpoint=checkpoint,
+            verdict="accepted" if accepted else "rejected",
+            cause=cause[:2000] if cause is not None else None,
+        )
+
+
+def record_reviewer_workspace(clean_dir: Path) -> None:
+    """Hash only the clean inputs actually admitted for Reviewer execution."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is None:
+        return
+    digest, truncated, observed, hashed = _workspace_context_digest(clean_dir, [])
+    capture.input_references = [EvidenceReference(
+        kind="workspace",
+        reference="clean project snapshot",
+        sha256=digest,
+        hash_algorithm="sha256",
+        inclusion_reason="Reviewer verification snapshot",
+        truncated=truncated,
+        observed_bytes=observed,
+        hashed_bytes=hashed,
+    )]
 
 
 def summarize_costs(record: ExecutionRecord) -> dict[str, object]:
