@@ -108,6 +108,8 @@ The versioned state contract includes:
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
+- `resume_intent` and `graph_progress`: BTN-165's in-progress branch work retains
+  authorization and exact attempt/successor checkpoints for crash recovery.
 - `execution_record`: Durable node evidence, including per-call tokens and
   nullable decimal cost with separate currency and source. It retains rejected
   pre-write role-contract candidates separately from successful role outcomes,
@@ -115,6 +117,28 @@ The versioned state contract includes:
   Driver and Refactorer attempts also retain a normalized typed role result
   when applicable, so valid change, no-change, blocked, and escalated outcomes
   are inspectable without reconstructing intent from prose.
+  BTN-164 adds actual Reviewer process evidence on this branch: command,
+  temporary working-directory identity, classification, collected-test counts,
+  bounded stdout/stderr, duration, and timeout/cancellation cleanup disposition.
+
+### Crash recovery (BTN-165 branch)
+
+`battalion status RUN_ID --human` and the desktop inspector distinguish safe
+recovery from an attempt with an unknown outcome. Retry `battalion resume`
+with the original actor and resolution after a crash before generation; the
+saved decision and intervention receiving-attempt identity are reused. Clients
+can supply a stable `ResumeRun.action_id` (CLI `--action-id`) or
+`QueueIntervention.action_id` to deduplicate a request even after it completes.
+Reusing an ID with different decision evidence is rejected. Without an explicit
+ID, resume reuses a pending intent; a later, newly paused run requires a new
+human decision.
+
+Completed steps retain their exact successor, including Reviewer checkpoints.
+Recursion limits and unexpected graph failures preserve the latest saved
+progress. If generation started but no outcome was saved, replay is unsafe:
+inspect the execution record and workspace, then start a new run from the
+reviewed workspace. Do not edit saved state to force replay. This does not
+promise exactly-once provider calls or rollback of uncheckpointed file writes.
 
 ### Interrupt Taxonomy (v1)
 
@@ -198,6 +222,48 @@ battalion setup \
 
 Driver and Reviewer must use different model identifiers. Use `--no-validate`
 only when intentionally skipping live provider connectivity checks.
+
+### Configure Role Prompts
+
+Battalion owns and ships the non-empty UTF-8 prompt assets under
+`battalion/prompts/` for Architect, Driver (combined, RED, and GREEN), Reviewer,
+Refactorer, Recon, and Tactician. Default loading uses Python package resources,
+so wheel installs and the frozen desktop worker do not depend on a repository
+checkout or a top-level `prompts/` directory.
+
+`battalion run` and `battalion resume` accept `--prompts-dir` for an explicit
+developer or operator override. Once supplied, that directory is authoritative:
+Battalion does not fill missing files from its packaged defaults. A requested
+missing, empty, or non-UTF-8 override raises a typed error that identifies the
+file and explains that the operator must complete the directory or omit the
+override.
+
+### Configure Reviewer Test Execution
+
+BTN-164 is in progress on this branch. Reviewer runs pytest independently in a
+disposable project snapshot, with a bounded timeout configured in
+`battalion.config.yaml`:
+
+```yaml
+reviewer_test_timeout_seconds: 300
+```
+
+The value must be greater than zero and at most 3600 seconds. It applies to
+RED, GREEN, and REFACTOR checks on start and resume. Only a collected-test
+failure with no harness errors satisfies RED; GREEN and REFACTOR require a
+valid passing execution with tests collected. No tests, collection/setup/usage
+or internal errors, malformed JUnit output, launch failures, timeout, and
+cancellation pause through infrastructure interrupt #5 without an LLM judgment.
+After resolution, the same Reviewer checkpoint runs again.
+
+For Git projects, the snapshot admits tracked files and nonignored untracked
+files, excluding generated build outputs, environments, caches, Battalion state,
+and VCS metadata. Non-Git projects use the same exclusions while walking regular
+project files. Links outside the project are not admitted. The snapshot does
+not grant Reviewer project write tools and is not an OS security sandbox.
+Timeout and cancellation terminate the test process tree. The execution record
+retains at most 64 KiB from each output stream plus truncation metadata; these
+local records may contain project-generated diagnostic text.
 
 ### Configure Portable Integrations
 
@@ -448,6 +514,16 @@ battalion/
 │   ├── refactorer.py           # Refactorer node (BTN-13)
 │   ├── recon.py                # Post-completion candidate generation (BTN-22)
 │   └── errors.py               # Shared node error types
+├── prompts/
+│   ├── loader.py             # Install-safe package-resource and override boundary
+│   ├── architect.md
+│   ├── driver.md
+│   ├── driver-red.md
+│   ├── driver-green.md
+│   ├── reviewer.md
+│   ├── refactorer.md
+│   ├── recon.md
+│   └── tactician.md
 ├── scope/
 │   ├── __init__.py
 │   └── tool_binding.py        # Write-scope tool binding (BTN-2)
@@ -455,14 +531,6 @@ battalion/
     ├── __init__.py
     ├── models.py              # State models (BTN-1)
     └── persistence.py          # JSON persistence (BTN-1)
-
-prompts/                        # Node system prompts, overridable per node
-├── architect.md
-├── driver.md
-├── driver-red.md
-├── driver-green.md
-├── reviewer.md
-└── refactorer.md
 
 tests/
 ├── test_acceptance.py         # End-to-end v1 acceptance criteria

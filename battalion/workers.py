@@ -126,6 +126,7 @@ def launch_worker(
     worker_dir: str | Path = DEFAULT_WORKER_DIR,
     resume_actor_id: UUID | None = None,
     resume_resolution: str | None = None,
+    resume_action_id: str | None = None,
 ) -> WorkerRecord:
     """Launch one detached Python worker after durably reserving ``run_id``."""
     if operation not in {"start", "resume"}:
@@ -189,6 +190,7 @@ def launch_worker(
         "worker_dir": str(directory),
         "resume_actor_id": str(resume_actor_id) if resume_actor_id is not None else None,
         "resume_resolution": resume_resolution,
+        "resume_action_id": resume_action_id,
     }
     try:
         process = _spawn_process()
@@ -329,6 +331,7 @@ def _worker_main(stdin: BinaryIO) -> int:
                         else None
                     ),
                     resolution=request.get("resume_resolution") or "authorized resume",
+                    action_id=request.get("resume_action_id"),
                 ),
                 state_dir=request["state_dir"],
             )

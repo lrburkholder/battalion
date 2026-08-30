@@ -59,3 +59,20 @@ def test_release_workflow_is_tag_gated_and_publishes_only_after_validation() -> 
     assert "--generate-notes" in release_step
     assert "twine" not in workflow_path.read_text(encoding="utf-8").lower()
     assert "sync_status.py" not in workflow_path.read_text(encoding="utf-8")
+
+
+def test_release_workflow_smokes_python_and_frozen_prompt_artifacts() -> None:
+    workflow_path = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    python_steps = workflow["jobs"]["validate-and-package-python"]["steps"]
+    python_commands = "\n".join(step.get("run", "") for step in python_steps)
+    assert "verify_prompt_artifacts.py" in python_commands
+    assert "cd \"$RUNNER_TEMP\"" in python_commands
+    assert 'bin/battalion" --help' in python_commands
+    assert "-m battalion.prompts.smoke" in python_commands
+
+    desktop_steps = workflow["jobs"]["package-windows-desktop"]["steps"]
+    desktop_commands = "\n".join(step.get("run", "") for step in desktop_steps)
+    assert "BattalionWorker.exe" in desktop_commands
+    assert "--smoke-role-prompts" in desktop_commands

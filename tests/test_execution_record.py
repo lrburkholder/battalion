@@ -69,7 +69,10 @@ def _driver_stub(state, ticket_text, llm_config, base_dir, mode, prompts_dir=Non
     return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
 
 
-def _reviewer_stub(state, base_dir, llm_config, checkpoint, prompts_dir=None):
+def _reviewer_stub(
+    state, base_dir, llm_config, checkpoint, prompts_dir=None,
+    test_timeout_seconds=300.0,
+):
     phase = {
         CheckpointType.RED_CHECK: "driver_green",
         CheckpointType.GREEN_CHECK: "refactorer",
@@ -133,12 +136,14 @@ def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph
 
 
 def test_execution_record_format_is_versioned_and_validated():
-    assert ExecutionRecord().schema_version == "1.5"
+    assert ExecutionRecord().schema_version == "1.7"
     assert ExecutionRecord(schema_version="1.0").schema_version == "1.0"
     assert ExecutionRecord(schema_version="1.1").schema_version == "1.1"
     assert ExecutionRecord(schema_version="1.2").schema_version == "1.2"
     assert ExecutionRecord(schema_version="1.3").schema_version == "1.3"
     assert ExecutionRecord(schema_version="1.4").schema_version == "1.4"
+    assert ExecutionRecord(schema_version="1.5").schema_version == "1.5"
+    assert ExecutionRecord(schema_version="1.6").schema_version == "1.6"
     with pytest.raises(ValidationError):
         ExecutionRecord(schema_version="2.0")
 
@@ -213,7 +218,7 @@ def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(
     assert execution.operator_summary.last_node == "architect"
     assert execution.operator_summary.what_should_happen_next == "Continue at phase driver."
     assert execution.prompt_provenance.contract_version == "architect/v1"
-    assert execution.prompt_provenance.template_path == "prompts/architect.md"
+    assert execution.prompt_provenance.template_path == "battalion/prompts/architect.md"
     assert len(execution.prompt_provenance.template_hash) == 64
     assert len(execution.prompt_provenance.model_configuration_identity) == 64
     assert "must-not-be-retained" not in execution.model_dump_json()

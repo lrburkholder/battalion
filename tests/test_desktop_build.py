@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import configparser
+import json
 import sys
 
+from battalion import worker_entry
+from battalion.prompts.loader import SHIPPED_PROMPT_NAMES
 from scripts import build_desktop
 
 
@@ -14,6 +17,9 @@ def test_worker_command_is_heavy_runtime_only_and_excludes_pytest():
     assert command[:3] == [sys.executable, "-m", "nuitka"]
     assert "--mode=standalone" in command
     assert "--noinclude-pytest-mode=nofollow" in command
+    assert (
+        "--include-data-files=battalion/prompts/*.md=battalion/prompts/" in command
+    )
     assert "--output-filename=BattalionWorker.exe" in command
     assert str(build_desktop.WORKER_ENTRY) == command[-1]
     assert not any("pyside6" in item.lower() for item in command)
@@ -56,3 +62,11 @@ def test_disposable_deploy_config_replaces_machine_specific_paths(tmp_path):
         build_desktop.REPOSITORY_ROOT / "dist" / "desktop"
     )
     assert parser["app"]["icon"] == str(build_desktop.APPLICATION_ICON)
+
+
+def test_worker_prompt_smoke_mode_loads_complete_inventory(capsys):
+    assert worker_entry.main([worker_entry.PROMPT_SMOKE_ARGUMENT]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "ok"
+    assert output["prompt_names"] == list(SHIPPED_PROMPT_NAMES)
