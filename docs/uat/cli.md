@@ -291,6 +291,12 @@ automatic correction retry.
 
 ## 6. Negative robustness checks
 
+Known outstanding BTN-129 remediation: an empty Architect response currently
+reports `RunRecoveryUnsafe` without an interrupt and leaves an
+`attempt-started` checkpoint. Record this case as a defect until a corrected
+candidate passes the expectation below. BTN-173's integration fixes do not
+repair it or establish CLI acceptance; preserve evidence and do not force replay.
+
 Capture the console output and saved state for each case:
 
 - identical Driver and Reviewer models at setup;

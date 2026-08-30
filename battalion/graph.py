@@ -19,7 +19,8 @@ Interrupt triggers (from spec.md v1 taxonomy):
   6. Manual checkpoint (user-declared pause point)
 
 When any interrupt fires, the graph transitions to AWAITING_HUMAN status
-and pauses. The CLI (BTN-9) will handle resumption.
+and pauses. Shared application operations authorize resumption for CLI and
+desktop clients; the graph owns execution routing.
 """
 from __future__ import annotations
 
@@ -42,6 +43,7 @@ from battalion.intel.retrieval import InstinctRetriever
 from battalion.interrupts.triggers import (
     TRIGGER_SAME_ROOT_CAUSE,
     check_any_trigger,
+    check_budget_exceeded_trigger,
     log_interrupt,
 )
 from battalion.llm.litellm_client import InfraFailure
@@ -344,6 +346,28 @@ def _scaffold_node(
             return result
 
         while True:
+            # Corrections share the Run budget. Check before creating another
+            # attempt, including recovery from the saved rejected candidate.
+            # A pending resume intent is the human's explicit continuation;
+            # finish() consumes it when that authorized attempt completes.
+            budget_exhausted, budget_trigger = check_budget_exceeded_trigger(state)
+            if (correction_context is not None and budget_exhausted
+                    and not (state.resume_intent and not state.resume_intent.completed)):
+                context = {
+                    "used": state.budget.used, "limit": state.budget.limit,
+                    "next_phase": node_name,
+                }
+                state = log_interrupt(state, budget_trigger, context).model_copy(update={
+                    "phase": NODE_PAUSE,
+                })
+                if on_state_checkpoint is not None:
+                    on_state_checkpoint(state)
+                if on_node_event is not None:
+                    on_node_event({
+                        "type": "interrupt", "node": node_name,
+                        "trigger": budget_trigger, "context": context,
+                    })
+                return state
             entered_state = state
             model_config = _resolve_llm_config(llm_configs, llm_roles)
             capture = ExecutionCapture.start(
@@ -1194,7 +1218,9 @@ def run_ticket(
         )
         return final_state
     except GraphRecursionError:
-        if latest.status in {RunStatus.AWAITING_HUMAN, RunStatus.DONE}:
+        if latest.status in {RunStatus.AWAITING_HUMAN, RunStatus.BLOCKED, RunStatus.DONE}:
+            # A typed block retains its own phase and human-resolution target,
+            # even when the terminal graph node cannot run within this limit.
             return latest
         return latest.model_copy(update={
             "status": RunStatus.BLOCKED,

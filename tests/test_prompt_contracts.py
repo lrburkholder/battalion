@@ -49,7 +49,7 @@ def test_file_producing_prompts_request_direct_non_narrated_output():
 def test_red_prompt_explains_the_intended_missing_behavior():
     prompt = load_system_prompt("driver-red")
 
-    assert "intended failing condition" in prompt
+    assert "intended failing condition" in " ".join(prompt.split())
     assert "Do not debate or narrate" in prompt
 
 

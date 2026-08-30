@@ -833,10 +833,19 @@ def _prepare_resume(
     recovery = assess_recovery(state)
     if recovery is not None and recovery.disposition == "terminal":
         raise RunRecoveryUnsafe(state.run_id, recovery)
+    correction_progress = None
     if state.status is RunStatus.AWAITING_HUMAN:
         state = _resolve_latest_interrupt(
             state, actor=actor, resolution=command.resolution, action_id=identifier,
         )
+        progress = state.graph_progress
+        interrupt = state.interrupt_log[-1] if state.interrupt_log else None
+        if (interrupt is not None and interrupt.trigger == "budget-exceeded" and progress is not None
+                and progress.correction_context is not None
+                and progress.next_node == interrupt.context.get("next_phase")):
+            # Authorizing a budget continuation must not erase the correction
+            # instructions or grant a fresh automatic retry allowance.
+            correction_progress = progress
     elif (state.status is RunStatus.BLOCKED and state.phase != "recursion_limit_exceeded"
           and _latest_blocked_role_result(state) is not None):
         state = _resolve_blocked_role_result(
@@ -849,7 +858,7 @@ def _prepare_resume(
         )
     return state.model_copy(update={
         "resume_intent": ResumeIntent(action_id=state.human_action_log[-1].action_id),
-        "graph_progress": None,
+        "graph_progress": correction_progress,
         "resume_target": None,
     }), False, None
 

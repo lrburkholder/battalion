@@ -83,10 +83,10 @@ private project content. Preserve originals privately; share a sanitized copy.
 
 This guide is prepared for **BTN-171, 2026-08-30**. A version string alone cannot
 identify an untagged candidate: match the artifact's source commit and handoff.
-The dependency implementations are present on this branch, with canonical
-issues still in review at preparation time. This is not a claim that a release
-or GitHub Pages deployment already includes them. BTN-173 verifies public
-availability after integration. Recheck the linked Issues for later artifacts.
+Use the implementation boundaries below to check whether an artifact includes
+the required behavior. Documentation in a checkout does not establish release
+or Pages availability. BTN-173 verifies public availability after integration;
+recheck the linked Issues and candidate handoff for later artifacts.
 
 | Baseline / canonical Issue | Operator limitation or changed behavior |
 | --- | --- |
@@ -94,6 +94,8 @@ availability after integration. Recheck the linked Issues for later artifacts.
 | Candidate containing BTN-164 | Classified, bounded test execution below applies. It does not make arbitrary project tests safe to execute. |
 | Before [BTN-165](https://github.com/lrburkholder/battalion/issues/261) | A crash after resolution/intervention or graph progress may consume authorization or lose the latest progress. Recovery is not guaranteed. Preserve evidence; do not blindly repeat resume or edit state. Seek reviewed recovery or start a new Run only from a reviewed workspace. |
 | Candidate containing BTN-165 | Saved resume intent and exact attempt/successor checkpoints support the conditional recovery below. Ambiguous started attempts still cannot be replayed safely. |
+| Candidate containing BTN-173 remediation | Typed blocks retain their authorization requirement at the recursion limit; over-budget correction attempts wait for a human continuation without losing correction context or retry bounds. |
+| [BTN-129](https://github.com/lrburkholder/battalion/issues/203) | An empty Architect response still reports `RunRecoveryUnsafe`, without an interrupt, and leaves an `attempt-started` checkpoint. Preserve the evidence and inspect the workspace; do not force replay. This remains outstanding CLI remediation. |
 | [BTN-163](https://github.com/lrburkholder/battalion/issues/259) | Packaged prompt assets and smoke checks are required. A source-tree workaround does not validate an installed artifact. |
 | [BTN-132](https://github.com/lrburkholder/battalion/issues/206) | The current frozen desktop worker excludes pytest and cannot accept Reviewer's `sys.executable -m pytest` invocation. CLI pytest installation does not fix this. ZIP execution acceptance requires a corrected artifact and rerun. |
 | [BTN-170](https://github.com/lrburkholder/battalion/issues/266), [BTN-173](https://github.com/lrburkholder/battalion/issues/271) | Artifact-first onboarding and final main/Pages integration govern which guide and artifact to use. Final live CLI/desktop acceptance remains BTN-129/BTN-132. |
@@ -202,6 +204,12 @@ again at that limit, stop and request a reviewed continuation plan; do not
 loop resume, zero the counter, or edit state. A newly scoped Run with its own
 approved budget requires workspace/specification review and all normal gates.
 
+If the pause is before an automatic role-contract correction, BTN-173's
+remediation retains the rejected attempt, correction context, and retry bound.
+The authorized continuation runs that correction in the same phase. It neither
+resets the budget nor grants another automatic retry; a successful correction
+can pause again before Reviewer because the persisted limit is still reached.
+
 For either condition, preserve the interrupt and human decision history. Use
 the [resume procedure](#resume-recovery) only when the operator has approved the
 next step; an interrupt is not an error to suppress.
@@ -239,7 +247,7 @@ original process evidence; never relabel it as a pass or expected RED.
 | `test-failure` | Collected-test failure with no harness errors is eligible RED evidence. In GREEN/refactor it is a rejection: inspect assertions and recorded review cause; let the required correction/review loop operate. Human changes must preserve the approved spec and RED/GREEN separation. |
 | `pass` | Collected tests passed. Required for GREEN/refactor; unexpected in RED and may produce a rejection. Check that the test actually demonstrates the missing behavior. Do not weaken tests to manufacture acceptance. |
 | `same-root-cause-twice` | Saved Reviewer rejection history repeats a cause at a checkpoint. Human analysis/intervention is required before resume; do not clear history or retry counters. |
-| `collection-usage-internal-error` | Includes syntax/import/collection, setup/teardown, usage and internal pytest errors. Repair missing project dependencies, discovery, imports, or harness configuration. An importable stub can establish a real assertion failure in RED. A nonzero exit alone is not RED evidence. |
+| `collection-usage-internal-error` | Includes syntax/import/collection, setup/teardown, usage and internal pytest errors. Repair missing project dependencies, discovery, imports, or harness configuration. When a missing module/symbol is the requested behavior, import it inside the test function so absence fails a collected test. Driver RED must not add production stubs. A nonzero exit alone is not RED evidence. |
 | `no-tests-collected` | Zero collected tests is neither a pass nor valid RED. Check project path, test filenames/discovery settings, and admitted test files. Do not add dummy tests merely to clear the gate. |
 | `timeout` | Inspect duration, configured limit, output and process-tree cleanup. Diagnose hanging tests; a reviewed timeout change is allowed in `reviewer_test_timeout_seconds` (default 300, greater than 0 and at most 3600). It applies on resume. Do not disable the bound or retry while cleanup is uncertain. |
 | `cancellation` | Execution was interrupted; neither acceptance nor a completed failing test is established. Confirm child-process cleanup and inspect durable recovery before resuming. |

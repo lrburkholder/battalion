@@ -176,7 +176,7 @@ default local trust root on first use without authentication infrastructure.
 Interrupt resolution is persisted before resume and records the human Actor
 ID, immutable display snapshot, time, interrupt target, resolution,
 disposition, and resulting durable state.
-On the BTN-165 branch, resolution and a `resume_intent` linking that exact
+Resolution and a `resume_intent` linking that exact
 action are saved atomically. Until a completed attempt has a durable outcome,
 replaying resume reuses this intent instead of creating another human decision.
 CLI and desktop clients submit the same `ResumeRun` application command; graph
@@ -220,7 +220,9 @@ These IDs identify requests; repeating identical intervention text with a new
 ID is a new human action.
 
 Recursion-limit handling retains the latest checkpoint and its exact next
-node. Unexpected graph exceptions never save invocation input over newer
+node. An existing typed block keeps its phase and blocked-result authorization
+requirement even if the terminal graph node cannot execute within the limit.
+Unexpected graph exceptions never save invocation input over newer
 durable progress. Application results/inspection expose typed recovery
 assessments; execution failures become `RunRecoverable` or `RunRecoveryUnsafe`.
 CLI and desktop explain whether replay is safe. An unknown started-attempt
@@ -235,7 +237,7 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.7` on the BTN-165 branch; persisted
+`execution_record.schema_version` is `1.7`; persisted
 `1.0` through `1.6` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
@@ -280,7 +282,12 @@ candidate. A typed pre-write role-contract violation records its reason,
 offending paths where safe, correction attempt number, no-mutation guarantee,
 and retry or escalation disposition. Battalion supplies one deterministic
 automatic correction retry to the same role and phase; it consumes the normal
-Run budget. A repeated violation pauses through the established human-interrupt
+Run budget. An exhausted budget pauses before creating the correction attempt,
+including after recovery from the rejected candidate's checkpoint. The budget
+interrupt targets that same role/phase and retains the correction context and
+consumed retry allowance. Human-authorized continuation permits that attempt
+without resetting the Run budget or granting another automatic retry.
+A repeated violation pauses through the established human-interrupt
 path. This never weakens scoped-write or other authority-violation handling.
 
 Version `1.5` adds an optional, versioned `role_result` to node execution
@@ -451,7 +458,7 @@ Driver RED uses `driver_red`, Driver GREEN uses `driver_green`, and Refactorer
 uses `refactorer`. A phase receives tools bound only to that entry; Reviewer
 receives none. An explicitly empty phase entry grants no write authority.
 
-BTN-166 branch contract: every configured directory and single-file root is a
+Every configured directory and single-file root is a
 project-relative authority declaration, not an arbitrary filesystem path.
 Before tools are exposed, normalize both separator styles and prove that each
 root resolves strictly within the resolved project base using native path
@@ -485,7 +492,7 @@ itself can use `driver_red: ["tests/"]`, `driver_green: ["battalion/"]`, and
 `refactorer: ["battalion/"]` without granting repository-wide write access.
 See ADR-0013.
 
-### Reviewer test execution (BTN-164 branch contract)
+### Reviewer test execution
 
 Reviewer runs `python -m pytest -q` with built-in JUnit output from a disposable
 copy of the configured project root. A passing exit (0) requires positive test
@@ -498,6 +505,11 @@ JUnit output, launch failure, timeout, and cancellation never authorize progress
 They take typed infrastructure interrupt #5, retain evidence, make no
 rejection-cause LLM call, and resume at the same Reviewer checkpoint. JUnit
 parsing is capped at 8 MiB; larger output is an inspectable malformed result.
+
+The RED prompt requires missing-behavior failures inside collected tests. If
+creating a module or symbol is the requested behavior, import it inside the
+test function, not at module scope or in fixtures. This preserves RED's
+test-only write authority without treating collection failures as acceptance.
 
 `reviewer_test_timeout_seconds` in project configuration defaults to 300 and
 must be greater than zero and at most 3600. The bound applies to all Reviewer

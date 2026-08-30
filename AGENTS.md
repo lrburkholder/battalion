@@ -29,7 +29,8 @@ conflicts instead of silently choosing one source.
 - Runtime flow: Architect -> Driver (RED) -> Reviewer -> Driver (GREEN) ->
   Reviewer -> Refactorer -> Reviewer -> done.
 - `battalion/state/` owns the versioned state contract and persistence.
-- `battalion/nodes/` owns role behavior. Prompts live in top-level `prompts/`.
+- `battalion/nodes/` owns role behavior. Packaged prompts live in
+  `battalion/prompts/`; explicit prompt overrides remain authoritative.
 - `battalion/scope/` owns structural write-scope enforcement.
 - `battalion/interrupts/` owns the six v1 interrupt conditions and budget
   tracking.
