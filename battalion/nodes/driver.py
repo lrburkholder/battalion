@@ -212,6 +212,12 @@ def run_driver(
     if mode is not None and mode not in ("red", "green"):
         raise ValueError(f"mode must be 'red', 'green', or None, got {mode!r}")
 
+    phase_scope_key = "driver" if mode is None else f"driver_{mode}"
+    scope_key = scope_key_for_phase(state.write_scope, phase_scope_key)
+    write_tools = build_write_tools(
+        scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
+    )
+
     prompt_node_name = "driver" if mode is None else f"driver-{mode}"
     resolved_prompt = system_prompt or load_system_prompt(
         prompt_node_name, prompts_dir=prompts_dir
@@ -262,11 +268,6 @@ def run_driver(
         except RoleResultRejected as exc:
             raise MalformedDriverOutput(str(exc)) from exc
 
-    phase_scope_key = "driver" if mode is None else f"driver_{mode}"
-    scope_key = scope_key_for_phase(state.write_scope, phase_scope_key)
-    write_tools = build_write_tools(
-        scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
-    )
     if not write_tools:
         raise WriteScopeMisconfigured(
             f"state.write_scope[{scope_key!r}] declares no write roots — "

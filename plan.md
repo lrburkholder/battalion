@@ -2,6 +2,13 @@
 
 ## Status
 
+BTN-166 is implemented on this branch, pending review and merge: the scoped-tool
+factory validates every directory and single-file authority declaration against the resolved
+project boundary. Application start/resume and worker launch reject invalid
+configuration before execution, with binding and use-time checks preserving
+the existing role limits. The amendments to ADR-0002 and ADR-0013 also require
+future BTN-123 isolated workspaces to reuse this containment rule.
+
 The v1 execution architecture is complete and validated. BTN-16 and BTN-19
 through BTN-28 add durable cost and execution evidence, the human-audited Recon
 and Intel lifecycle, deterministic context assembly, caller-owned run
@@ -149,7 +156,7 @@ battalion/
     loader.py             # install-safe package-resource and override boundary
     *.md                  # Battalion-owned runtime prompt assets
   scope/
-    tool_binding.py       # per-node scoped write-tool factory
+    tool_binding.py       # project containment and per-node scoped write-tool factory
   interrupts/
     triggers.py           # six v1 interrupt checks
     budget.py             # per-run budget tracking

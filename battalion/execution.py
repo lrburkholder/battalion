@@ -92,7 +92,7 @@ def _scope_entries(state: RunState, node_name: str) -> list[str]:
 def _snapshot(base_dir: Path, entries: list[str]) -> dict[str, str]:
     snapshot: dict[str, str] = {}
     for entry in entries:
-        target = base_dir / entry.rstrip("/")
+        target = base_dir / entry.replace("\\", "/").rstrip("/")
         paths = target.rglob("*") if target.is_dir() else [target]
         for path in paths:
             if path.is_file():
@@ -111,7 +111,7 @@ def _workspace_context_digest(
     base_dir: Path, entries: list[str]
 ) -> tuple[str, bool, int, int]:
     candidates: list[Path] = []
-    roots = [base_dir / item.rstrip("/") for item in entries] if entries else [base_dir]
+    roots = [base_dir / item.replace("\\", "/").rstrip("/") for item in entries] if entries else [base_dir]
     for root in roots:
         paths = root.rglob("*") if root.is_dir() else [root]
         candidates.extend(path for path in paths if path.is_file())
