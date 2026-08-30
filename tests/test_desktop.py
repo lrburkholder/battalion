@@ -95,6 +95,22 @@ def test_project_menu_reserves_space_for_refresh_shortcut(qt_app, tmp_path):
     window.close()
 
 
+def test_data_handling_help_opens_only_the_disclosure_on_request(qt_app, tmp_path, monkeypatch):
+    from battalion.disclosure import DATA_HANDLING_URL
+
+    opened = []
+    monkeypatch.setattr("battalion.desktop.app.QDesktopServices.openUrl", opened.append)
+    window = BattalionWindow(tmp_path, autoload=False)
+    try:
+        assert opened == []
+        assert window.data_handling_action in window.help_menu.actions()
+        window.data_handling_action.trigger()
+        assert [url.toString() for url in opened] == [DATA_HANDLING_URL]
+        assert not (tmp_path / ".battalion").exists()
+    finally:
+        window.close()
+
+
 def _execution() -> NodeExecution:
     return NodeExecution(
         execution_id="node-driver-green-1",

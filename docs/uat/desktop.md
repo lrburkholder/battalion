@@ -12,6 +12,13 @@ owns that acceptance after BTN-173's main-based candidate and BTN-129's CLI gate
 
 ## Purpose
 
+**BTN-172 amendment:** the repository operator approved disclosure scenario
+0a on 2026-08-30 in the BTN-172 task. This approves the script, not final live
+acceptance. Use the commit containing this approval as the reviewed revision
+and record its hash, reviewer/date, and approval scope with the UAT evidence.
+The operator also deferred BTN-54 to post-UAT; its current inference-provenance
+limitations remain disclosed and do not block this guide or script delivery.
+
 Verify the production PySide6 desktop client as an operator-facing
 presentation over Battalion's durable application state. This plan checks
 observable behavior, accessibility, recovery, and authority boundaries; it
@@ -62,6 +69,40 @@ and retain the first packaged Reviewer process result in scenario 3. A failure
 must become a BTN-132 remediation finding with a new artifact baseline and
 rerun, not a source-mode workaround. Controlled worker crash and Intel fixtures
 below are separate supplied scenarios; they do not excuse gaps in onboarding.
+
+<a id="data-handling"></a>
+## 0a. Data handling before desktop use (BTN-172)
+
+1. Before CLI setup for this ZIP, follow Getting Started's
+   [data-handling disclosure](../data-handling.md). Confirm setup prints its
+   URL before a connectivity completion. There is no desktop setup wizard or
+   desktop raw-trace export control to substitute for the documented CLI path.
+2. Launch the matched candidate on the disposable project. Use keyboard
+   navigation to **Help -> Data handling (opens browser)**. Confirm it opens
+   the same guide only when selected; opening the desktop itself must not
+   launch a browser or a model call. Record a blocked browser/network policy
+   as an accessibility limitation, not a passed link. Before main deployment,
+   use the staged/repository guide for preparation; public URL verification
+   belongs to BTN-173.
+3. Before **Resolve and resume** or queuing a Correction/Design decision, use
+   the guide to explain which text will become durable and which may enter
+   the next target model's context. Use only fictional fixture text. Confirm
+   Reviewer remains unavailable as an intervention target and that reading
+   the guide grants no new write/Actor/Run authority.
+4. Compare Work/History/Intel with CLI evidence for the same Run UUID. Identify
+   human text, diagnostics, model/cost metadata, artifact references and
+   candidate/accepted knowledge as applicable. Missing stream text on restart
+   is not proof of data deletion. Screenshots may disclose the visible evidence.
+5. For trace comparison, use the approved [CLI disclosure scenario](cli.md#data-handling)
+   with the paired wheel and no concurrent worker. Check both pre-export
+   warnings before model use. Do not invent a desktop trace-export feature.
+   Prepare only a sanitized screenshot/excerpt for sharing; retain originals
+   privately and explain retention/uninstall limitations from the guide alone.
+
+Record candidate/guide/script identity, notice ordering, link destination,
+operator interpretation and any required undocumented step. Final live desktop
+acceptance remains BTN-132 after BTN-173 and BTN-129; this prepared scenario
+claims no deployed page or completed live test; script approval is recorded above.
 
 ## 1. Launch, loading, and empty-project behavior
 

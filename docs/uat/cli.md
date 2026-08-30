@@ -17,6 +17,13 @@ does not freeze the guide or waive fixture safety/approval requirements.
 
 ## Purpose
 
+**BTN-172 amendment:** the repository operator approved disclosure scenario
+1a on 2026-08-30 in the BTN-172 task. This approves the script, not final live
+acceptance. Use the commit containing this approval as the reviewed revision
+and record its hash, reviewer/date, and approval scope with the UAT evidence.
+The operator also deferred BTN-54 to post-UAT; its current inference-provenance
+limitations remain disclosed and do not block this guide or script delivery.
+
 Exercise Battalion as an installed command-line application against a
 disposable local project. This plan is intentionally separate from unit tests:
 it verifies packaging, durable state, real provider interaction, human
@@ -61,6 +68,60 @@ every role model has passed. The guide's manual checkpoint, printed UUID,
 human-readable inspection, durable resolution, and final `done`/pytest evidence
 are mandatory. `$Python`, `$Project`, and `$RunId` below are the variables
 established by that guide; replace `$RunId` after **each** new Run.
+
+<a id="data-handling"></a>
+## 1a. Data handling before setup and trace export (BTN-172)
+
+Use only the named candidate, published documentation, and disposable content.
+Before setup or execution, follow the prominent README, Getting Started, and
+Pages navigation links to [Data handling and trust boundaries](../data-handling.md).
+Record the URL, guide revision, and what the operator understood about model
+context, local evidence, endpoint uncertainty, credential placement, and retention.
+Before main deployment, review the staged/repository guide; do not mark public
+availability passed. BTN-173 owns deployment verification.
+
+1. Inspect `setup --help`, `run --help`, and `resume --help`. Confirm setup and
+   trace options identify the disclosure. In Getting Started's setup step,
+   confirm the URL appears **before** connectivity validation and no credential
+   value is displayed. `--no-validate` must not be described as private/offline
+   execution. A missing key error is not a completed live validation.
+2. After reviewing the disclosure, use a fresh disposable project and the normal
+   four-role configuration. Only if approved for this fixture, enable a trace
+   on its manually paused Run:
+
+   ```powershell
+   $TracePath = Join-Path $Project 'uat-stream.jsonl'
+   & $Python -m battalion run BTN-UAT-DATA --spec ticket.md --checkpoint driver --trace-output $TracePath
+   $RunId = Read-Host 'Paste the printed Run UUID'
+   & $Python -m battalion status $RunId --human
+   ```
+
+3. Confirm the sensitive-export warning and URL precede trace-path reporting
+   and generation. Inspect the private file for Run/node/time/kind/raw-content
+   fields. Reasoning need not be emitted by every provider. Compare with Run
+   JSON: specification, human decisions, test/role evidence are sensitive too,
+   while raw stream events are not persisted there as a transcript.
+4. Review the plan and authorize continuation using the same private trace:
+
+   ```powershell
+   & $Python -m battalion resume $RunId --resolution 'Reviewed disposable plan; continue within approved scope' --trace-output $TracePath
+   ```
+
+   Confirm the resume warning appears before generation, existing trace lines
+   survive, and later observations append. Do not treat sequence numbers as
+   global or raw model reasoning as acceptance evidence. Inspect final state
+   and required review outcomes separately.
+5. Prepare a **separate sanitized excerpt** for a finding; preserve original
+   evidence privately. The operator must be able to locate state, worker/Intel
+   evidence where present, workspace artifacts, and the explicit trace using
+   the guide alone, and explain that uninstall/local deletion does not retract
+   remote copies. Do not perform purge/restore, credential disclosure, or broad
+   filesystem deletion as part of this scenario.
+
+Pass only when links/notices precede sensitive use and the guide matches the
+candidate. Record missing notices, broken links, undocumented steps, or false
+privacy/retention expectations as defects. This script review is separate from
+final BTN-129 live acceptance after BTN-173; no live result is asserted here.
 
 ## 2. Full happy path
 

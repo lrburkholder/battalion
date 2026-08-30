@@ -11,6 +11,7 @@ from uuid import UUID
 
 import typer
 
+from battalion.disclosure import DATA_HANDLING_URL
 from battalion.application import (
     ApplicationError,
     InspectRun,
@@ -87,6 +88,11 @@ def _open_trace_output(path: str | None) -> Iterator[tuple[TextIO | None, Path |
     if path is None:
         yield None, None
         return
+    typer.echo(
+        "Sensitive trace export: raw model content/reasoning is appended without "
+        f"redaction. Review before sharing. Data handling: {DATA_HANDLING_URL}",
+        err=True,
+    )
     target = Path(path).expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8", newline="\n", buffering=1) as stream:
@@ -252,7 +258,7 @@ def run(
     trace_output: str | None = typer.Option(
         None,
         "--trace-output",
-        help="Append raw token/reasoning observations to this JSONL file",
+        help=f"Append sensitive raw token/reasoning JSONL without redaction. Read {DATA_HANDLING_URL}",
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Authorize overwrite if a canonical ID already exists"),
 ):
@@ -318,7 +324,7 @@ def resume(
     trace_output: str | None = typer.Option(
         None,
         "--trace-output",
-        help="Append raw token/reasoning observations to this JSONL file",
+        help=f"Append sensitive raw token/reasoning JSONL without redaction. Read {DATA_HANDLING_URL}",
     ),
     actor_id: UUID | None = typer.Option(
         None,
@@ -403,7 +409,7 @@ def setup(
     model_driver: str | None = typer.Option(None, "--model-driver"),
     model_reviewer: str | None = typer.Option(None, "--model-reviewer"),
     model_refactorer: str | None = typer.Option(None, "--model-refactorer"),
-    validate: bool = typer.Option(True, "--validate/--no-validate", help="Run live connectivity checks before saving"),
+    validate: bool = typer.Option(True, "--validate/--no-validate", help=f"Run live connectivity checks before saving. Data handling: {DATA_HANDLING_URL}"),
 ):
     """Configure LLM providers and validate connectivity, writing battalion.config.yaml."""
     overrides = {

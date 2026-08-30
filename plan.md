@@ -2,6 +2,14 @@
 
 ## Status
 
+BTN-172 adds [operator data-handling guidance](docs/data-handling.md), public
+navigation, setup/trace notices, and CLI/desktop disclosure UAT scenarios on
+this branch. It documents current boundaries without changing role authority,
+context admission, or retention. Endpoint-aware inference identity remains
+BTN-54 work, explicitly deferred by the operator to post-UAT on 2026-08-30.
+The operator approved the BTN-172 CLI/desktop disclosure scenarios on that date;
+downstream live acceptance and Pages publication still follow the main merge.
+
 BTN-166 is implemented on this branch, pending review and merge: the scoped-tool
 factory validates every directory and single-file authority declaration against the resolved
 project boundary. Application start/resume and worker launch reject invalid

@@ -180,6 +180,30 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     assert loaded.status == RunStatus.DONE
 
 
+def test_trace_disclosure_precedes_file_creation_and_is_opt_in(tmp_path, monkeypatch):
+    from battalion.cli import _open_trace_output
+    from battalion.disclosure import DATA_HANDLING_URL
+
+    trace_path = tmp_path / "private" / "trace.jsonl"
+    notices = []
+
+    def capture_notice(message, **kwargs):
+        assert not trace_path.parent.exists()
+        assert DATA_HANDLING_URL in message
+        assert kwargs["err"] is True
+        notices.append(message)
+
+    monkeypatch.setattr("battalion.cli.typer.echo", capture_notice)
+    with _open_trace_output(None) as (stream, path):
+        assert stream is None and path is None
+    assert notices == []
+    with _open_trace_output(str(trace_path)) as (stream, path):
+        assert len(notices) == 1
+        assert path == trace_path.resolve()
+        assert stream is not None
+        assert trace_path.exists()
+
+
 def test_run_appends_node_associated_trace_output(tmp_path, monkeypatch):
     import battalion.application as application_module
 
@@ -204,6 +228,8 @@ def test_run_appends_node_associated_trace_output(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert f"Trace output: {trace_path.resolve()}" in result.output
+    assert result.output.index("Data handling:") < result.output.index("Trace output:")
+    assert "without redaction" in result.output
     events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
     assert [(event["node"], event["kind"], event["content"]) for event in events] == [
         ("architect", "reasoning", "plan carefully"),
@@ -295,6 +321,8 @@ def test_resume_appends_node_associated_trace_output(tmp_path, monkeypatch):
         )
 
     assert result.exit_code == 0
+    assert result.output.index("Data handling:") < result.output.index("Trace output:")
+    assert "without redaction" in result.output
     events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
     assert [(event["node"], event["kind"], event["content"]) for event in events] == [
         ("driver_green", "reasoning", "implement now"),

@@ -331,8 +331,10 @@ Project-local `.battalion/state/<RUN_UUID>.json` contains the versioned Run,
 interrupt/human-action history, execution record, and available recovery
 checkpoints. `.battalion/workers/<RUN_UUID>.json` records worker supervision;
 `.battalion/project.json`, `runs.json`, and `actors.json` hold project/catalog/
-Actor identity. Intel, integration effects, and optional traces are separate
-project-local evidence; the Run file is not a complete project backup.
+Actor identity. Integration effects are retained in the Run's
+`side_effect_ledger`; Intel and optional trace files are separate evidence.
+Trace files can be outside the project. The Run file is not a complete project
+backup. See [Data handling and trust boundaries](data-handling.md#local-evidence).
 
 For Run-not-found, verify project path and exact ID against the transcript or
 desktop catalog. For malformed JSON, unsupported schema, permission/I/O error,
