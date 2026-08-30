@@ -71,6 +71,7 @@ from battalion.observation import (
     ObservationSource,
     RunObservationPublisher,
 )
+from battalion.role_results import RoleResultKind
 from battalion.state.models import (
     Budget,
     HumanActionRecord,
@@ -746,6 +747,13 @@ def resume_run(
     warning = None
     if state.status == RunStatus.AWAITING_HUMAN:
         state = _resolve_latest_interrupt(
+            state,
+            actor=actor,
+            resolution=command.resolution,
+        )
+        save_state(state, state_path(command.run_id, state_dir))
+    elif state.status == RunStatus.BLOCKED and _latest_blocked_role_result(state) is not None:
+        state = _resolve_blocked_role_result(
             state,
             actor=actor,
             resolution=command.resolution,
@@ -1552,6 +1560,54 @@ def _resolve_latest_interrupt(
         raise HumanActionRejected(str(exc)) from exc
     return state.model_copy(update={
         "interrupt_log": interrupts,
+        "human_action_log": [*state.human_action_log, action],
+    })
+
+
+def _latest_blocked_role_result(state: RunState):
+    """Return the latest typed blocked attempt, if this is a BTN-133 pause."""
+    for execution in reversed(state.execution_record.node_executions):
+        if (
+            execution.role_result is not None
+            and execution.role_result.kind is RoleResultKind.BLOCKED
+        ):
+            return execution
+    return None
+
+
+def _resolve_blocked_role_result(
+    state: RunState,
+    *,
+    actor: Actor,
+    resolution: str,
+    occurred_at: datetime | None = None,
+    action_id: str | None = None,
+) -> RunState:
+    """Record a human confirmation before retrying a typed blocked attempt."""
+    blocked = _latest_blocked_role_result(state)
+    if blocked is None:
+        raise HumanActionRejected("The blocked run has no typed role result")
+    if not resolution.strip():
+        raise HumanActionRejected("Blocked-result resolution must not be empty")
+    timestamp = occurred_at or datetime.now(timezone.utc)
+    identifier = action_id or f"action-{uuid4()}"
+    try:
+        action = HumanActionRecord(
+            action_id=identifier,
+            kind="interrupt-resolution",
+            actor=actor.display_name,
+            actor_id=actor.actor_id,
+            occurred_at=timestamp,
+            target=f"role-result:{blocked.execution_id}",
+            disposition="applied",
+            detail=resolution.strip(),
+            resulting_state_version=state.schema_version,
+            resulting_status=state.status,
+            resulting_phase=state.phase,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HumanActionRejected(str(exc)) from exc
+    return state.model_copy(update={
         "human_action_log": [*state.human_action_log, action],
     })
 

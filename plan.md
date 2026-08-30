@@ -60,6 +60,12 @@ Actor inspect current deterministic/Tactician evidence and choose full, compact,
 clarification, or cancellation. It fails closed on changed evidence or policy,
 keeps human and Tactician records distinct, and leaves compact execution plus
 durable admission/Run linkage to BTN-142 and BTN-143 respectively.
+Accepted RFC-0013 (BTN-133) defines the versioned typed role-result contract
+for Driver and Refactorer attempts, preserving explicit human authority when a
+Driver is blocked or must escalate rather than fabricating a mutation. BTN-133
+is in progress: its shared domain submission capability validates role/mode
+policy, observed writes, and references only to the evidence supplied to the
+active node attempt before durable routing and history projection.
 
 ## Architecture overview
 
