@@ -1,4 +1,4 @@
-name: Complete merged Battalion ticket
+name: Complete merged Battalion tickets
 
 on:
   pull_request:
@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Validate and close ticket
+      - name: Validate and close declared tickets
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

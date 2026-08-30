@@ -74,11 +74,19 @@ dependency already solves the problem.
   rows or counters in repository documentation; keep the authenticated
   `python scripts/sync_status.py --validate` check clean before handoff
   (ADR-0027 as amended by ADR-0031).
-  For a PR that completes exactly one ticket, include a full-line
-  `Battalion-ticket: #<issue-number>` marker in its body. After a human merges
-  it to `main`, the post-merge lifecycle Action validates that marker, closes
-  the in-review Issue, and leaves public status rendering to the Pages
-  publication pipeline (ADR-0030 as amended by ADR-0031).
+  For a PR that completes exactly one ticket, the legacy full-line
+  `Battalion-ticket: #<issue-number>` marker remains valid. For an integration
+  or release PR that completes multiple tickets, use exactly one full-line
+  `Battalion-tickets: #<issue-number>, #<issue-number>[, ...]` marker. Never
+  mix the singular and plural forms. Do not use GitHub auto-close keywords
+  such as `Closes`, `Fixes`, or `Resolves` for any Issue declared by those
+  Battalion markers: Battalion owns ticket closure after merge. Auto-close
+  references to unrelated Issues are not governed by this rule. After a human
+  merges the PR to `main`, the post-merge lifecycle Action validates the
+  complete declared Issue set before mutation, closes eligible in-review Issues
+  deterministically, treats already-completed Issues as reconciliation states,
+  and leaves public status rendering to the Pages publication pipeline
+  (ADR-0030 as amended by ADR-0031, BTN-152, and BTN-162).
 
 ## Setup and validation
 
