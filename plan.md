@@ -73,6 +73,11 @@ and authorized human acceptance; the existing checkpoint reviewer remains a
 RejectionAnalyzer rather than a substitute for that review. Durable Run linkage,
 restart/resume, and the independent Review Run implementation remain follow-up
 work under BTN-143 and RFC-0014's implementation decomposition.
+BTN-164 is in progress on this branch. Reviewer accepts only classified pytest
+pass/failure evidence with collected tests, bounds execution time, and pauses
+invalid harness outcomes at the same checkpoint through interrupt #5. The
+explicit project-input materialization policy and execution-record `1.6`
+evidence amend ADR-0007, ADR-0013, and ADR-0014 without changing role authority.
 
 ## Architecture overview
 
@@ -112,6 +117,7 @@ battalion/
   config.py               # YAML, environment, and CLI configuration merge
   context.py              # bounded role, Instinct, and human-action assembly
   execution.py            # durable node evidence, provenance, and cost views
+  reviewer_testing.py     # admitted test inputs and bounded pytest process lifecycle
   setup.py                # provider discovery and connectivity setup (BTN-15)
   graph.py                # graph construction, routing, pause, and resume
   progress.py             # CLI progress projection
@@ -163,10 +169,10 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0004](docs/adrs/adr0004.md) | Implement native Battalion roles |
 | [ADR-0005](docs/adrs/adr0005.md) | Externalize role prompts |
 | [ADR-0006](docs/adrs/adr0006.md) | Split Driver into RED and GREEN modes |
-| [ADR-0007](docs/adrs/adr0007.md) | Review against an expected outcome |
+| [ADR-0007](docs/adrs/adr0007.md) | Review against a classified, bounded expected test outcome |
 | [ADR-0008](docs/adrs/adr0008.md) | Give Refactorer Driver's implementation scope |
 | [ADR-0009](docs/adrs/adr0009.md) | Count rejection causes per checkpoint type |
-| [ADR-0013](docs/adrs/adr0013.md) | Bind write tools to project layout phases |
+| [ADR-0013](docs/adrs/adr0013.md) | Bind write tools to project layout phases and explicitly materialize Reviewer inputs |
 | [ADR-0014](docs/adrs/adr0014.md) | Persist a bounded execution record in RunState |
 | [ADR-0015](docs/adrs/adr0015.md) | Keep Recon outside the completed execution graph |
 | [ADR-0016](docs/adrs/adr0016.md) | Make Instinct promotion an audited human boundary |
