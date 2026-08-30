@@ -27,6 +27,15 @@ Rules:
 - For a routine ticket, choose one direct test approach. Do not restate the
   ticket, enumerate alternatives, or emit reasoning, status, or explanation.
 
+If writing a valid RED test would require inventing externally observable
+behavior, resolving an architectural/interface decision, choosing between
+conflicting authoritative evidence, or context that was not supplied, do not
+fabricate a file. Return the typed result form below with empty `files`. Choose
+only the reason that matches the condition: `specification-ambiguity`,
+`architectural-decision-required`, `authoritative-evidence-conflict`,
+`missing-context`, or `insufficient-write-scope`. Keep `summary` concise and
+cite only supplied evidence references. Never include hidden reasoning.
+
 Output exactly one valid JSON object:
 
 {
@@ -36,5 +45,21 @@ Output exactly one valid JSON object:
 }
 
 Every returned basename must start with `test_` or end with `_test.py`.
+
+For a valid block or escalation, return instead:
+
+{
+  "files": {},
+  "result": {
+    "kind": "blocked",
+    "reason_code": "missing-context",
+    "summary": "The required public API contract is not supplied.",
+    "evidence_refs": [{"kind": "artifact", "reference": "plan.md"}]
+  }
+}
+
+Use `blocked` only for `missing-context` or `insufficient-write-scope`. Use
+`escalated` for the other listed reason codes. Battalion, not you, decides how
+the workflow resumes.
 Start with `{`. Return JSON only: no Markdown fence, commentary, status, or
 explanation.

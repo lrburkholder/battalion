@@ -93,6 +93,21 @@ def _print_status(
                 typer.echo(f"  {i}. {entry.trigger} @ {entry.timestamp.isoformat()}")
                 if entry.resolution:
                     typer.echo(f"     Resolution: {entry.resolution}")
+        role_results = [
+            execution for execution in state.execution_record.node_executions
+            if execution.role_result is not None
+        ]
+        if role_results:
+            typer.echo("\nRole results:")
+            for execution in role_results:
+                result = execution.role_result
+                detail = result.reason_code.value if result.reason_code else None
+                if result.summary:
+                    detail = f"{detail}; {result.summary}" if detail else result.summary
+                typer.echo(
+                    f"  {execution.phase}: {result.kind.value}"
+                    + (f" ({detail})" if detail else "")
+                )
         if costs:
             summary = cost_summary or {}
             typer.echo("\nLLM costs:")

@@ -20,12 +20,14 @@ import pytest
 
 from battalion.context import MAX_CONTEXT_CHARS, driver_context, refactorer_context
 from battalion.nodes.driver import InvalidModeOutput
+from battalion.nodes.driver import run_driver
 from battalion.nodes.refactorer import MalformedRefactorerOutput
 from battalion.graph import (
     NODE_ARCHITECT,
     NODE_DONE,
     NODE_DRIVER_GREEN,
     NODE_DRIVER_RED,
+    NODE_BLOCKED,
     NODE_PAUSE,
     NODE_REFACTORER,
     NODE_REVIEWER_RED,
@@ -72,11 +74,12 @@ EXPECTED_NODES = [
     NODE_REVIEWER_REFACTOR,
     NODE_DONE,
     NODE_PAUSE,
+    NODE_BLOCKED,
 ]
 
 
 class TestGraphStructure:
-    def test_graph_registers_all_nine_nodes(self):
+    def test_graph_registers_all_terminal_and_role_nodes(self):
         """AC: all role, terminal, and pause nodes are wired."""
         node_names = list(build_graph(make_llm_configs()).nodes)
         for name in EXPECTED_NODES:
@@ -97,6 +100,7 @@ class TestGraphStructure:
         assert NODE_REFACTORER == "refactorer"
         assert NODE_PAUSE == "awaiting_human"
         assert NODE_DONE == "done"
+        assert NODE_BLOCKED == "blocked"
 
 
 # =============================================================================
@@ -456,6 +460,72 @@ class TestRoleOutputFailuresPause:
         assert final.status == RunStatus.AWAITING_HUMAN
         assert calls == ["red"]
         assert final.interrupt_log[-1].trigger == "out-of-scope-write"
+
+
+class TestTypedDriverResults:
+    """BTN-133 outcomes bypass neither execution evidence nor graph policy."""
+
+    @staticmethod
+    def _result_response(kind: str, reason_code: str) -> dict:
+        import json
+
+        return {"choices": [{"message": {"content": json.dumps({
+            "files": {},
+            "result": {
+                "kind": kind,
+                "reason_code": reason_code,
+                "summary": "The supplied contract cannot be completed safely.",
+            },
+        })}}]}
+
+    def test_blocked_driver_attempt_is_persisted_and_does_not_advance(self, tmp_path):
+        calls = []
+
+        def blocked_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            calls.append(mode)
+            return run_driver(
+                state, ticket_text, llm_config, base_dir=base_dir, mode=mode,
+                prompts_dir=prompts_dir,
+                call_llm_fn=lambda *args, **kwargs: self._result_response(
+                    "blocked", "missing-context"
+                ),
+            )
+
+        final = RunState.model_validate(invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=5,
+            driver=blocked_driver,
+            reviewer=reviewer_accepting(calls),
+        ))
+
+        assert final.status is RunStatus.BLOCKED
+        assert final.phase == NODE_DRIVER_RED
+        assert calls == ["red"]
+        attempt = final.execution_record.node_executions[-1]
+        assert attempt.phase == NODE_DRIVER_RED
+        assert attempt.outcome == "succeeded"
+        assert attempt.role_result.kind.value == "blocked"
+
+    def test_escalated_driver_attempt_pauses_for_human_and_persists_result(self, tmp_path):
+        def escalated_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
+            return run_driver(
+                state, ticket_text, llm_config, base_dir=base_dir, mode=mode,
+                prompts_dir=prompts_dir,
+                call_llm_fn=lambda *args, **kwargs: self._result_response(
+                    "escalated", "architectural-decision-required"
+                ),
+            )
+
+        final = RunState.model_validate(invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=5, driver=escalated_driver
+        ))
+
+        assert final.status is RunStatus.AWAITING_HUMAN
+        assert final.phase == NODE_PAUSE
+        assert final.interrupt_log[-1].trigger == "role-escalation"
+        attempt = final.execution_record.node_executions[-1]
+        assert attempt.phase == NODE_DRIVER_RED
+        assert attempt.outcome == "succeeded"
+        assert attempt.role_result.kind.value == "escalated"
 
     def test_refactorer_non_json_pauses_and_retries_refactoring(self, tmp_path):
         def malformed_response(state, refactor_text, llm_config, base_dir, prompts_dir=None):
