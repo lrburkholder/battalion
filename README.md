@@ -191,22 +191,16 @@ unchanged. See [ADR-0002](docs/adrs/adr0002.md) and
 
 ### Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/lrburkholder/battalion.git
-cd battalion
+Start with [Getting Started](docs/getting-started.md): verify an identified
+wheel or Windows x64 desktop ZIP, install outside a source checkout, configure
+models, and complete a disposable ticket with an explicit human checkpoint.
+PowerShell instructions include checksums, canonical Run UUIDs, and current
+desktop packaging limitations. There is no public GitHub Release as of
+2026-08-30; use only a named candidate supplied for UAT until a release exists.
 
-# Create a virtual environment, activate it for your shell, then install dependencies
-python -m venv .venv
-python -m pip install -e ".[dev]"
-
-# Add the production desktop client when needed
-python -m pip install -e ".[desktop,dev]"
-```
-
-Battalion requires Python 3.11 or newer. Core installation includes the
-validated LangGraph 1.x runtime. The desktop extra adds pinned PySide6 and
-Nuitka packaging tools.
+Battalion requires Python 3.11 or newer for the CLI. Editable installs and
+developer/desktop build dependencies belong to
+[contributor setup](docs/contributing.md), not end-user onboarding.
 
 ### Releases
 
@@ -219,25 +213,12 @@ Windows desktop ZIP, and the intentionally separate first-run onboarding path.
 
 ### Configure Models
 
-Battalion uses LiteLLM model identifiers such as `openai/gpt-4.1-mini` or
-`anthropic/claude-sonnet-4-20250514`. Configure provider credentials in the
-environment; do not put API keys in `battalion.config.yaml`.
-
-BTN-15 adds a guided setup command:
-
-```bash
-battalion setup
-
-# Non-interactive example
-battalion setup \
-  --model-architect provider/model-a \
-  --model-driver provider/model-b \
-  --model-reviewer provider/model-c \
-  --model-refactorer provider/model-b
-```
-
-Driver and Reviewer must use different model identifiers. Use `--no-validate`
-only when intentionally skipping live provider connectivity checks.
+Follow the [Getting Started setup steps](docs/getting-started.md#4-choose-models-and-validate-configuration-live-provider-step)
+to select local or remote inference and supply credentials through environment
+variables, never project configuration. Driver and Reviewer must use different
+model identifiers. Setup validates one selected model per provider; it is not
+an all-model capability or compatibility guarantee. `--no-validate` explicitly
+skips live connectivity checks.
 
 ### Configure Role Prompts
 
@@ -398,13 +379,20 @@ or mutate a HumanInterrupt.
 
 ### Run Battalion
 
-```bash
-battalion run BTN-16 --spec path/to/spec.md
-battalion run BTN-16 --spec path/to/spec.md --trace-output .battalion/traces/BTN-16.jsonl
-battalion status run-BTN-16 --human
-battalion status run-BTN-16 --costs --human
-battalion resume run-BTN-16
+After installation and project setup, in PowerShell:
+
+```powershell
+battalion run BTN-HELLO-1 --spec ticket.md --checkpoint driver
+$RunId = Read-Host 'Paste the printed Run UUID'
+battalion status $RunId --human
+battalion status $RunId --costs --human
+battalion resume $RunId --resolution 'Reviewed the plan and approved continuation'
 ```
+
+Use the environment's installed `battalion` entry point, or the explicit
+`& $Python -m battalion` form in [Getting Started](docs/getting-started.md).
+Inspect the interrupt and plan before resume. New Runs print canonical UUIDs;
+a ticket ID or a fabricated `run-BTN-*` value is not that UUID.
 
 `status --costs` projects persisted LiteLLM input/output tokens and known cost
 by concrete graph phase, model, currency, and source. It also shows bounded

@@ -233,6 +233,16 @@ ticket or bypassing a checkpoint.
 
 ## Delivery sequence
 
+BTN-170 prepares artifact-first [Getting Started](docs/getting-started.md),
+separate [contributor setup](docs/contributing.md), and documentation-driven
+[CLI](docs/uat/cli.md)/[desktop](docs/uat/desktop.md) UAT scripts. The guide uses
+identified wheels/Windows ZIPs, clean Python environments, checksums/provenance,
+and a disposable Run with an explicit checkpoint and canonical UUID. Script
+review and credential-free checks precede integration; final live acceptance
+belongs to BTN-129/BTN-132 after BTN-173. Public Pages availability requires the
+main publication pipeline. The documented frozen-worker pytest limitation
+remains a desktop release-gate finding, not an onboarding workaround.
+
 The v1 implementation landed in this dependency order:
 
 1. State models and persistence (BTN-1).

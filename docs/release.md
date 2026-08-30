@@ -1,5 +1,10 @@
 # Releases and distribution
 
+For installation, artifact verification, and a first disposable project, use
+[Getting Started](getting-started.md). It distinguishes a named UAT candidate
+from an available published release; the workflow below does not imply that a
+release already exists. Source contributors use [contributor setup](contributing.md).
+
 ## Release contract
 
 `pyproject.toml` is the single source of truth for the Battalion application
@@ -72,6 +77,11 @@ experience, and clean-machine validation. macOS and Linux artifacts are also
 out of scope until their packaging and support evidence exists.
 
 ## First-run onboarding direction
+
+The current artifact-based CLI/configuration and desktop inspection path is
+documented in [Getting Started](getting-started.md), including the frozen
+worker's pytest execution limitation. Prompt smoke validation alone is not
+end-to-end desktop UAT acceptance.
 
 Release packaging is mechanical; onboarding owns user-specific configuration.
 The eventual first-run experience will:

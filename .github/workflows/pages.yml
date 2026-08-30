@@ -11,6 +11,10 @@ on:
       - plan.md
       - docs/adrs/**
       - docs/status.md
+      - docs/getting-started.md
+      - docs/contributing.md
+      - docs/release.md
+      - docs/uat/**
       - docs/ui/**
       - docs/assets/**
       - battalion/desktop/assets/favicon.ico
@@ -28,6 +32,10 @@ on:
       - plan.md
       - docs/adrs/**
       - docs/status.md
+      - docs/getting-started.md
+      - docs/contributing.md
+      - docs/release.md
+      - docs/uat/**
       - docs/ui/**
       - docs/assets/**
       - battalion/desktop/assets/favicon.ico
