@@ -202,6 +202,26 @@ def render_execution(execution: NodeExecution) -> str:
             f"{review.cause or 'no rejection cause'}"
         )
 
+    process = execution.test_execution
+    if process is not None:
+        lines.extend((
+            f"Pytest classification: {process.classification.value}",
+            f"Command: {process.command!r}",
+            f"Working directory: {process.working_directory}",
+            f"Exit code: {process.returncode}",
+            f"Collected: {process.tests_collected}; failures: {process.failures}; errors: {process.errors}",
+            f"Duration: {process.duration_ms} ms; timeout: {process.timeout_seconds:g} s",
+            f"Timed out: {_yes_no(process.timed_out)}; cancelled: {_yes_no(process.cancelled)}",
+            f"Cleanup attempted: {_yes_no(process.cleanup_attempted)}; succeeded: {_yes_no(process.cleanup_succeeded)}",
+            f"Detail: {process.detail or 'None'}",
+            f"STDOUT ({process.stdout_observed_bytes} bytes; truncated={_yes_no(process.stdout_truncated)}):",
+            process.stdout,
+            f"STDERR ({process.stderr_observed_bytes} bytes; truncated={_yes_no(process.stderr_truncated)}):",
+            process.stderr,
+        ))
+    elif execution.role == "reviewer":
+        lines.append("Pytest process evidence: Unavailable (legacy or uncaptured)")
+
     lines.extend(("", "TOKEN AND COST EVIDENCE"))
     if not execution.llm_calls:
         lines.append("No model-call usage recorded")

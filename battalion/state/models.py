@@ -249,9 +249,81 @@ class TestOutcome(BaseModel):
     accepted: bool
 
 
+class TestExecutionClassification(str, Enum):
+    """Mechanical disposition of one bounded Reviewer pytest process."""
+
+    PASSED = "pass"
+    TEST_FAILED = "test-failure"
+    NO_TESTS_COLLECTED = "no-tests-collected"
+    PYTEST_ERROR = "collection-usage-internal-error"
+    TIMED_OUT = "timeout"
+    CANCELLED = "cancellation"
+    PROCESS_LAUNCH_FAILED = "process-launch-failure"
+    MALFORMED_OUTPUT = "malformed-output"
+    INVALID_EXIT = "invalid-pytest-outcome"
+
+
+class TestExecutionEvidence(BaseModel):
+    """Bounded, inspectable evidence from Reviewer's independent test run."""
+
+    command: list[Annotated[str, Field(min_length=1, max_length=1000)]] = Field(
+        min_length=1, max_length=20
+    )
+    working_directory: str = Field(min_length=1, max_length=500)
+    classification: TestExecutionClassification
+    returncode: int | None = None
+    tests_collected: int | None = Field(default=None, ge=0)
+    failures: int | None = Field(default=None, ge=0)
+    errors: int | None = Field(default=None, ge=0)
+    stdout: str = Field(default="", max_length=65536)
+    stderr: str = Field(default="", max_length=65536)
+    stdout_observed_bytes: int = Field(ge=0)
+    stderr_observed_bytes: int = Field(ge=0)
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    duration_ms: int = Field(ge=0)
+    timeout_seconds: float = Field(gt=0, le=3600)
+    timed_out: bool = False
+    cancelled: bool = False
+    cleanup_attempted: bool = False
+    cleanup_succeeded: bool | None = None
+    detail: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_disposition(self) -> Self:
+        if self.classification in {
+            TestExecutionClassification.PASSED,
+            TestExecutionClassification.TEST_FAILED,
+        }:
+            if not self.tests_collected or self.errors != 0:
+                raise ValueError("valid checkpoint evidence requires collected tests and no harness errors")
+            if self.classification is TestExecutionClassification.PASSED:
+                if self.returncode != 0 or self.failures != 0:
+                    raise ValueError("passing evidence requires exit 0 and no failures")
+            elif self.returncode != 1 or not self.failures:
+                raise ValueError("failing evidence requires exit 1 and a collected-test failure")
+        if self.stdout_truncated != (self.stdout_observed_bytes > 65536):
+            raise ValueError("stdout truncation metadata is inconsistent")
+        if self.stderr_truncated != (self.stderr_observed_bytes > 65536):
+            raise ValueError("stderr truncation metadata is inconsistent")
+        if self.timed_out != (
+            self.classification is TestExecutionClassification.TIMED_OUT
+        ):
+            raise ValueError("timeout disposition is inconsistent with classification")
+        if self.cancelled != (
+            self.classification is TestExecutionClassification.CANCELLED
+        ):
+            raise ValueError("cancellation disposition is inconsistent with classification")
+        if self.cleanup_attempted and self.cleanup_succeeded is None:
+            raise ValueError("attempted cleanup requires a cleanup result")
+        if not self.cleanup_attempted and self.cleanup_succeeded is not None:
+            raise ValueError("cleanup result requires an attempted cleanup")
+        return self
+
+
 class ReviewResult(BaseModel):
     checkpoint: CheckpointType
-    verdict: Literal["accepted", "rejected"]
+    verdict: Literal["accepted", "rejected", "unavailable"]
     cause: str | None = Field(default=None, max_length=2000)
 
 
@@ -334,6 +406,7 @@ class NodeExecution(BaseModel):
     role_result: RoleExecutionResult | None = None
     tool_activity: list[ToolActivity] = Field(default_factory=list, max_length=100)
     test_outcome: TestOutcome | None = None
+    test_execution: TestExecutionEvidence | None = None
     review_result: ReviewResult | None = None
     artifact_provenance: list[ArtifactProvenance] = Field(default_factory=list, max_length=100)
     interrupt_ids: list[int] = Field(default_factory=list, max_length=20)
@@ -348,7 +421,9 @@ class NodeExecution(BaseModel):
 class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
-    schema_version: Literal["1.0", "1.1", "1.2", "1.3", "1.4", "1.5"] = "1.5"
+    schema_version: Literal[
+        "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6"
+    ] = "1.6"
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 
