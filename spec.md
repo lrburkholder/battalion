@@ -176,6 +176,9 @@ default local trust root on first use without authentication infrastructure.
 Interrupt resolution is persisted before resume and records the human Actor
 ID, immutable display snapshot, time, interrupt target, resolution,
 disposition, and resulting durable state.
+On the BTN-165 branch, resolution and a `resume_intent` linking that exact
+action are saved atomically. Until a completed attempt has a durable outcome,
+replaying resume reuses this intent instead of creating another human decision.
 CLI and desktop clients submit the same `ResumeRun` application command; graph
 resume inference and execution remain canonical.
 
@@ -193,6 +196,38 @@ not supplied to later attempts or other roles. A crash before association
 leaves the item queued; a crash after association preserves the receiving
 attempt identity (ADR-0023).
 
+BTN-165 registers the unfinished `NodeExecution` and its intervention delivery
+in the same atomic state replacement. The graph then checkpoints
+`attempt-started` before role execution. Recovery before that boundary reuses
+the same attempt ID and requires the original prompt/model configuration;
+after that boundary, absent a saved outcome, execution may have caused writes
+or provider charges and must not be automatically replayed. Completed outcomes
+are checkpointed before completion observations, with their exact graph
+successor, and then marked `outcome-checkpointed` by the graph wrapper.
+The durable `graph_progress` contract distinguishes
+`interrupted-before-attempt`, `attempt-created`, `attempt-started`,
+`attempt-completed`, and `outcome-checkpointed`. A saved resume intent without
+a graph cursor also explicitly represents authorization before attempt creation.
+Correction context and its consumed retry allowance survive recovery; an
+intervention remains exclusive to its originally receiving attempt.
+
+Resume/intervention clients may supply a stable `action_id`. Replays retain
+original actor, timestamp, target, and decision evidence; conflicting ID reuse
+is rejected. A completed resume action replay is a read of current durable
+state, not authorization to resolve a later interrupt. Without an ID, only a
+pending resume intent is implicitly reused. The CLI exposes `--action-id`.
+These IDs identify requests; repeating identical intervention text with a new
+ID is a new human action.
+
+Recursion-limit handling retains the latest checkpoint and its exact next
+node. Unexpected graph exceptions never save invocation input over newer
+durable progress. Application results/inspection expose typed recovery
+assessments; execution failures become `RunRecoverable` or `RunRecoveryUnsafe`.
+CLI and desktop explain whether replay is safe. An unknown started-attempt
+outcome is terminal for automatic recovery: inspect the workspace and execution
+record, then start a new run from the reviewed workspace. No manual JSON edits,
+automatic write rollback, or exactly-once provider calls are promised.
+
 Recon candidate accept, edit-and-accept, and reject operations remain outside
 `RunState`. Application commands delegate to the audited Intel workflow, which
 leaves candidate Markdown immutable and creates separate accepted Intel and
@@ -200,13 +235,16 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.6` on the BTN-164 branch; persisted
-`1.0` through `1.5` records remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.7` on the BTN-165 branch; persisted
+`1.0` through `1.6` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
 test outcome and acceptance decision. Tool activity, interrupts, and produced
 artifact provenance carry or reference the originating node execution.
+An unfinished attempt has outcome `in-progress` and no end timestamp. Its
+completed evidence replaces that entry under the same execution ID; legacy
+completed evidence is not rewritten.
 
 Each successful LiteLLM completion also records a bounded call identifier,
 provider-reported model, and input/output token counts on its originating node

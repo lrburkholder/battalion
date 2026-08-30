@@ -12,7 +12,7 @@ types.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -73,12 +73,16 @@ from battalion.observation import (
 )
 from battalion.role_results import RoleResultKind
 from battalion.role_results import RoleExecutionResult
+from battalion.recovery import RecoveryAssessment, UnsafeRecoveryError, assess_recovery
 from battalion.state.models import (
     Budget,
+    GraphProgress,
     HumanActionRecord,
     HumanIntervention,
     InterventionKind,
     InterventionTarget,
+    ProgressStage,
+    ResumeIntent,
     RunState,
     RunStatus,
 )
@@ -239,6 +243,23 @@ class RunIdentityChanged(IdentityApplicationError):
     """Raised when graph execution attempts to replace canonical identity."""
 
 
+class RunExecutionFailed(ApplicationError):
+    """Execution stopped; the saved checkpoint remains the sole authority."""
+
+    def __init__(self, run_id: str, recovery: RecoveryAssessment) -> None:
+        self.run_id = run_id
+        self.recovery = recovery
+        super().__init__(f"Run {run_id}: {recovery.disposition}. {recovery.message}")
+
+
+class RunRecoverable(RunExecutionFailed):
+    """Retry is safe from the retained checkpoint or authorization intent."""
+
+
+class RunRecoveryUnsafe(RunExecutionFailed):
+    """No automatic replay is permitted with an unknown execution outcome."""
+
+
 class WorkerApplicationError(ApplicationError):
     """Base class for expected supervision failures at the application boundary."""
 
@@ -294,6 +315,7 @@ class ResumeRun:
     config: BattalionConfig
     actor_id: UUID | None = None
     resolution: str = "authorized resume"
+    action_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -306,6 +328,7 @@ class QueueIntervention:
     text: str
     project_root: str | Path = "."
     actor_id: UUID | None = None
+    action_id: str = field(default_factory=lambda: f"action-{uuid4()}")
 
 
 @dataclass(frozen=True)
@@ -547,6 +570,10 @@ class RunOperationResult:
     state: RunState
     warning: str | None = None
 
+    @property
+    def recovery(self) -> RecoveryAssessment | None:
+        return assess_recovery(self.state)
+
 
 @dataclass(frozen=True)
 class RunInspection:
@@ -558,6 +585,10 @@ class RunInspection:
     state_path: Path
     state: RunState
     costs: dict[str, object]
+
+    @property
+    def recovery(self) -> RecoveryAssessment | None:
+        return assess_recovery(self.state)
 
 
 @dataclass(frozen=True)
@@ -734,6 +765,80 @@ def start_work_item_run(
     )
 
 
+def _execute_graph(
+    execute: Callable[..., RunState | dict[str, Any]],
+    *, run_id: str, path: Path, **kwargs: Any,
+) -> RunState:
+    """Translate failure using disk, never save the stale invocation input."""
+    try:
+        result = RunState.model_validate(execute(**kwargs))
+        if result.run_id != run_id:
+            raise RunIdentityChanged(f"Run identity changed from {run_id} to {result.run_id}.")
+        return result
+    except ApplicationError:
+        raise
+    except Exception as exc:
+        state = _load_run(run_id, path.parent)
+        recovery = assess_recovery(state)
+        if isinstance(exc, UnsafeRecoveryError):
+            recovery = RecoveryAssessment(
+                "terminal", state.graph_progress.stage if state.graph_progress else None, str(exc),
+            )
+        if recovery is None:
+            recovery = RecoveryAssessment(
+                "recoverable" if state.status is RunStatus.AWAITING_HUMAN else "terminal",
+                state.graph_progress.stage if state.graph_progress else None,
+                "Inspect the saved run and resolve its interrupt before resuming."
+                if state.status is RunStatus.AWAITING_HUMAN else
+                "No safe replay cursor is available. Inspect the saved run and workspace "
+                "before starting a new run.",
+            )
+        error = RunRecoverable if recovery.disposition == "recoverable" else RunRecoveryUnsafe
+        raise error(run_id, recovery) from exc
+
+
+def _prepare_resume(
+    state: RunState, command: ResumeRun, actor: Actor,
+) -> tuple[RunState, bool, str | None]:
+    """Validate replay or atomically pair a new decision with its resume intent."""
+    intent = state.resume_intent
+    identifier = command.action_id
+    if identifier is None and intent is not None and not intent.completed:
+        identifier = intent.action_id
+    if identifier is not None:
+        previous = next((a for a in state.human_action_log if a.action_id == identifier), None)
+        if previous is not None:
+            if (previous.kind != "interrupt-resolution" or previous.actor_id != actor.actor_id
+                    or previous.detail != command.resolution.strip()):
+                raise HumanActionRejected("Resume action ID conflicts with its original authorization")
+            pending = intent is not None and intent.action_id == identifier and not intent.completed
+            if not pending:
+                return state, True, None
+            return state, False, None
+    recovery = assess_recovery(state)
+    if recovery is not None and recovery.disposition == "terminal":
+        raise RunRecoveryUnsafe(state.run_id, recovery)
+    if state.status is RunStatus.AWAITING_HUMAN:
+        state = _resolve_latest_interrupt(
+            state, actor=actor, resolution=command.resolution, action_id=identifier,
+        )
+    elif (state.status is RunStatus.BLOCKED and state.phase != "recursion_limit_exceeded"
+          and _latest_blocked_role_result(state) is not None):
+        state = _resolve_blocked_role_result(
+            state, actor=actor, resolution=command.resolution, action_id=identifier,
+        )
+    else:
+        return state, False, (
+            recovery.message if recovery else
+            f"Run status is '{state.status.value}', not 'awaiting-human'. Resuming anyway."
+        )
+    return state.model_copy(update={
+        "resume_intent": ResumeIntent(action_id=state.human_action_log[-1].action_id),
+        "graph_progress": None,
+        "resume_target": None,
+    }), False, None
+
+
 def start_run(
     command: StartRun,
     *,
@@ -751,6 +856,11 @@ def start_run(
         raise RunAlreadyExists(initial_state.run_id, path)
 
     _register_canonical_run(initial_state, command.config, path)
+    save_state(initial_state.model_copy(update={
+        "graph_progress": GraphProgress(
+            stage=ProgressStage.BEFORE_ATTEMPT, next_node="architect",
+        ),
+    }), path)
 
     execute = _execute or run_ticket
     publisher = (
@@ -764,21 +874,22 @@ def start_run(
 
     def checkpoint(state: RunState | dict[str, Any]) -> None:
         validated = RunState.model_validate(state)
+        if validated.run_id != initial_state.run_id:
+            raise RunIdentityChanged("Graph checkpoint attempted to change run identity")
         save_state(validated, path)
         if publisher is not None:
             publisher.handle_checkpoint(validated)
 
-    final_state = RunState.model_validate(
-        execute(
-            initial_state=initial_state,
-            llm_configs=command.config.models,
-            base_dir=command.config.base_dir,
-            prompts_dir=command.config.prompts_dir,
-            reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
-            on_node_event=node_callback,
-            on_token=token_callback,
-            on_state_checkpoint=checkpoint,
-        )
+    final_state = _execute_graph(
+        execute, run_id=initial_state.run_id, path=path,
+        initial_state=initial_state,
+        llm_configs=command.config.models,
+        base_dir=command.config.base_dir,
+        prompts_dir=command.config.prompts_dir,
+        reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
+        on_node_event=node_callback,
+        on_token=token_callback,
+        on_state_checkpoint=checkpoint,
     )
     if final_state.run_id != initial_state.run_id:
         raise RunIdentityChanged(
@@ -808,28 +919,18 @@ def resume_run(
     """Load, resume through the canonical graph behavior, and save one run."""
     state = _load_run(command.run_id, state_dir)
     actor = _resolve_human_actor(command.config.base_dir, command.actor_id)
-    warning = None
-    if state.status == RunStatus.AWAITING_HUMAN:
-        state = _resolve_latest_interrupt(
-            state,
-            actor=actor,
-            resolution=command.resolution,
+    state, replayed, warning = _prepare_resume(state, command, actor)
+    path = state_path(command.run_id, state_dir)
+    if replayed:
+        return RunOperationResult(
+            state.run_id, state.run_alias, state.schema_version, path, state,
         )
-        save_state(state, state_path(command.run_id, state_dir))
-    elif state.status == RunStatus.BLOCKED and _latest_blocked_role_result(state) is not None:
-        state = _resolve_blocked_role_result(
-            state,
-            actor=actor,
-            resolution=command.resolution,
-        )
-        save_state(state, state_path(command.run_id, state_dir))
-    else:
-        warning = (
-            f"Run status is '{state.status.value}', not 'awaiting-human'. Resuming anyway."
-        )
+    recovery = assess_recovery(state)
+    if recovery is not None and recovery.disposition == "terminal":
+        raise RunRecoveryUnsafe(state.run_id, recovery)
+    save_state(state, path)
 
     execute = _execute or resume_ticket
-    path = state_path(command.run_id, state_dir)
     publisher = (
         RunObservationPublisher(state.run_id, on_observation)
         if on_observation is not None
@@ -841,21 +942,22 @@ def resume_run(
 
     def checkpoint(checkpoint_state: RunState | dict[str, Any]) -> None:
         validated = RunState.model_validate(checkpoint_state)
+        if validated.run_id != state.run_id:
+            raise RunIdentityChanged("Graph checkpoint attempted to change run identity")
         save_state(validated, path)
         if publisher is not None:
             publisher.handle_checkpoint(validated)
 
-    final_state = RunState.model_validate(
-        execute(
-            state=state,
-            llm_configs=command.config.models,
-            base_dir=command.config.base_dir,
-            prompts_dir=command.config.prompts_dir,
-            reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
-            on_node_event=node_callback,
-            on_token=token_callback,
-            on_state_checkpoint=checkpoint,
-        )
+    final_state = _execute_graph(
+        execute, run_id=state.run_id, path=path,
+        state=state,
+        llm_configs=command.config.models,
+        base_dir=command.config.base_dir,
+        prompts_dir=command.config.prompts_dir,
+        reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
+        on_node_event=node_callback,
+        on_token=token_callback,
+        on_state_checkpoint=checkpoint,
     )
     if final_state.run_id != state.run_id:
         raise RunIdentityChanged(
@@ -1424,7 +1526,15 @@ def _persist_intervention(
     state = _load_run(command.run_id, state_dir)
     actor = _resolve_human_actor(command.project_root, command.actor_id)
     occurred_at = (clock or (lambda: datetime.now(timezone.utc)))()
-    identifier = action_id or f"action-{uuid4()}"
+    identifier = action_id or command.action_id
+    previous = next((a for a in state.human_action_log if a.action_id == identifier), None)
+    if previous is not None:
+        if (previous.actor_id != actor.actor_id or previous.kind != command.kind
+                or previous.target != command.target or previous.detail != command.text):
+            raise HumanActionRejected("Intervention action ID conflicts with its original request")
+        return HumanActionResult(
+            action=previous, state=state, state_path=state_path(command.run_id, state_dir),
+        )
     try:
         kind = InterventionKind(command.kind)
         target = InterventionTarget(command.target)
@@ -1556,14 +1666,10 @@ def start_worker(
     actor = _resolve_human_actor(operation.config.base_dir, operation.actor_id)
     if not operation.resolution.strip():
         raise HumanActionRejected("Interrupt resolution must not be empty")
-    if state.status is RunStatus.AWAITING_HUMAN:
-        # Validate the durable resolution target before starting a process;
-        # the worker performs and persists the actual state transition.
-        _resolve_latest_interrupt(
-            state,
-            actor=actor,
-            resolution=operation.resolution,
-        )
+    prepared, _, _ = _prepare_resume(state, operation, actor)
+    recovery = assess_recovery(prepared)
+    if recovery is not None and recovery.disposition == "terminal":
+        raise RunRecoveryUnsafe(state.run_id, recovery)
     try:
         return launch_worker(
             operation="resume",
@@ -1575,6 +1681,11 @@ def start_worker(
             worker_dir=worker_dir,
             resume_actor_id=actor.actor_id,
             resume_resolution=operation.resolution,
+            resume_action_id=(
+                operation.action_id or
+                (prepared.resume_intent.action_id
+                 if prepared.resume_intent and not prepared.resume_intent.completed else None)
+            ),
         )
     except _WorkerAlreadyActive as exc:
         raise WorkerAlreadyActive(str(exc)) from exc
