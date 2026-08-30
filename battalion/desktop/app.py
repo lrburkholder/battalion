@@ -455,13 +455,22 @@ class BattalionWindow(QMainWindow):
             return
         self.selected_run = run
         available = run.inspection is not None
-        self.queue_button.setEnabled(available)
+        worker = self.controller.worker_for(run.inspection.run_id) if available else None
+        inactive = worker is None or not worker.active
+        self.queue_button.setEnabled(available and inactive)
         self.resume_button.setEnabled(
-            available and run.inspection.state.status is RunStatus.AWAITING_HUMAN
+            available and inactive and (
+                run.inspection.recovery.disposition == "recoverable"
+                if run.inspection.recovery else
+                run.inspection.state.status is RunStatus.AWAITING_HUMAN
+            )
         )
-        worker = None
-        if run.inspection is not None:
-            worker = self.controller.worker_for(run.inspection.run_id)
+        if available and run.inspection.state.resume_intent is not None:
+            intent = run.inspection.state.resume_intent
+            if not intent.completed:
+                action = next(a for a in run.inspection.state.human_action_log
+                              if a.action_id == intent.action_id)
+                self.resolution_edit.setText(action.detail)
         inspector.setPlainText(render_run(run, worker))
         if run.inspection is None:
             return

@@ -12,6 +12,7 @@ from battalion.application import (
     ResumeRun,
     RunAlreadyExists,
     RunIdentityChanged,
+    RunRecoveryUnsafe,
     RunNotFound,
     StartRun,
     StartWorkItemRun,
@@ -375,7 +376,7 @@ def test_node_checkpoint_preserves_progress_if_worker_crashes(tmp_path):
         kwargs["on_state_checkpoint"](progressed)
         raise RuntimeError("simulated worker crash")
 
-    with pytest.raises(RuntimeError, match="simulated worker crash"):
+    with pytest.raises(RunRecoveryUnsafe, match="No safe replay cursor"):
         start_run(
             StartRun(initial_state=initial, config=BattalionConfig()),
             state_dir=tmp_path,

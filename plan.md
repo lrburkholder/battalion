@@ -79,6 +79,15 @@ invalid harness outcomes at the same checkpoint through interrupt #5. The
 explicit project-input materialization policy and execution-record `1.6`
 evidence amend ADR-0007, ADR-0013, and ADR-0014 without changing role authority.
 
+BTN-165 is in progress on this branch. Durable resume intents preserve the
+original human authorization across process failures. Execution-record `1.7`
+registers unfinished attempts atomically with intervention delivery, and a
+typed graph cursor retains attempt stage, bounded correction context, and the
+exact successor. CLI and desktop classify recovery from this saved evidence.
+Unknown started-attempt outcomes require workspace inspection and a new run;
+they are not automatically replayed. Amendments to ADR-0014 and ADR-0023 keep
+the existing role, write-scope, and six-interrupt authority unchanged.
+
 ## Architecture overview
 
 Battalion is a LangGraph `StateGraph` with four roles, Pydantic models as its
@@ -120,6 +129,7 @@ battalion/
   reviewer_testing.py     # admitted test inputs and bounded pytest process lifecycle
   setup.py                # provider discovery and connectivity setup (BTN-15)
   graph.py                # graph construction, routing, pause, and resume
+  recovery.py             # pure classification of durable recovery evidence
   progress.py             # CLI progress projection
   intel/
     models.py             # candidate and accepted Instinct contracts

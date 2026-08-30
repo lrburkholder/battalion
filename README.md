@@ -108,6 +108,8 @@ The versioned state contract includes:
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
+- `resume_intent` and `graph_progress`: BTN-165's in-progress branch work retains
+  authorization and exact attempt/successor checkpoints for crash recovery.
 - `execution_record`: Durable node evidence, including per-call tokens and
   nullable decimal cost with separate currency and source. It retains rejected
   pre-write role-contract candidates separately from successful role outcomes,
@@ -118,6 +120,25 @@ The versioned state contract includes:
   BTN-164 adds actual Reviewer process evidence on this branch: command,
   temporary working-directory identity, classification, collected-test counts,
   bounded stdout/stderr, duration, and timeout/cancellation cleanup disposition.
+
+### Crash recovery (BTN-165 branch)
+
+`battalion status RUN_ID --human` and the desktop inspector distinguish safe
+recovery from an attempt with an unknown outcome. Retry `battalion resume`
+with the original actor and resolution after a crash before generation; the
+saved decision and intervention receiving-attempt identity are reused. Clients
+can supply a stable `ResumeRun.action_id` (CLI `--action-id`) or
+`QueueIntervention.action_id` to deduplicate a request even after it completes.
+Reusing an ID with different decision evidence is rejected. Without an explicit
+ID, resume reuses a pending intent; a later, newly paused run requires a new
+human decision.
+
+Completed steps retain their exact successor, including Reviewer checkpoints.
+Recursion limits and unexpected graph failures preserve the latest saved
+progress. If generation started but no outcome was saved, replay is unsafe:
+inspect the execution record and workspace, then start a new run from the
+reviewed workspace. Do not edit saved state to force replay. This does not
+promise exactly-once provider calls or rollback of uncheckpointed file writes.
 
 ### Interrupt Taxonomy (v1)
 

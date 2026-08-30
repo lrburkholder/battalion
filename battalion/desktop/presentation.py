@@ -64,6 +64,7 @@ def render_run(run: ProjectRunInspection, worker: WorkerRecord | None = None) ->
 
     inspection = run.inspection
     state = inspection.state
+    recovery = None if worker is not None and worker.active else inspection.recovery
     executions = state.execution_record.node_executions
     calls = [call for execution in executions for call in execution.llm_calls]
     lines = [
@@ -78,9 +79,12 @@ def render_run(run: ProjectRunInspection, worker: WorkerRecord | None = None) ->
         f"Tokens: {sum(call.input_tokens for call in calls)} input / "
         f"{sum(call.output_tokens for call in calls)} output",
         f"Cost: {_aggregate_cost(calls)}",
-        f"Worker: {_worker_summary(worker)}",
+        f"Worker: {_worker_summary(worker, allow_replay=recovery is None or recovery.disposition == 'recoverable')}",
     ]
-    if state.status is RunStatus.AWAITING_HUMAN:
+    if recovery is not None:
+        lines.append(f"Recovery: {recovery.disposition} · {recovery.stage.value if recovery.stage else 'unavailable'}")
+        lines.append(recovery.message)
+    elif state.status is RunStatus.AWAITING_HUMAN:
         lines.append("Human action: interrupt resolution and resume available")
     queued_interventions = sum(
         item.disposition.value == "queued" for item in state.interventions
@@ -109,7 +113,7 @@ def render_execution(execution: NodeExecution) -> str:
         f"Outcome: {execution.outcome}",
         f"Attempt disposition: {execution.attempt_disposition or 'Unavailable (legacy)'}",
         f"Started: {execution.started_at.isoformat()}",
-        f"Ended: {execution.ended_at.isoformat()}",
+        f"Ended: {execution.ended_at.isoformat() if execution.ended_at else 'Not completed'}",
         "",
         "PROMPT PROVENANCE",
     ]
@@ -308,10 +312,10 @@ def _aggregate_cost(calls: Iterable[LLMCallCost]) -> str:
     return f"{totals}; {unknown} unknown call(s); sources={','.join(sorted(sources)) or 'unknown'}"
 
 
-def _worker_summary(worker: WorkerRecord | None) -> str:
+def _worker_summary(worker: WorkerRecord | None, *, allow_replay: bool = True) -> str:
     if worker is None:
         return "Unavailable (no worker record)"
-    recovery = " · recoverable from durable state" if worker.recoverable else ""
+    recovery = " · recoverable from durable state" if worker.recoverable and allow_replay else ""
     error = f" · {worker.error}" if worker.error else ""
     return f"{worker.status.value}{recovery}{error}"
 

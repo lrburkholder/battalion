@@ -536,14 +536,31 @@ class ExecutionCapture:
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.6",
-                "node_executions": new_state.execution_record.node_executions
-                + [execution]
+                "schema_version": "1.7",
+                "node_executions": [
+                    item for item in new_state.execution_record.node_executions
+                    if item.execution_id != self.execution_id
+                ] + [execution]
             }
         )
         return new_state.model_copy(
             update={"interrupt_log": interrupts, "execution_record": record}
         )
+
+    def create_attempt(self, state: RunState) -> RunState:
+        """Register identity before intervention delivery or any role execution."""
+        execution = NodeExecution(
+            execution_id=self.execution_id, role=_role(self.node_name),
+            phase=self.node_name, model_identity=self.model_identity,
+            started_at=self.started_at, outcome="in-progress",
+            input_references=self.input_references,
+            prompt_provenance=self.prompt_provenance,
+        )
+        record = state.execution_record.model_copy(update={
+            "schema_version": "1.7",
+            "node_executions": [*state.execution_record.node_executions, execution],
+        })
+        return state.model_copy(update={"execution_record": record})
 
     def include_human_interventions(self, state: RunState) -> None:
         """Record bounded provenance for interventions delivered to this attempt."""

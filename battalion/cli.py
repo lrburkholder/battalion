@@ -34,6 +34,7 @@ from battalion.interrupts.triggers import (
 )
 from battalion.progress import ProgressDisplay
 from battalion.state.models import RunState, RunStatus
+from battalion.recovery import assess_recovery
 from battalion.config import load_config, DEFAULT_CONFIG_PATH
 from battalion.llm.litellm_client import ModelDiversityError
 from battalion.setup import (
@@ -85,6 +86,10 @@ def _print_status(
         typer.echo(f"Status:      {state.status.value}")
         typer.echo(f"Phase:       {state.phase}")
         typer.echo(f"Budget:      {state.budget.used} / {state.budget.limit}")
+        recovery = assess_recovery(state)
+        if recovery is not None:
+            typer.echo(f"Recovery:    {recovery.disposition}")
+            typer.echo(recovery.message)
         if state.manual_checkpoints:
             typer.echo(f"Checkpoints: {', '.join(state.manual_checkpoints)}")
         if state.interrupt_log:
@@ -181,6 +186,10 @@ def _describe_interrupt(entry) -> str:
 
 def _print_pause_reason(state: RunState, run_id: str) -> None:
     """After a run/resume pauses, print why it paused and how to continue."""
+    recovery = assess_recovery(state)
+    if recovery is not None:
+        typer.echo(f"Recovery: {recovery.disposition}. {recovery.message}")
+        return
     if state.status != RunStatus.AWAITING_HUMAN or not state.interrupt_log:
         return
     entry = state.interrupt_log[-1]
@@ -291,6 +300,9 @@ def resume(
     resolution: str = typer.Option(
         "authorized resume", "--resolution", help="Durable resolution for the latest interrupt"
     ),
+    action_id: str | None = typer.Option(
+        None, "--action-id", help="Stable request ID for idempotent resume replay",
+    ),
 ):
     """Resume a paused/interrupted run from saved state."""
     cfg = load_config(config, {"base_dir": base_dir, "prompts_dir": prompts_dir})
@@ -307,6 +319,7 @@ def resume(
                         config=cfg,
                         actor_id=actor_id,
                         resolution=resolution,
+                        action_id=action_id,
                     ),
                     state_dir=STATE_DIR,
                     on_node_event=display.handle_event,
