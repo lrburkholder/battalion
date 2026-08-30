@@ -23,6 +23,11 @@ credential-free demo projections, and an explicit publication and visual-QA
 path. The live Pages site updates only after merge to `main`. The fixture is
 presentation data only and does not change the application boundary, role
 authority, graph, interrupt semantics, or knowledge lifecycle.
+BTN-136 is in progress to define the pre-1.0 release contract and a
+maintainer-tag-gated GitHub Release path. It builds Python distribution
+artifacts and a Windows self-contained desktop ZIP only after deterministic
+release gates; a native installer and interactive first-run onboarding remain
+explicit follow-up work.
 BTN-65 is complete with accepted RFC-0006 and ADR-0025. They separate Battalion
 capability contracts from provider adapters and transports and define the six
 initial capability boundaries. BTN-67 now supplies the validated,
