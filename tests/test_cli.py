@@ -4,6 +4,7 @@ import json
 import re
 import tempfile
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -11,7 +12,8 @@ import pytest
 from typer.testing import CliRunner
 
 from battalion.cli import app, _state_path
-from battalion.state.models import RunState, RunStatus, Budget
+from battalion.role_results import DriverReasonCode, RoleExecutionResult, RoleResultKind
+from battalion.state.models import Budget, ExecutionRecord, NodeExecution, RunState, RunStatus
 from battalion.state.persistence import save_state
 
 
@@ -297,6 +299,45 @@ def test_status_human_flag(tmp_path, monkeypatch):
     assert "Phase:       awaiting_human" in result.output
     assert "Budget:      50 / 100" in result.output
     assert "Checkpoints: driver, reviewer" in result.output
+
+
+def test_status_human_flag_displays_normalized_role_result(tmp_path, monkeypatch):
+    state_dir = tmp_path / ".battalion" / "state"
+    state_dir.mkdir(parents=True)
+    now = datetime.now(timezone.utc)
+    state = RunState(
+        schema_version="1.0",
+        run_id="run-role-result",
+        ticket_id="BTN-133",
+        status=RunStatus.BLOCKED,
+        phase="driver_red",
+        write_scope={"driver_red": ["tests/"]},
+        retry_bound=2,
+        budget=Budget(limit=100, used=1),
+        execution_record=ExecutionRecord(node_executions=[NodeExecution(
+            execution_id="node-role-result",
+            role="driver",
+            phase="driver_red",
+            model_identity="test-model",
+            started_at=now,
+            ended_at=now,
+            outcome="succeeded",
+            role_result=RoleExecutionResult(
+                kind=RoleResultKind.BLOCKED,
+                reason_code=DriverReasonCode.MISSING_CONTEXT,
+                summary="The public API contract is not supplied.",
+            ),
+        )]),
+    )
+    save_state(state, state_dir / "run-role-result.json")
+
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        result = runner.invoke(app, ["status", "run-role-result", "--human"])
+
+    assert result.exit_code == 0
+    assert "Role results:" in result.output
+    assert "driver_red: blocked (missing-context; The public API contract is not supplied.)" in result.output
 
 
 def test_status_missing_state_file(tmp_path, monkeypatch):

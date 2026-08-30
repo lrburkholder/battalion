@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal
 
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
+from battalion.execution import record_role_result
 from battalion.nodes.errors import RoleContractViolation, RoleOutputError, WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import (
@@ -27,10 +30,18 @@ from battalion.scope.tool_binding import (
     resolve_scoped_batch,
     scope_key_for_phase,
 )
-from battalion.state.models import RunState, RunStatus
+from battalion.state.models import InterruptLogEntry, RunState, RunStatus
+from battalion.role_results import (
+    RoleExecutionResult,
+    RoleResultKind,
+    RoleResultRejected,
+    RoleResultSubmission,
+    submit_role_result,
+)
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
 _TEST_FILE_RE = re.compile(r"^test_.*\.py$|.*_test\.py$")
+_ROLE_ESCALATION = "role-escalation"
 
 
 class MalformedDriverOutput(RoleOutputError):
@@ -63,15 +74,20 @@ class InvalidModeOutput(RoleContractViolation):
         )
 
 
+@dataclass(frozen=True)
+class DriverOutput:
+    """Validated provider response before Battalion constructs a role result."""
+
+    files: dict[str, str]
+    result_submission: RoleResultSubmission | None = None
+
+
 def _looks_like_test_file(relative_path: str) -> bool:
     return bool(_TEST_FILE_RE.match(Path(relative_path).name))
 
 
-def extract_files(response: Any) -> dict[str, str]:
-    """Extract a {relative_path: content} mapping from a litellm-style
-    response. Accepts either plain JSON or a single markdown-fenced JSON
-    block, since LLMs commonly wrap JSON output in fences despite
-    instructions not to."""
+def extract_output(response: Any) -> DriverOutput:
+    """Parse legacy file output or a semantic BTN-133 result submission."""
     if isinstance(response, dict):
         raw_content = response["choices"][0]["message"]["content"]
     else:
@@ -106,7 +122,65 @@ def extract_files(response: Any) -> dict[str, str]:
             raise MalformedDriverOutput(
                 f"'files' values must be strings, got {type(content).__name__} for {path!r}"
             )
-    return files
+    raw_result = parsed.get("result")
+    if raw_result is None:
+        return DriverOutput(files=files)
+    if not isinstance(raw_result, dict):
+        raise MalformedDriverOutput("Driver 'result' must be a JSON object")
+    try:
+        submission = RoleResultSubmission.model_validate(raw_result)
+    except ValueError as exc:
+        raise MalformedDriverOutput(f"Driver result submission is invalid: {exc}") from exc
+    if submission.kind is not RoleResultKind.COMPLETED_WITH_CHANGE and files:
+        raise MalformedDriverOutput(
+            f"{submission.kind.value} output must use an empty 'files' mapping"
+        )
+    return DriverOutput(files=files, result_submission=submission)
+
+
+def extract_files(response: Any) -> dict[str, str]:
+    """Backward-compatible helper returning only the validated file mapping."""
+    return extract_output(response).files
+
+
+def _route_non_mutating_result(
+    state: RunState,
+    mode: Literal["red", "green"],
+    result: RoleExecutionResult,
+) -> RunState:
+    """Apply deterministic Driver routing; the role never selects a node."""
+    resume_target = f"driver_{mode}"
+    if result.kind is RoleResultKind.BLOCKED:
+        return state.model_copy(update={
+            "status": RunStatus.BLOCKED,
+            "phase": resume_target,
+            "resume_target": resume_target,
+        })
+    entry = InterruptLogEntry(
+        trigger=_ROLE_ESCALATION,
+        timestamp=datetime.now(timezone.utc),
+        context={
+            "role": "driver",
+            "mode": mode,
+            "role_result": result.model_dump(mode="json"),
+            "next_phase": resume_target,
+        },
+    )
+    return state.model_copy(update={
+        "status": RunStatus.AWAITING_HUMAN,
+        "interrupt_log": [*state.interrupt_log, entry],
+        "phase": "awaiting_human",
+        "resume_target": resume_target,
+    })
+
+
+def _record_result(result: RoleExecutionResult) -> None:
+    """Persist a validated result, treating unbound evidence as bad model output."""
+
+    try:
+        record_role_result(result)
+    except RoleResultRejected as exc:
+        raise MalformedDriverOutput(str(exc)) from exc
 
 
 def run_driver(
@@ -138,17 +212,6 @@ def run_driver(
     if mode is not None and mode not in ("red", "green"):
         raise ValueError(f"mode must be 'red', 'green', or None, got {mode!r}")
 
-    phase_scope_key = "driver" if mode is None else f"driver_{mode}"
-    scope_key = scope_key_for_phase(state.write_scope, phase_scope_key)
-    write_tools = build_write_tools(
-        scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
-    )
-    if not write_tools:
-        raise WriteScopeMisconfigured(
-            f"state.write_scope[{scope_key!r}] declares no write roots — "
-            f"Driver {mode or 'combined'} cannot write its output."
-        )
-
     prompt_node_name = "driver" if mode is None else f"driver-{mode}"
     resolved_prompt = system_prompt or load_system_prompt(
         prompt_node_name, prompts_dir=prompts_dir
@@ -162,12 +225,52 @@ def run_driver(
         response = call_llm_fn("driver", llm_config, messages, on_stream=on_stream)
     else:
         response = call_llm_fn("driver", llm_config, messages)
-    files = extract_files(response)
+    output = extract_output(response)
+    files = output.files
+
+    if output.result_submission is not None and (
+        output.result_submission.kind is not RoleResultKind.COMPLETED_WITH_CHANGE
+    ):
+        if mode is None:
+            raise MalformedDriverOutput(
+                "Typed Driver non-mutating results require RED or GREEN mode"
+            )
+        try:
+            result = submit_role_result(
+                output.result_submission, role="driver", mode=mode
+            )
+        except RoleResultRejected as exc:
+            raise MalformedDriverOutput(str(exc)) from exc
+        _record_result(result)
+        return _route_non_mutating_result(state, mode, result)
 
     if not files:
         raise EmptyDriverOutput(
             "Driver LLM call returned no files — refusing to advance the "
             "ticket to 'reviewer' having written nothing."
+        )
+
+    if output.result_submission is not None and mode is not None:
+        # Reject a semantic contradiction before any scoped mutation occurs.
+        try:
+            submit_role_result(
+                output.result_submission,
+                role="driver",
+                mode=mode,
+                observed_artifact_count=1,
+            )
+        except RoleResultRejected as exc:
+            raise MalformedDriverOutput(str(exc)) from exc
+
+    phase_scope_key = "driver" if mode is None else f"driver_{mode}"
+    scope_key = scope_key_for_phase(state.write_scope, phase_scope_key)
+    write_tools = build_write_tools(
+        scope_key, state.write_scope, base_dir=base_dir, on_violation=on_violation
+    )
+    if not write_tools:
+        raise WriteScopeMisconfigured(
+            f"state.write_scope[{scope_key!r}] declares no write roots — "
+            f"Driver {mode or 'combined'} cannot write its output."
         )
 
     if mode == "red":
@@ -192,6 +295,21 @@ def run_driver(
         raise WriteScopeMisconfigured(str(exc)) from exc
     for (tool, relative_path), content in zip(targets, files.values(), strict=True):
         tool.write(relative_path, content)
+
+    if mode is not None:
+        submission = output.result_submission or RoleResultSubmission(
+            kind=RoleResultKind.COMPLETED_WITH_CHANGE
+        )
+        try:
+            result = submit_role_result(
+                submission,
+                role="driver",
+                mode=mode,
+                observed_artifact_count=len(targets),
+            )
+        except RoleResultRejected as exc:
+            raise MalformedDriverOutput(str(exc)) from exc
+        _record_result(result)
 
     return state.model_copy(update={
         "phase": "reviewer",

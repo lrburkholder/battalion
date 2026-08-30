@@ -15,6 +15,8 @@ from battalion.nodes.driver import (
 )
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig, call_llm
+from battalion.interrupts.triggers import TRIGGER_ROLE_ESCALATION
+from battalion.role_results import RoleResultKind
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import RunStatus
 
@@ -41,6 +43,19 @@ def fenced_files_response(files: dict) -> dict:
     import json
     body = json.dumps({"files": files})
     return {"choices": [{"message": {"content": f"```json\n{body}\n```"}}]}
+
+
+def result_response(kind: str, reason_code: str, summary: str) -> dict:
+    import json
+    return {"choices": [{"message": {"content": json.dumps({
+        "files": {},
+        "result": {
+            "kind": kind,
+            "reason_code": reason_code,
+            "summary": summary,
+            "evidence_refs": [{"kind": "artifact", "reference": "plan.md"}],
+        },
+    })}}]}
 
 
 def test_extract_files_parses_plain_json():
@@ -168,6 +183,48 @@ def test_run_driver_rejects_empty_files_output(tmp_path):
             base_dir=tmp_path,
             call_llm_fn=lambda *a, **kw: files_response({}),
         )
+    assert not (tmp_path / "src").exists()
+
+
+def test_driver_red_can_report_missing_context_as_blocked_without_writes(tmp_path):
+    updated = run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        mode="red",
+        call_llm_fn=lambda *a, **kw: result_response(
+            "blocked", "missing-context", "The approved API contract is absent."
+        ),
+    )
+
+    assert updated.status == RunStatus.BLOCKED
+    assert updated.phase == "driver_red"
+    assert updated.resume_target == "driver_red"
+    assert not (tmp_path / "src").exists()
+
+
+def test_driver_green_escalation_enters_human_resolution_boundary(tmp_path):
+    updated = run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        mode="green",
+        call_llm_fn=lambda *a, **kw: result_response(
+            "escalated",
+            "architectural-decision-required",
+            "The storage boundary must be chosen by an architect.",
+        ),
+    )
+
+    assert updated.status == RunStatus.AWAITING_HUMAN
+    assert updated.phase == "awaiting_human"
+    assert updated.resume_target == "driver_green"
+    assert updated.interrupt_log[-1].trigger == TRIGGER_ROLE_ESCALATION
+    result = updated.interrupt_log[-1].context["role_result"]
+    assert result["kind"] == RoleResultKind.ESCALATED.value
+    assert result["reason_code"] == "architectural-decision-required"
     assert not (tmp_path / "src").exists()
 
 

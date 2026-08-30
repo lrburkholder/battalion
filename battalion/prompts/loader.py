@@ -21,8 +21,8 @@ DEFAULT_PROMPTS_DIR = _REPO_ROOT / "prompts"
 PROMPT_CONTRACT_VERSIONS = {
     "architect": "architect/v1",
     "driver": "driver/v1",
-    "driver-red": "driver-red/v1",
-    "driver-green": "driver-green/v1",
+    "driver-red": "driver-red/v2",
+    "driver-green": "driver-green/v2",
     "reviewer": "reviewer/v1",
     "refactorer": "refactorer/v3",
     "recon": "recon/v1",

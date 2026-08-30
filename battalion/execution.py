@@ -13,6 +13,13 @@ from typing import Any
 from uuid import uuid4
 
 from battalion.prompts.loader import DEFAULT_PROMPTS_DIR, prompt_contract_version
+from battalion.role_results import (
+    RoleExecutionResult,
+    RoleResultKind,
+    RoleResultSubmission,
+    construct_role_result,
+    validate_evidence_references,
+)
 from battalion.state.models import (
     ArtifactProvenance,
     CheckpointType,
@@ -259,6 +266,7 @@ class ExecutionCapture:
     streamed_reasoning_characters: int
     streamed_content_characters: int
     no_change_reason: str | None
+    role_result: RoleExecutionResult | None
     input_references: list[EvidenceReference]
     prompt_provenance: PromptProvenance | None
     code_start: dict[str, object]
@@ -287,6 +295,7 @@ class ExecutionCapture:
             streamed_reasoning_characters=0,
             streamed_content_characters=0,
             no_change_reason=None,
+            role_result=None,
             input_references=_input_references(state, node_name, root),
             prompt_provenance=_prompt_provenance(
                 node_name, prompts_dir, model_configuration, model_identity
@@ -380,7 +389,10 @@ class ExecutionCapture:
                 outcome = "rejected"
                 attempt_disposition = "rejected"
             output_reference = f"review:{checkpoint.value}"
-        elif interrupted:
+        elif interrupted and not (
+            self.role_result is not None
+            and self.role_result.kind is RoleResultKind.ESCALATED
+        ):
             verdict = new_state.interrupt_log[-1].trigger
             attempt_disposition = "infra-failure"
         elif artifacts:
@@ -389,6 +401,16 @@ class ExecutionCapture:
             output_reference = "refactorer:no-change"
         else:
             output_reference = f"state:phase={new_state.phase}"
+
+        if self.role_result is not None:
+            if not (
+                self.role_result.kind is RoleResultKind.COMPLETED_WITH_NO_CHANGE
+                and self.no_change_reason is not None
+            ):
+                output_reference = f"role-result:{self.role_result.kind.value}"
+            if self.role_result.kind is RoleResultKind.ESCALATED:
+                outcome = "succeeded"
+                attempt_disposition = "accepted"
 
         if role_contract_violation is not None:
             outcome = "rejected"
@@ -420,10 +442,18 @@ class ExecutionCapture:
                 f"{'accepted' if test.accepted else 'not accepted'}"
             )
         open_questions = []
-        if interrupted:
+        if interrupted and not (
+            self.role_result is not None
+            and self.role_result.kind is RoleResultKind.ESCALATED
+        ):
             open_questions.append(
                 f"Resolve interrupt: {new_state.interrupt_log[-1].trigger}"
             )
+        elif self.role_result is not None and self.role_result.kind in {
+            RoleResultKind.BLOCKED,
+            RoleResultKind.ESCALATED,
+        }:
+            open_questions.append(self.role_result.summary or self.role_result.kind.value)
         no_change_detail = (
             f" No code change was warranted: {self.no_change_reason}"
             if self.no_change_reason is not None
@@ -456,6 +486,7 @@ class ExecutionCapture:
             outcome=outcome,
             attempt_disposition=attempt_disposition,
             role_contract_violation=role_contract_violation,
+            role_result=self.role_result,
             tool_activity=tools,
             test_outcome=test,
             review_result=review,
@@ -470,7 +501,7 @@ class ExecutionCapture:
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.4",
+                "schema_version": "1.5",
                 "node_executions": new_state.execution_record.node_executions
                 + [execution]
             }
@@ -537,10 +568,33 @@ def record_stream_observation(kind: str, content: str) -> None:
 
 
 def record_no_change(reason: str) -> None:
-    """Record Refactorer's explicit behavior-preserving no-op decision."""
+    """Normalize Refactorer's legacy no-change result into BTN-133 evidence."""
     capture = _ACTIVE_CAPTURE.get()
     if capture is not None:
         capture.no_change_reason = reason
+        record_role_result(
+            construct_role_result(
+                RoleResultSubmission(
+                    kind=RoleResultKind.COMPLETED_WITH_NO_CHANGE,
+                    summary=reason,
+                ),
+                role="refactorer",
+            )
+        )
+
+
+def record_role_result(result: RoleExecutionResult) -> None:
+    """Attach a Battalion-constructed role result to the active attempt."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        validate_evidence_references(
+            result.evidence_refs,
+            supplied_evidence_refs=(
+                (reference.kind, reference.reference)
+                for reference in capture.input_references
+            ),
+        )
+        capture.role_result = result
 
 
 def summarize_costs(record: ExecutionRecord) -> dict[str, object]:

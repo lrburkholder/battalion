@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from battalion.role_results import RoleExecutionResult
 from battalion.work import WorkItem
 
 
@@ -330,6 +331,7 @@ class NodeExecution(BaseModel):
         "accepted", "corrected", "rejected", "infra-failure"
     ] | None = None
     role_contract_violation: RoleContractViolationEvidence | None = None
+    role_result: RoleExecutionResult | None = None
     tool_activity: list[ToolActivity] = Field(default_factory=list, max_length=100)
     test_outcome: TestOutcome | None = None
     review_result: ReviewResult | None = None
@@ -346,7 +348,7 @@ class NodeExecution(BaseModel):
 class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
-    schema_version: Literal["1.0", "1.1", "1.2", "1.3", "1.4"] = "1.4"
+    schema_version: Literal["1.0", "1.1", "1.2", "1.3", "1.4", "1.5"] = "1.5"
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 
