@@ -28,6 +28,7 @@ from battalion.interrupts.triggers import (
     TRIGGER_INFRA_FAILURE,
     TRIGGER_MANUAL_CHECKPOINT,
     TRIGGER_ROLE_EDIT,
+    TRIGGER_ROLE_ESCALATION,
     TRIGGER_SAME_ROOT_CAUSE,
     TRIGGER_SCOPE_VIOLATION,
     get_trigger_name,
@@ -44,13 +45,35 @@ from battalion.setup import (
     run_setup,
 )
 
+TROUBLESHOOTING_URL = "https://lrburkholder.github.io/battalion/docs/troubleshooting.html"
+INTERRUPT_GUIDES = {
+    TRIGGER_INFRA_FAILURE: "infra-failure",
+    TRIGGER_SCOPE_VIOLATION: "authority-stop",
+    TRIGGER_ROLE_EDIT: "authority-stop",
+    TRIGGER_BUDGET_EXCEEDED: "human-checkpoints",
+    TRIGGER_MANUAL_CHECKPOINT: "human-checkpoints",
+    TRIGGER_SAME_ROOT_CAUSE: "reviewer-tests",
+    TRIGGER_ROLE_ESCALATION: "role-output",
+}
+
 app = typer.Typer(
     name="battalion",
-    help="Battalion SDLC Orchestrator - run, resume, and check status of tickets.",
+    help=("Battalion SDLC Orchestrator - run, resume, and check status of tickets. "
+          f"Troubleshooting: {TROUBLESHOOTING_URL}"),
     add_completion=False,
 )
 
 STATE_DIR = Path(".battalion/state")
+
+
+def _print_troubleshooting(state: RunState) -> None:
+    if assess_recovery(state) is not None:
+        anchor = "resume-recovery"
+    elif state.interrupt_log:
+        anchor = INTERRUPT_GUIDES.get(state.interrupt_log[-1].trigger, "run-stopped")
+    else:
+        anchor = "run-stopped"
+    typer.echo(f"Troubleshooting: {TROUBLESHOOTING_URL}#{anchor}")
 
 
 def _state_path(run_id: str) -> Path:
@@ -142,6 +165,10 @@ def _print_status(
                 f"{summary['streamed_content_characters']} content chars, "
                 f"{known}"
             )
+        if recovery is not None or state.status in {
+            RunStatus.AWAITING_HUMAN, RunStatus.BLOCKED, RunStatus.FAILED_INFRA,
+        }:
+            _print_troubleshooting(state)
     else:
         if costs:
             typer.echo(json.dumps(cost_summary or {}, indent=2))
@@ -163,8 +190,8 @@ def _describe_interrupt(entry) -> str:
     if trigger == TRIGGER_INFRA_FAILURE:
         error = context.get("error")
         if error:
-            return f"{label}: the LLM call failed after all retries.\n   Provider error: {error}"
-        return f"{label}: the LLM call failed after all retries."
+            return f"{label}: execution failed.\n   Recorded error: {error}"
+        return f"{label}: execution failed; inspect the saved attempt and interrupt context."
     if trigger == TRIGGER_SCOPE_VIOLATION:
         error = context.get("error")
         if error:
@@ -189,12 +216,14 @@ def _print_pause_reason(state: RunState, run_id: str) -> None:
     recovery = assess_recovery(state)
     if recovery is not None:
         typer.echo(f"Recovery: {recovery.disposition}. {recovery.message}")
+        _print_troubleshooting(state)
         return
     if state.status != RunStatus.AWAITING_HUMAN or not state.interrupt_log:
         return
     entry = state.interrupt_log[-1]
     typer.echo("\nRun paused - awaiting human review.")
     typer.echo(f"  {_describe_interrupt(entry)}")
+    _print_troubleshooting(state)
     typer.echo(f"  Resume when ready: battalion resume {run_id}")
 
 

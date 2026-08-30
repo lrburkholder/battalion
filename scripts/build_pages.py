@@ -20,6 +20,7 @@ PUBLISHED_DOCUMENTS = {
     "docs/status.md": "docs/status.md",
     "docs/release.md": "docs/release.md",
     "docs/getting-started.md": "docs/getting-started.md",
+    "docs/troubleshooting.md": "docs/troubleshooting.md",
     "docs/contributing.md": "docs/contributing.md",
     "docs/uat/cli.md": "docs/uat/cli.md",
     "docs/uat/desktop.md": "docs/uat/desktop.md",

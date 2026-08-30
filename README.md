@@ -191,6 +191,10 @@ unchanged. See [ADR-0002](docs/adrs/adr0002.md) and
 
 ### Installation
 
+For failures or interrupted Runs, use [Troubleshooting and recovery](docs/troubleshooting.md)
+to collect diagnostics, distinguish safe resume from ambiguous execution, and
+check artifact-specific limitations before retrying.
+
 Start with [Getting Started](docs/getting-started.md): verify an identified
 wheel or Windows x64 desktop ZIP, install outside a source checkout, configure
 models, and complete a disposable ticket with an explicit human checkpoint.

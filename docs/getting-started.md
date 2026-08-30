@@ -6,6 +6,11 @@ installation is needed. These instructions use **Windows PowerShell 5.1 or
 PowerShell 7 on Windows**. The desktop distribution targets Windows x64 only;
 this guide makes no macOS or Linux desktop support claim.
 
+If a step fails, stop and use [Troubleshooting and recovery](troubleshooting.md).
+It covers diagnostic collection, installation/provider errors, Reviewer failures,
+worker reconnect, safe resume, and private state backups. Check its candidate
+applicability before relying on crash recovery.
+
 ## 1. Choose an available artifact
 
 **There is no public GitHub Release as of 2026-08-30.** A package version in

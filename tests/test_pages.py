@@ -64,6 +64,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "docs/status.md",
             "docs/release.md",
             "docs/getting-started.md",
+            "docs/troubleshooting.md",
             "docs/contributing.md",
             "docs/uat/cli.md",
             "docs/uat/desktop.md",
@@ -112,10 +113,17 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "docs/release.html" in index
         assert 'href="docs/getting-started.html"' in index
         assert "'/docs/getting-started.html' | relative_url" in layout
+        assert 'href="docs/troubleshooting.html"' in index
+        assert "'/docs/troubleshooting.html' | relative_url" in layout
+        troubleshooting = (output / "docs/troubleshooting.md").read_text(encoding="utf-8")
+        assert "(operator/workflow.html)" in troubleshooting
+        assert "(uat/cli.html)" in troubleshooting
+        assert "(uat/desktop.html)" in troubleshooting
         guide = (output / "docs/getting-started.md").read_text(encoding="utf-8")
         assert "(uat/cli.html)" in guide
         assert "(uat/desktop.html)" in guide
         assert "(operator/workflow.html)" in guide
+        assert "(troubleshooting.html)" in guide
         assert "Roadmap ≠ shipped behavior" in index
         assert "assets/favicon.ico" in layout
         assert "assets/mark-transparent.svg" in layout

@@ -12,6 +12,7 @@ on:
       - docs/adrs/**
       - docs/status.md
       - docs/getting-started.md
+      - docs/troubleshooting.md
       - docs/contributing.md
       - docs/release.md
       - docs/uat/**
@@ -33,6 +34,7 @@ on:
       - docs/adrs/**
       - docs/status.md
       - docs/getting-started.md
+      - docs/troubleshooting.md
       - docs/contributing.md
       - docs/release.md
       - docs/uat/**
