@@ -73,6 +73,13 @@ class VerificationRequirement(str, Enum):
     DETERMINISTIC_GATES = "deterministic-gates"
 
 
+class CompletionRequirementKind(str, Enum):
+    """Policy-controlled evidence required before an implementation may finish."""
+
+    SEMANTIC_REVIEW = "semantic-review"
+    HUMAN_ACCEPTANCE = "human-acceptance"
+
+
 class PolicyReference(BaseModel):
     """A stable reference to governing policy without embedding that policy."""
 
@@ -80,6 +87,21 @@ class PolicyReference(BaseModel):
 
     policy_id: str = Field(min_length=1, max_length=200)
     policy_version: str = Field(min_length=1, max_length=100)
+
+
+class WorkflowCompletionRequirement(BaseModel):
+    """One bounded completion requirement owned by recipe policy.
+
+    A requirement is an exact policy reference rather than an embedded node or
+    graph definition.  This lets an Implementation recipe require a future
+    independently initiated Review Run without turning that Run into a hidden
+    Implementation node.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: CompletionRequirementKind
+    policy: PolicyReference
 
 
 _REQUIRED_IMPLEMENTATION_CAPABILITIES = frozenset(WorkflowCapability)
@@ -106,11 +128,17 @@ class WorkflowRecipe(BaseModel):
     interrupt_policy: PolicyReference
     eligibility_policy: PolicyReference
     upgrade_triggers: tuple[PolicyReference, ...] = Field(min_length=1)
+    completion_requirements: tuple[WorkflowCompletionRequirement, ...] = Field(
+        default_factory=tuple
+    )
 
     @model_validator(mode="after")
     def validate_implementation_assurance(self) -> "WorkflowRecipe":
         if len(set(self.stages)) != len(self.stages):
             raise ValueError("workflow recipe stages must be ordered without duplicates")
+        completion_kinds = [requirement.kind for requirement in self.completion_requirements]
+        if len(completion_kinds) != len(set(completion_kinds)):
+            raise ValueError("workflow completion requirements must not be duplicated")
         if self.workflow_kind is WorkflowKind.IMPLEMENTATION_RUN:
             missing_capabilities = _REQUIRED_IMPLEMENTATION_CAPABILITIES - self.capabilities
             if missing_capabilities:
@@ -128,6 +156,17 @@ class WorkflowRecipe(BaseModel):
                 )
             if not self.independent_review_required:
                 raise ValueError("implementation recipes require independent review")
+            if self.eligibility_policy.policy_id == "workflow-admission":
+                required_completion = {
+                    CompletionRequirementKind.SEMANTIC_REVIEW,
+                    CompletionRequirementKind.HUMAN_ACCEPTANCE,
+                }
+                missing_completion = required_completion - set(completion_kinds)
+                if missing_completion:
+                    raise ValueError(
+                        "compact implementation recipes omit required completion requirements: "
+                        + ", ".join(sorted(item.value for item in missing_completion))
+                    )
         return self
 
 
@@ -223,4 +262,39 @@ FULL_IMPLEMENTATION_RECIPE = WorkflowRecipe(
 )
 
 
-DEFAULT_WORKFLOW_RECIPE_REGISTRY = WorkflowRecipeRegistry((FULL_IMPLEMENTATION_RECIPE,))
+COMPACT_IMPLEMENTATION_RECIPE = WorkflowRecipe(
+    recipe_id="compact-implementation-run",
+    recipe_version="1.0",
+    workflow_kind=WorkflowKind.IMPLEMENTATION_RUN,
+    stages=(
+        WorkflowStage.DRIVER_RED,
+        WorkflowStage.DRIVER_GREEN,
+        WorkflowStage.REVIEW_GREEN,
+    ),
+    capabilities=frozenset(WorkflowCapability),
+    mandatory_verification=frozenset(VerificationRequirement),
+    independent_review_required=True,
+    interrupt_policy=PolicyReference(policy_id="v1-interrupts", policy_version="1.0"),
+    eligibility_policy=PolicyReference(
+        policy_id="workflow-admission", policy_version="1.0"
+    ),
+    upgrade_triggers=(
+        PolicyReference(policy_id="upgrade-only-ratchet", policy_version="1.0"),
+    ),
+    completion_requirements=(
+        WorkflowCompletionRequirement(
+            kind=CompletionRequirementKind.SEMANTIC_REVIEW,
+            policy=PolicyReference(policy_id="semantic-review-run", policy_version="1.0"),
+        ),
+        WorkflowCompletionRequirement(
+            kind=CompletionRequirementKind.HUMAN_ACCEPTANCE,
+            policy=PolicyReference(policy_id="human-workflow-acceptance", policy_version="1.0"),
+        ),
+    ),
+)
+"""The initial proportionate Implementation Run recipe from RFC-0012."""
+
+
+DEFAULT_WORKFLOW_RECIPE_REGISTRY = WorkflowRecipeRegistry(
+    (FULL_IMPLEMENTATION_RECIPE, COMPACT_IMPLEMENTATION_RECIPE)
+)

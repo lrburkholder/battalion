@@ -13,6 +13,8 @@ from battalion.application import (
 )
 from battalion.workflow_recipes import (
     AmbiguousWorkflowRecipe,
+    COMPACT_IMPLEMENTATION_RECIPE,
+    CompletionRequirementKind,
     DEFAULT_WORKFLOW_RECIPE_REGISTRY,
     DuplicateWorkflowRecipe,
     FULL_IMPLEMENTATION_RECIPE,
@@ -38,6 +40,25 @@ def test_full_recipe_is_default_fallback_with_existing_assurance() -> None:
         "review-green",
         "refactor",
         "review-refactor",
+    ]
+
+
+def test_compact_recipe_retains_required_assurance_and_omits_only_redundant_passes() -> None:
+    recipe = COMPACT_IMPLEMENTATION_RECIPE
+
+    assert recipe.recipe_id == "compact-implementation-run"
+    assert recipe.recipe_version == "1.0"
+    assert recipe.independent_review_required is True
+    assert recipe.mandatory_verification == FULL_IMPLEMENTATION_RECIPE.mandatory_verification
+    assert recipe.capabilities == FULL_IMPLEMENTATION_RECIPE.capabilities
+    assert [stage.value for stage in recipe.stages] == [
+        "driver-red",
+        "driver-green",
+        "review-green",
+    ]
+    assert [requirement.kind for requirement in recipe.completion_requirements] == [
+        CompletionRequirementKind.SEMANTIC_REVIEW,
+        CompletionRequirementKind.HUMAN_ACCEPTANCE,
     ]
 
 
@@ -84,7 +105,7 @@ def test_recipe_validation_cannot_omit_required_assurance() -> None:
 def test_application_exposes_read_only_recipe_enumeration_and_inspection() -> None:
     recipes = list_workflow_recipes(ListWorkflowRecipes())
 
-    assert recipes == (FULL_IMPLEMENTATION_RECIPE,)
+    assert recipes == (COMPACT_IMPLEMENTATION_RECIPE, FULL_IMPLEMENTATION_RECIPE)
     assert inspect_workflow_recipe(
         InspectWorkflowRecipe(recipe_id="full-implementation-run", recipe_version="1.0")
     ) is FULL_IMPLEMENTATION_RECIPE
