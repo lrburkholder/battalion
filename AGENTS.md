@@ -71,12 +71,15 @@ dependency already solves the problem.
   `Battalion-ticket: #<issue-number>` marker remains valid. For an integration
   or release PR that completes multiple tickets, use exactly one full-line
   `Battalion-tickets: #<issue-number>, #<issue-number>[, ...]` marker. Never
-  mix the singular and plural forms. After a human merges the PR to `main`,
-  the post-merge lifecycle Action validates the complete declared Issue set
-  before mutation, closes eligible in-review Issues deterministically, treats
-  already-completed Issues as reconciliation states, and leaves public status
-  rendering to the Pages publication pipeline (ADR-0030 as amended by
-  ADR-0031 and BTN-152).
+  mix the singular and plural forms. Do not use GitHub auto-close keywords
+  such as `Closes`, `Fixes`, or `Resolves` for any Issue declared by those
+  Battalion markers: Battalion owns ticket closure after merge. Auto-close
+  references to unrelated Issues are not governed by this rule. After a human
+  merges the PR to `main`, the post-merge lifecycle Action validates the
+  complete declared Issue set before mutation, closes eligible in-review Issues
+  deterministically, treats already-completed Issues as reconciliation states,
+  and leaves public status rendering to the Pages publication pipeline
+  (ADR-0030 as amended by ADR-0031, BTN-152, and BTN-162).
 
 ## Setup and validation
 
