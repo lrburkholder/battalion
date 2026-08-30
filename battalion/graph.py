@@ -47,10 +47,13 @@ from battalion.interrupts.triggers import (
 from battalion.llm.litellm_client import InfraFailure
 from battalion.nodes.errors import RoleContractViolation, RoleOutputError
 from battalion.execution import ExecutionCapture
-from battalion.scope.tool_binding import ScopeViolationError
+from battalion.recovery import UnsafeRecoveryError, assess_recovery
+from battalion.scope.tool_binding import ScopeViolationError, validate_write_scope
 from battalion.state.models import (
     CheckpointType,
+    GraphProgress,
     InterventionDisposition,
+    ProgressStage,
     RejectionRecord,
     RoleContractViolationEvidence,
     RunState,
@@ -132,6 +135,22 @@ NEXT_NODE_ON_PAUSE = {
 }
 
 
+def _successor(state: RunState, node_name: str) -> str:
+    """Use the same exact successor for live routing and durable recovery."""
+    if state.status is RunStatus.AWAITING_HUMAN:
+        return NODE_PAUSE
+    if state.status is RunStatus.BLOCKED:
+        return NODE_BLOCKED
+    if node_name in NEXT_NODE_ON_PAUSE:
+        return NEXT_NODE_ON_PAUSE[node_name]
+    accepted, rejected = {
+        NODE_REVIEWER_RED: (NODE_DRIVER_GREEN, NODE_DRIVER_RED),
+        NODE_REVIEWER_GREEN: (NODE_REFACTORER, NODE_DRIVER_GREEN),
+        NODE_REVIEWER_REFACTOR: (NODE_DONE, NODE_REFACTORER),
+    }[node_name]
+    return accepted if state.phase == accepted else rejected
+
+
 def _deliver_interventions(
     state: RunState,
     target: str,
@@ -146,6 +165,12 @@ def _deliver_interventions(
     }
     if not matched:
         return state
+    if not any(
+        item.execution_id == execution_id and item.phase == target
+        and item.outcome == "in-progress"
+        for item in state.execution_record.node_executions
+    ):
+        raise ValueError("Intervention delivery requires an existing unfinished target attempt")
     interventions = [
         item.model_copy(update={
             "disposition": InterventionDisposition.DELIVERED,
@@ -279,11 +304,45 @@ def _scaffold_node(
     the same role and phase. InfraFailure and the remaining RoleOutputError
     instances (trigger #5) and ScopeViolationError
     (trigger #2) route to an AWAITING_HUMAN pause through _handle_node_error;
-    any other exception is a bug and propagates unchanged.
+    invalid scope configuration fails before the attempt; unexpected exceptions
+    propagate unchanged.
     """
     def node(state: RunState) -> RunState:
-        correction_context: str | None = None
-        correction_attempt = 0
+        # Reject authority configuration before snapshots, model calls, budget
+        # consumption, or durable attempts. Node binding rechecks before use.
+        validate_write_scope(state.write_scope, base_dir)
+        recovery = assess_recovery(state)
+        if recovery is not None and recovery.disposition == "terminal":
+            raise UnsafeRecoveryError(recovery.message)
+        progress = state.graph_progress
+        correction_context = progress.correction_context if progress else None
+        correction_attempt = progress.correction_attempt if progress else 0
+
+        def finish(
+            result: RunState, *, violation: RoleContractViolationEvidence | None = None,
+            correction: str | None = None,
+        ) -> RunState:
+            result = capture.finish(
+                entered_state, result, checkpoint=finish_checkpoint,
+                role_contract_violation=violation,
+            )
+            result = result.model_copy(update={
+                "graph_progress": GraphProgress(
+                    stage=ProgressStage.ATTEMPT_COMPLETED,
+                    execution_id=capture.execution_id,
+                    next_node=node_name if correction else _successor(result, node_name),
+                    correction_context=correction,
+                    correction_attempt=1 if correction else 0,
+                ),
+                "resume_intent": (
+                    result.resume_intent.model_copy(update={"completed": True})
+                    if result.resume_intent else None
+                ),
+            })
+            if on_state_checkpoint is not None:
+                on_state_checkpoint(result)
+            return result
+
         while True:
             entered_state = state
             model_config = _resolve_llm_config(llm_configs, llm_roles)
@@ -291,11 +350,41 @@ def _scaffold_node(
                 state, node_name, getattr(model_config, "model", "unconfigured"),
                 base_dir, prompts_dir=prompts_dir, model_configuration=model_config,
             )
+            progress = state.graph_progress
+            if progress and progress.stage is ProgressStage.ATTEMPT_CREATED:
+                # Generation has not begun. Reuse the durable receiving attempt.
+                previous = next(
+                    item for item in state.execution_record.node_executions
+                    if item.execution_id == progress.execution_id
+                )
+                if previous.phase != node_name or previous.outcome != "in-progress":
+                    raise UnsafeRecoveryError("Attempt recovery identity does not match the target")
+                if (previous.model_identity != capture.model_identity
+                        or previous.prompt_provenance != capture.prompt_provenance):
+                    raise UnsafeRecoveryError(
+                        "Restore the original model and prompt configuration before retrying "
+                        "this unstarted attempt, or start a new run."
+                    )
+                capture.execution_id = previous.execution_id
+                capture.started_at = previous.started_at
+            else:
+                state = capture.create_attempt(state)
+            state = state.model_copy(update={
+                "graph_progress": GraphProgress(
+                    stage=ProgressStage.ATTEMPT_CREATED, next_node=node_name,
+                    execution_id=capture.execution_id,
+                    correction_context=correction_context,
+                    correction_attempt=correction_attempt,
+                ),
+            })
             if delivers_interventions:
                 state = _deliver_interventions(
-                    state, node_name, capture.execution_id, on_state_checkpoint
+                    state, node_name, capture.execution_id, None
                 )
                 capture.include_human_interventions(state)
+            # Creation and delivery are one atomic checkpoint before role execution.
+            if on_state_checkpoint is not None:
+                on_state_checkpoint(state)
             # Increment budget for every model call, including corrections.
             state = increment_budget(state)
 
@@ -308,6 +397,13 @@ def _scaffold_node(
                 state, instincts, capture.execution_id, correction_context
             )
 
+            state = state.model_copy(update={
+                "graph_progress": state.graph_progress.model_copy(update={
+                    "stage": ProgressStage.ATTEMPT_STARTED,
+                }),
+            })
+            if on_state_checkpoint is not None:
+                on_state_checkpoint(state)
             if on_node_event is not None:
                 on_node_event({
                     "type": "node_start",
@@ -341,12 +437,6 @@ def _scaffold_node(
                     ),
                 )
                 if correction_attempt == 1:
-                    state = capture.finish(
-                        entered_state,
-                        state,
-                        checkpoint=finish_checkpoint,
-                        role_contract_violation=evidence,
-                    )
                     # Make a process interruption between correction attempts
                     # resumable at this exact role rather than restarting the
                     # graph from Architect. The durable record is already
@@ -355,9 +445,8 @@ def _scaffold_node(
                         "phase": node_name,
                         "resume_target": node_name,
                     })
-                    if on_state_checkpoint is not None:
-                        on_state_checkpoint(state)
                     correction_context = exc.correction_context()
+                    state = finish(state, violation=evidence, correction=correction_context)
                     if on_node_event is not None:
                         on_node_event({
                             "type": "role_contract_correction",
@@ -382,12 +471,7 @@ def _scaffold_node(
                     node_name=node_name,
                     on_node_event=on_node_event,
                 )
-                return capture.finish(
-                    entered_state,
-                    paused,
-                    checkpoint=finish_checkpoint,
-                    role_contract_violation=evidence,
-                )
+                return finish(paused, violation=evidence)
             except (InfraFailure, RoleOutputError, ScopeViolationError) as exc:
                 if on_node_event is not None:
                     on_node_event({
@@ -402,12 +486,13 @@ def _scaffold_node(
                     node_name=node_name,
                     on_node_event=on_node_event,
                 )
-                return capture.finish(entered_state, paused, checkpoint=finish_checkpoint)
+                return finish(paused)
 
             # A valid typed blocked/escalated role result owns its routing.
             # Do not reinterpret it as a normal success edge or let unrelated
             # post-success triggers overwrite its durable state.
             if new_state.status in {RunStatus.AWAITING_HUMAN, RunStatus.BLOCKED}:
+                new_state = finish(new_state)
                 if on_node_event is not None:
                     on_node_event({
                         "type": "node_end",
@@ -418,7 +503,7 @@ def _scaffold_node(
                             "limit": new_state.budget.limit,
                         },
                     })
-                return capture.finish(entered_state, new_state, checkpoint=finish_checkpoint)
+                return new_state
 
             # Check interrupts after successful node execution.
             should_pause, trigger_id, context = check_any_trigger(
@@ -429,6 +514,7 @@ def _scaffold_node(
                 context = {**context, "next_phase": pause_resume_node}
                 new_state = log_interrupt(new_state, trigger_id, context)
                 new_state = new_state.model_copy(update={"phase": NODE_PAUSE})
+                new_state = finish(new_state)
                 if on_node_event is not None:
                     on_node_event({
                         "type": "interrupt",
@@ -437,6 +523,8 @@ def _scaffold_node(
                         "context": context,
                     })
 
+            else:
+                new_state = finish(new_state)
             if on_node_event is not None:
                 on_node_event({
                     "type": "node_end",
@@ -444,7 +532,7 @@ def _scaffold_node(
                     "phase": new_state.phase,
                     "budget": {"used": new_state.budget.used, "limit": new_state.budget.limit},
                 })
-            return capture.finish(entered_state, new_state, checkpoint=finish_checkpoint)
+            return new_state
 
     return node
 
@@ -561,6 +649,8 @@ def _make_reviewer_node(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     instinct_retriever: InstinctRetriever | None = None,
+    reviewer_test_timeout_seconds: float = 300.0,
+    on_state_checkpoint: Callable[[RunState], None] | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Reviewer node function for the graph.
 
@@ -594,7 +684,10 @@ def _make_reviewer_node(
         build_inputs=build_inputs,
         audience=InstinctAudience.REVIEWER,
         delivers_interventions=False,
-        static_kwargs={"checkpoint": checkpoint},
+        static_kwargs={
+            "checkpoint": checkpoint,
+            "test_timeout_seconds": reviewer_test_timeout_seconds,
+        },
         finish_checkpoint=checkpoint,
         llm_configs=llm_configs,
         base_dir=base_dir,
@@ -602,7 +695,7 @@ def _make_reviewer_node(
         on_node_event=on_node_event,
         on_token=on_token,
         instinct_retriever=instinct_retriever,
-        on_state_checkpoint=None,
+        on_state_checkpoint=on_state_checkpoint,
         error_next_phase=lambda state: state.phase,
         # A failed review has no verdict to hand off; re-run this exact
         # checkpoint after the operator resolves the provider problem.
@@ -710,6 +803,7 @@ def build_graph(
     on_token: Callable[[dict], None] | None = None,
     intel_repository: IntelRepository | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
+    reviewer_test_timeout_seconds: float = 300.0,
 ) -> StateGraph:
     """Build the Battalion StateGraph with all nodes and edges.
     
@@ -761,17 +855,23 @@ def build_graph(
         on_state_checkpoint=on_state_checkpoint, **shared
     )
     reviewer_red_node = _make_reviewer_node(
-        CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir, **shared
+        CheckpointType.RED_CHECK, llm_configs, base_dir, prompts_dir,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
+        on_state_checkpoint=on_state_checkpoint, **shared
     )
     reviewer_green_node = _make_reviewer_node(
-        CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir, **shared
+        CheckpointType.GREEN_CHECK, llm_configs, base_dir, prompts_dir,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
+        on_state_checkpoint=on_state_checkpoint, **shared
     )
     refactorer_node = _make_refactorer_node(
         llm_configs, base_dir, prompts_dir,
         on_state_checkpoint=on_state_checkpoint, **shared
     )
     reviewer_refactor_node = _make_reviewer_node(
-        CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir, **shared
+        CheckpointType.REFACTOR_CHECK, llm_configs, base_dir, prompts_dir,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
+        on_state_checkpoint=on_state_checkpoint, **shared
     )
     done_node = _make_done_node()
     pause_node = _make_pause_node()
@@ -780,12 +880,16 @@ def build_graph(
     def checkpointed(
         node: Callable[[RunState], RunState],
     ) -> Callable[[RunState], RunState]:
-        if on_state_checkpoint is None:
-            return node
-
         def wrapped(state: RunState) -> RunState:
             result = RunState.model_validate(node(state))
-            on_state_checkpoint(result)
+            if result.graph_progress is not None:
+                result = result.model_copy(update={
+                    "graph_progress": result.graph_progress.model_copy(update={
+                        "stage": ProgressStage.OUTCOME_CHECKPOINTED,
+                    }),
+                })
+            if on_state_checkpoint is not None:
+                on_state_checkpoint(result)
             return result
 
         return wrapped
@@ -855,12 +959,7 @@ def build_graph(
     # crash the first time any Reviewer checkpoint completed. Removed.
     graph.add_conditional_edges(
         NODE_REVIEWER_RED,
-        lambda state: (
-            NODE_PAUSE if state.status == RunStatus.AWAITING_HUMAN
-            else NODE_BLOCKED if state.status == RunStatus.BLOCKED
-            else NODE_DRIVER_GREEN if state.phase == "driver_green"
-            else NODE_DRIVER_RED
-        ),
+        lambda state: _successor(state, NODE_REVIEWER_RED),
         [NODE_DRIVER_GREEN, NODE_DRIVER_RED, NODE_PAUSE, NODE_BLOCKED],
     )
 
@@ -878,12 +977,7 @@ def build_graph(
     # into a Driver(GREEN) retry instead of pausing.
     graph.add_conditional_edges(
         NODE_REVIEWER_GREEN,
-        lambda state: (
-            NODE_PAUSE if state.status == RunStatus.AWAITING_HUMAN
-            else NODE_BLOCKED if state.status == RunStatus.BLOCKED
-            else NODE_REFACTORER if state.phase == "refactorer"
-            else NODE_DRIVER_GREEN
-        ),
+        lambda state: _successor(state, NODE_REVIEWER_GREEN),
         [NODE_REFACTORER, NODE_DRIVER_GREEN, NODE_PAUSE, NODE_BLOCKED],
     )
 
@@ -897,12 +991,7 @@ def build_graph(
     # If rejected (tests fail): -> Refactorer to retry
     graph.add_conditional_edges(
         NODE_REVIEWER_REFACTOR,
-        lambda state: (
-            NODE_PAUSE if state.status == RunStatus.AWAITING_HUMAN
-            else NODE_BLOCKED if state.status == RunStatus.BLOCKED
-            else NODE_DONE if state.phase == "done"
-            else NODE_REFACTORER
-        ),
+        lambda state: _successor(state, NODE_REVIEWER_REFACTOR),
         [NODE_DONE, NODE_REFACTORER, NODE_PAUSE, NODE_BLOCKED],
     )
 
@@ -938,6 +1027,9 @@ def build_graph(
             NODE_REVIEWER_GREEN,
             NODE_REFACTORER,
             NODE_REVIEWER_REFACTOR,
+            NODE_DONE,
+            NODE_PAUSE,
+            NODE_BLOCKED,
         ):
             return target
         return NODE_ARCHITECT
@@ -952,6 +1044,9 @@ def build_graph(
             NODE_REVIEWER_GREEN: NODE_REVIEWER_GREEN,
             NODE_REFACTORER: NODE_REFACTORER,
             NODE_REVIEWER_REFACTOR: NODE_REVIEWER_REFACTOR,
+            NODE_DONE: NODE_DONE,
+            NODE_PAUSE: NODE_PAUSE,
+            NODE_BLOCKED: NODE_BLOCKED,
         },
     )
     
@@ -961,11 +1056,16 @@ def build_graph(
 def _infer_resume_target(state: RunState) -> str:
     """Infer the resume target node from the last interrupt or rejection.
     
-    Priority:
-    1. Last interrupt's context.next_phase (for manual checkpoints, budget, etc.)
-    2. Last rejection's checkpoint (for same-root-cause trigger)
-    3. Current phase
+    Prefer the durable cursor; authorized pauses retain legacy target inference.
     """
+    if state.graph_progress is not None and state.graph_progress.next_node not in {
+        NODE_PAUSE, NODE_BLOCKED,
+    }:
+        return state.graph_progress.next_node
+    if state.status is RunStatus.BLOCKED and state.phase in {
+        NODE_DRIVER_RED, NODE_DRIVER_GREEN, NODE_REFACTORER,
+    }:
+        return state.phase
     # Check last interrupt for explicit next_phase
     if state.interrupt_log:
         last_interrupt = state.interrupt_log[-1]
@@ -977,7 +1077,8 @@ def _infer_resume_target(state: RunState) -> str:
     if state.reviewer_rejection_history:
         last_rejection = state.reviewer_rejection_history[-1]
         return CHECKPOINT_TO_RESUME_NODE.get(last_rejection.checkpoint, NODE_DRIVER_RED)
-    
+    if state.resume_target:
+        return state.resume_target
     # Fall back to current phase
     return state.phase
 
@@ -991,6 +1092,7 @@ def resume_ticket(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
+    reviewer_test_timeout_seconds: float = 300.0,
 ) -> RunState:
     """Resume a paused ticket from its saved state.
     
@@ -1012,9 +1114,10 @@ def resume_ticket(
     Returns:
         Final RunState after graph completes or interrupts again
     """
-    from langgraph.errors import GraphRecursionError
-    
     # Determine where to resume
+    recovery = assess_recovery(state)
+    if recovery is not None and recovery.disposition == "terminal":
+        raise UnsafeRecoveryError(recovery.message)
     resume_target = _infer_resume_target(state)
     
     # Prepare state for resumption
@@ -1024,26 +1127,12 @@ def resume_ticket(
         "phase": resume_target,  # Set phase to match target
     })
     
-    # Build and compile graph
-    graph = build_graph(
-        llm_configs, base_dir, prompts_dir,
+    return run_ticket(
+        resume_state, llm_configs, base_dir, prompts_dir, max_turns,
         on_node_event=on_node_event, on_token=on_token,
         on_state_checkpoint=on_state_checkpoint,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
     )
-    app = graph.compile()
-    
-    # Run with recursion limit
-    try:
-        final_state = app.invoke(
-            resume_state,
-            {"recursion_limit": max_turns},
-        )
-        return final_state
-    except GraphRecursionError:
-        return resume_state.model_copy(update={
-            "status": RunStatus.BLOCKED,
-            "phase": "recursion_limit_exceeded",
-        })
 
 
 def run_ticket(
@@ -1055,6 +1144,7 @@ def run_ticket(
     on_node_event: Callable[[dict], None] | None = None,
     on_token: Callable[[dict], None] | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
+    reviewer_test_timeout_seconds: float = 300.0,
 ) -> RunState:
     """Run a caller-created state through the graph until done or interrupted.
     
@@ -1076,12 +1166,21 @@ def run_ticket(
         Final RunState after graph completes or interrupts
     """
     from langgraph.errors import GraphRecursionError
-    
+
+    latest = initial_state.model_copy(deep=True)
+
+    def checkpoint(state: RunState) -> None:
+        nonlocal latest
+        if on_state_checkpoint is not None:
+            on_state_checkpoint(state)
+        latest = state.model_copy(deep=True)
+
     # Build graph
     graph = build_graph(
         llm_configs, base_dir, prompts_dir,
         on_node_event=on_node_event, on_token=on_token,
-        on_state_checkpoint=on_state_checkpoint,
+        on_state_checkpoint=checkpoint,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
     )
     
     # Compile graph
@@ -1095,10 +1194,9 @@ def run_ticket(
         )
         return final_state
     except GraphRecursionError:
-        # Graph hit max turns - this is a safety limit, not an error
-        # Return the last state with a note
-        # In practice, this shouldn't happen with reasonable max_turns
-        return initial_state.model_copy(update={
+        if latest.status in {RunStatus.AWAITING_HUMAN, RunStatus.DONE}:
+            return latest
+        return latest.model_copy(update={
             "status": RunStatus.BLOCKED,
             "phase": "recursion_limit_exceeded",
         })

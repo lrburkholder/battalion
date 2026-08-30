@@ -176,6 +176,9 @@ default local trust root on first use without authentication infrastructure.
 Interrupt resolution is persisted before resume and records the human Actor
 ID, immutable display snapshot, time, interrupt target, resolution,
 disposition, and resulting durable state.
+On the BTN-165 branch, resolution and a `resume_intent` linking that exact
+action are saved atomically. Until a completed attempt has a durable outcome,
+replaying resume reuses this intent instead of creating another human decision.
 CLI and desktop clients submit the same `ResumeRun` application command; graph
 resume inference and execution remain canonical.
 
@@ -193,6 +196,38 @@ not supplied to later attempts or other roles. A crash before association
 leaves the item queued; a crash after association preserves the receiving
 attempt identity (ADR-0023).
 
+BTN-165 registers the unfinished `NodeExecution` and its intervention delivery
+in the same atomic state replacement. The graph then checkpoints
+`attempt-started` before role execution. Recovery before that boundary reuses
+the same attempt ID and requires the original prompt/model configuration;
+after that boundary, absent a saved outcome, execution may have caused writes
+or provider charges and must not be automatically replayed. Completed outcomes
+are checkpointed before completion observations, with their exact graph
+successor, and then marked `outcome-checkpointed` by the graph wrapper.
+The durable `graph_progress` contract distinguishes
+`interrupted-before-attempt`, `attempt-created`, `attempt-started`,
+`attempt-completed`, and `outcome-checkpointed`. A saved resume intent without
+a graph cursor also explicitly represents authorization before attempt creation.
+Correction context and its consumed retry allowance survive recovery; an
+intervention remains exclusive to its originally receiving attempt.
+
+Resume/intervention clients may supply a stable `action_id`. Replays retain
+original actor, timestamp, target, and decision evidence; conflicting ID reuse
+is rejected. A completed resume action replay is a read of current durable
+state, not authorization to resolve a later interrupt. Without an ID, only a
+pending resume intent is implicitly reused. The CLI exposes `--action-id`.
+These IDs identify requests; repeating identical intervention text with a new
+ID is a new human action.
+
+Recursion-limit handling retains the latest checkpoint and its exact next
+node. Unexpected graph exceptions never save invocation input over newer
+durable progress. Application results/inspection expose typed recovery
+assessments; execution failures become `RunRecoverable` or `RunRecoveryUnsafe`.
+CLI and desktop explain whether replay is safe. An unknown started-attempt
+outcome is terminal for automatic recovery: inspect the workspace and execution
+record, then start a new run from the reviewed workspace. No manual JSON edits,
+automatic write rollback, or exactly-once provider calls are promised.
+
 Recon candidate accept, edit-and-accept, and reject operations remain outside
 `RunState`. Application commands delegate to the audited Intel workflow, which
 leaves candidate Markdown immutable and creates separate accepted Intel and
@@ -200,13 +235,16 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.5` (BTN-133); persisted `1.0` through
-`1.4` records remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.7` on the BTN-165 branch; persisted
+`1.0` through `1.6` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
 test outcome and acceptance decision. Tool activity, interrupts, and produced
 artifact provenance carry or reference the originating node execution.
+An unfinished attempt has outcome `in-progress` and no end timestamp. Its
+completed evidence replaces that entry under the same execution ID; legacy
+completed evidence is not rewritten.
 
 Each successful LiteLLM completion also records a bounded call identifier,
 provider-reported model, and input/output token counts on its originating node
@@ -256,6 +294,16 @@ ends the current run until a human records that the missing condition has been
 addressed; an escalated result enters the existing durable human-resolution
 boundary. Neither route advances through the normal success edge, and malformed
 or prohibited output remains a deterministic failure.
+
+Version `1.6` adds optional `test_execution` evidence to Reviewer attempts:
+the exact command, temporary working-directory identity, exit classification,
+return code, collected-test/failure/error counts when available, duration,
+configured timeout, cancellation/timeout disposition, and process-tree cleanup
+result. Each stdout/stderr stream retains at most 64 KiB with observed-byte and
+truncation metadata. Invalid harness outcomes have an `unavailable` review
+verdict rather than a fabricated test failure or rejection cause. Legacy
+records retain their old inferred outcomes and expose process evidence as
+unavailable. New Reviewer snapshot hashes describe only materialized inputs.
 
 ### Instinct data contract
 
@@ -403,6 +451,27 @@ Driver RED uses `driver_red`, Driver GREEN uses `driver_green`, and Refactorer
 uses `refactorer`. A phase receives tools bound only to that entry; Reviewer
 receives none. An explicitly empty phase entry grants no write authority.
 
+BTN-166 branch contract: every configured directory and single-file root is a
+project-relative authority declaration, not an arbitrary filesystem path.
+Before tools are exposed, normalize both separator styles and prove that each
+root resolves strictly within the resolved project base using native path
+semantics (including Windows case and drive behavior). Reject absolute roots
+even when inside the project, parent components, drive-relative/alternate-drive
+and device paths, Windows path aliases, and symlink/junction escapes. No v1
+role/mode permits a root resolving to the project itself. Internal links may
+resolve to a contained root; binding pins that resolved authority and checks it
+again on use, including single-file tools.
+
+Invalid declarations raise `WriteScopeMisconfigured`; application start/resume
+and worker boundaries expose `InvalidWriteScope` before mutation or execution.
+Validate the complete declaration, including inactive phases, and the saved
+Run's scopes on resume. Do not replace invalid scopes with defaults, retry them
+as model-output corrections, or consume budget for them. This is a configuration
+failure, not a new interrupt condition. A later bound-path redirection is an
+audited `ScopeViolationError` using existing interrupt #2. Role-specific test-file
+rules, Architect's single `plan.md` output, and Refactorer artifact provenance
+restrictions still apply after containment validation.
+
 For backward compatibility, a missing phase entry falls back to `driver`, whose
 default is `["src/"]`. One-root output is relative to that root. Multi-root
 output must prefix each path with a declared root. Absolute paths, traversal,
@@ -415,6 +484,40 @@ so test discovery is not coupled to a `src/` directory. For example, Battalion
 itself can use `driver_red: ["tests/"]`, `driver_green: ["battalion/"]`, and
 `refactorer: ["battalion/"]` without granting repository-wide write access.
 See ADR-0013.
+
+### Reviewer test execution (BTN-164 branch contract)
+
+Reviewer runs `python -m pytest -q` with built-in JUnit output from a disposable
+copy of the configured project root. A passing exit (0) requires positive test
+counts and no failures/errors; a test-failure exit (1) requires collected tests,
+positive failure counts, and no harness errors. Only the latter can satisfy
+RED_CHECK. GREEN_CHECK and REFACTOR_CHECK require the former. The opposite valid
+result is a normal Reviewer rejection; no tests (5), collection/usage/internal
+errors (2–4), setup/teardown errors, unsupported exit codes, missing/malformed
+JUnit output, launch failure, timeout, and cancellation never authorize progress.
+They take typed infrastructure interrupt #5, retain evidence, make no
+rejection-cause LLM call, and resume at the same Reviewer checkpoint. JUnit
+parsing is capped at 8 MiB; larger output is an inspectable malformed result.
+
+`reviewer_test_timeout_seconds` in project configuration defaults to 300 and
+must be greater than zero and at most 3600. The bound applies to all Reviewer
+checkpoints on start/resume. Each pytest process has its own process group;
+timeout or cooperative/keyboard cancellation terminates descendants using
+Windows tree termination or POSIX process-group signals with forced cleanup.
+Cleanup attempts/results are recorded separately from test validity. Forced
+termination of Battalion itself is not a cooperative cancellation and cannot
+promise a final execution record.
+
+Git snapshots admit current tracked files and nonignored untracked files, then
+apply explicit generated-content exclusions. Non-Git snapshots walk regular
+files with the same exclusions and prune virtual environments. Build/distribution
+outputs (`build`, `dist`, `target`), coverage outputs, dependency/environment
+directories, caches, `.battalion`, and VCS metadata are not test inputs.
+Deleted tracked files, directory links, and links escaping the project are not
+materialized. Internal file links are copied as independent regular files.
+Snapshot writes remain Battalion-owned temporary IO, not Reviewer project write
+authority or an OS sandbox. BTN-123 may replace the workspace mechanism but
+must preserve this evidence and checkpoint-validity contract.
 
 ## Retry / Loop Bounds
 Configurable per ticket rather than a fixed global constant — set as part of

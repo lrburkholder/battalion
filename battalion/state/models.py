@@ -119,6 +119,45 @@ class HumanActionRecord(BaseModel):
     resulting_phase: str = Field(min_length=1, max_length=200)
 
 
+class ProgressStage(str, Enum):
+    BEFORE_ATTEMPT = "interrupted-before-attempt"
+    ATTEMPT_CREATED = "attempt-created"
+    ATTEMPT_STARTED = "attempt-started"
+    ATTEMPT_COMPLETED = "attempt-completed"
+    OUTCOME_CHECKPOINTED = "outcome-checkpointed"
+
+
+class GraphProgress(BaseModel):
+    """Durable cursor; never infer recovery from a phase label or error prose."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    stage: ProgressStage
+    next_node: Literal[
+        "architect", "driver_red", "driver_green", "reviewer_red",
+        "reviewer_green", "refactorer", "reviewer_refactor", "done",
+        "awaiting_human", "blocked",
+    ]
+    execution_id: str | None = None
+    correction_context: str | None = Field(default=None, max_length=8000)
+    correction_attempt: int = Field(default=0, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def require_attempt_identity(self) -> Self:
+        if self.stage in {
+            ProgressStage.ATTEMPT_CREATED, ProgressStage.ATTEMPT_STARTED,
+            ProgressStage.ATTEMPT_COMPLETED,
+        } and self.execution_id is None:
+            raise ValueError("attempt progress requires an execution identity")
+        return self
+
+
+class ResumeIntent(BaseModel):
+    """Links replay to the original immutable authorization evidence."""
+
+    action_id: str = Field(min_length=1, max_length=200)
+    completed: bool = False
+
+
 class EvidenceReference(BaseModel):
     """A bounded pointer and digest for node input without copying contents."""
 
@@ -249,9 +288,81 @@ class TestOutcome(BaseModel):
     accepted: bool
 
 
+class TestExecutionClassification(str, Enum):
+    """Mechanical disposition of one bounded Reviewer pytest process."""
+
+    PASSED = "pass"
+    TEST_FAILED = "test-failure"
+    NO_TESTS_COLLECTED = "no-tests-collected"
+    PYTEST_ERROR = "collection-usage-internal-error"
+    TIMED_OUT = "timeout"
+    CANCELLED = "cancellation"
+    PROCESS_LAUNCH_FAILED = "process-launch-failure"
+    MALFORMED_OUTPUT = "malformed-output"
+    INVALID_EXIT = "invalid-pytest-outcome"
+
+
+class TestExecutionEvidence(BaseModel):
+    """Bounded, inspectable evidence from Reviewer's independent test run."""
+
+    command: list[Annotated[str, Field(min_length=1, max_length=1000)]] = Field(
+        min_length=1, max_length=20
+    )
+    working_directory: str = Field(min_length=1, max_length=500)
+    classification: TestExecutionClassification
+    returncode: int | None = None
+    tests_collected: int | None = Field(default=None, ge=0)
+    failures: int | None = Field(default=None, ge=0)
+    errors: int | None = Field(default=None, ge=0)
+    stdout: str = Field(default="", max_length=65536)
+    stderr: str = Field(default="", max_length=65536)
+    stdout_observed_bytes: int = Field(ge=0)
+    stderr_observed_bytes: int = Field(ge=0)
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    duration_ms: int = Field(ge=0)
+    timeout_seconds: float = Field(gt=0, le=3600)
+    timed_out: bool = False
+    cancelled: bool = False
+    cleanup_attempted: bool = False
+    cleanup_succeeded: bool | None = None
+    detail: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_disposition(self) -> Self:
+        if self.classification in {
+            TestExecutionClassification.PASSED,
+            TestExecutionClassification.TEST_FAILED,
+        }:
+            if not self.tests_collected or self.errors != 0:
+                raise ValueError("valid checkpoint evidence requires collected tests and no harness errors")
+            if self.classification is TestExecutionClassification.PASSED:
+                if self.returncode != 0 or self.failures != 0:
+                    raise ValueError("passing evidence requires exit 0 and no failures")
+            elif self.returncode != 1 or not self.failures:
+                raise ValueError("failing evidence requires exit 1 and a collected-test failure")
+        if self.stdout_truncated != (self.stdout_observed_bytes > 65536):
+            raise ValueError("stdout truncation metadata is inconsistent")
+        if self.stderr_truncated != (self.stderr_observed_bytes > 65536):
+            raise ValueError("stderr truncation metadata is inconsistent")
+        if self.timed_out != (
+            self.classification is TestExecutionClassification.TIMED_OUT
+        ):
+            raise ValueError("timeout disposition is inconsistent with classification")
+        if self.cancelled != (
+            self.classification is TestExecutionClassification.CANCELLED
+        ):
+            raise ValueError("cancellation disposition is inconsistent with classification")
+        if self.cleanup_attempted and self.cleanup_succeeded is None:
+            raise ValueError("attempted cleanup requires a cleanup result")
+        if not self.cleanup_attempted and self.cleanup_succeeded is not None:
+            raise ValueError("cleanup result requires an attempted cleanup")
+        return self
+
+
 class ReviewResult(BaseModel):
     checkpoint: CheckpointType
-    verdict: Literal["accepted", "rejected"]
+    verdict: Literal["accepted", "rejected", "unavailable"]
     cause: str | None = Field(default=None, max_length=2000)
 
 
@@ -325,8 +436,8 @@ class NodeExecution(BaseModel):
     output_reference: str | None = Field(default=None, max_length=1000)
     verdict: str | None = Field(default=None, max_length=2000)
     started_at: datetime
-    ended_at: datetime
-    outcome: Literal["succeeded", "rejected", "interrupted"]
+    ended_at: datetime | None = None
+    outcome: Literal["in-progress", "succeeded", "rejected", "interrupted"]
     attempt_disposition: Literal[
         "accepted", "corrected", "rejected", "infra-failure"
     ] | None = None
@@ -334,6 +445,7 @@ class NodeExecution(BaseModel):
     role_result: RoleExecutionResult | None = None
     tool_activity: list[ToolActivity] = Field(default_factory=list, max_length=100)
     test_outcome: TestOutcome | None = None
+    test_execution: TestExecutionEvidence | None = None
     review_result: ReviewResult | None = None
     artifact_provenance: list[ArtifactProvenance] = Field(default_factory=list, max_length=100)
     interrupt_ids: list[int] = Field(default_factory=list, max_length=20)
@@ -344,11 +456,19 @@ class NodeExecution(BaseModel):
     prompt_provenance: PromptProvenance | None = None
     code_provenance: CodeProvenance | None = None
 
+    @model_validator(mode="after")
+    def validate_completion(self) -> Self:
+        if (self.outcome == "in-progress") != (self.ended_at is None):
+            raise ValueError("Only unfinished attempts may omit the completion timestamp")
+        return self
+
 
 class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
-    schema_version: Literal["1.0", "1.1", "1.2", "1.3", "1.4", "1.5"] = "1.5"
+    schema_version: Literal[
+        "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"
+    ] = "1.7"
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 
@@ -525,10 +645,34 @@ class RunState(BaseModel):
     interrupt_log: list[InterruptLogEntry] = Field(default_factory=list)
     manual_checkpoints: list[str] = Field(default_factory=list)
     resume_target: str | None = None
+    graph_progress: GraphProgress | None = None
+    resume_intent: ResumeIntent | None = None
     execution_record: ExecutionRecord = Field(default_factory=ExecutionRecord)
     interventions: list[HumanIntervention] = Field(default_factory=list, max_length=100)
     human_action_log: list[HumanActionRecord] = Field(default_factory=list, max_length=500)
     side_effect_ledger: SideEffectLedger = Field(default_factory=SideEffectLedger)
+
+    @model_validator(mode="after")
+    def validate_recovery_evidence(self) -> Self:
+        progress = self.graph_progress
+        if progress is not None and progress.execution_id is not None:
+            matches = [e for e in self.execution_record.node_executions
+                       if e.execution_id == progress.execution_id]
+            if len(matches) != 1:
+                raise ValueError("Recovery cursor requires exactly one matching execution")
+            attempt = matches[0]
+            unfinished = progress.stage in {
+                ProgressStage.ATTEMPT_CREATED, ProgressStage.ATTEMPT_STARTED,
+            }
+            if unfinished and (attempt.phase != progress.next_node or attempt.outcome != "in-progress"):
+                raise ValueError("Unfinished recovery cursor must identify its target attempt")
+            if not unfinished and attempt.outcome == "in-progress":
+                raise ValueError("Completed recovery cursor requires a completed attempt")
+        if self.resume_intent is not None:
+            matches = [a for a in self.human_action_log if a.action_id == self.resume_intent.action_id]
+            if len(matches) != 1 or matches[0].kind != "interrupt-resolution":
+                raise ValueError("Resume intent requires its original authorization record")
+        return self
 
     @field_validator("project_id")
     @classmethod

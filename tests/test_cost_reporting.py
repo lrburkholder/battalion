@@ -144,7 +144,7 @@ def test_streaming_requests_and_records_final_usage_frame(tmp_path):
         11, 3, Decimal("0.0015")
     )
     assert call.cost_source == CostSource.PROVIDER_REPORTED
-    assert finished.execution_record.schema_version == "1.5"
+    assert finished.execution_record.schema_version == "1.7"
     execution = finished.execution_record.node_executions[0]
     assert execution.streamed_reasoning_characters == 3
     assert execution.streamed_content_characters == 2
