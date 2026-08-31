@@ -307,6 +307,9 @@ Reopen the same verified desktop package with the same project path and refresh
 authoritative state (`Ctrl+R`). Do not start a CLI resume or second worker while
 the original worker may still be executing.
 
+For the normal desktop Run lifecycle and controls, see the
+[Desktop operator workflow](ui/workflow.md).
+
 | Worker state | What to do |
 | --- | --- |
 | `starting`, `running`, `cancelling` | Treat it as potentially active. Wait, refresh, and identify the actual process before doing anything that could duplicate work. |
