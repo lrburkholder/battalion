@@ -1,60 +1,63 @@
 # Getting Started
 
-Install Battalion from an identified artifact, configure models, then run a
-small ticket in a disposable project. No Battalion source checkout or developer
-installation is needed. These instructions use **Windows PowerShell 5.1 or
-PowerShell 7 on Windows**. The desktop distribution targets Windows x64 only;
-this guide makes no macOS or Linux desktop support claim.
+This guide walks through a first Battalion Run using a small disposable project.
+You will:
 
-If a step fails, stop and use [Troubleshooting and recovery](troubleshooting.md).
-It covers diagnostic collection, installation/provider errors, Reviewer failures,
-worker reconnect, safe resume, and private state backups. Check its candidate
-applicability before relying on crash recovery.
+1. get an identified Battalion build,
+2. verify and install it,
+3. create a test project,
+4. choose models,
+5. run Battalion and approve a human checkpoint, and
+6. optionally open the Windows desktop application.
 
-## 1. Choose an available artifact
+You do **not** need a Battalion source checkout or a developer installation.
+These instructions use Windows PowerShell 5.1 or PowerShell 7. The current
+desktop package targets Windows x64 only.
 
-Before setup or supplying project content, read
-[Data handling and trust boundaries](data-handling.md). It explains model and
-integration destinations, local evidence, secrets, raw traces, and retention
-limits for both CLI and desktop use.
+Before you begin, read [Data handling and trust boundaries](data-handling.md).
+If something fails, stop and use [Troubleshooting and recovery](troubleshooting.md)
+instead of trying to force the Run forward.
 
-**There is no public GitHub Release as of 2026-08-30.** A package version in
-source, a green build, or a merge does not mean a release is available.
+## 1. Get an identified Battalion build
 
-| Situation | What to install |
+Battalion is currently pre-1.0. **There is no public GitHub Release as of
+2026-08-30.** A version number, green build, or merge to `main` does not by
+itself mean that a release exists.
+
+| What you have | What to do |
 | --- | --- |
-| No public release and no candidate supplied | Stop here. There is no end-user download to install yet. |
-| Named candidate for UAT | Obtain the wheel, Windows desktop ZIP if needed, SHA-256 files, and provenance metadata from the candidate handoff. Record its build/run URL and exact source commit. A candidate is not a supported release. |
-| An available published release | Open [GitHub Releases](https://github.com/lrburkholder/battalion/releases), select an explicit tag, and download that release's assets, checksum files, and metadata. Read its limitations before installation. |
+| No release and no UAT candidate | Stop. There is no end-user build to install yet. |
+| A named UAT candidate | Use the wheel, optional Windows desktop ZIP, checksum files, and provenance metadata supplied with that candidate. |
+| A published release | Download the assets, checksums, and metadata for one explicit tag from [GitHub Releases](https://github.com/lrburkholder/battalion/releases). |
 
-The CLI asset is a wheel such as `battalion-<VERSION>-py3-none-any.whl`.
-The desktop asset is `battalion-desktop-windows-x64-v<VERSION>.zip`.
-Release checksum files are `battalion-python-SHA256SUMS.txt` and
-`battalion-desktop-windows-x64-SHA256SUMS.txt`; provenance files are
-`python-release-metadata.json` and `desktop-release-metadata.json`.
-Candidates must supply equivalent filename/checksum/version/source-commit
-evidence; do not invent a release tag for an untagged candidate. If that
-evidence is missing, stop and record a packaging defect. The current release
-path does not publish to PyPI. Do not substitute a similarly named registry
-package. See [Releases and distribution](release.md).
+For the CLI, expect a wheel named like `battalion-<VERSION>-py3-none-any.whl`.
+For the desktop, expect `battalion-desktop-windows-x64-v<VERSION>.zip`.
 
-Use the guide revision supplied with the candidate for preparation. Final
-release-gate UAT follows the published guide on the main-based candidate after
-[BTN-173](https://github.com/lrburkholder/battalion/issues/271). Adding this file
-on a branch does not mean GitHub Pages has deployed it.
+You should also receive checksum and provenance files. The provenance must tell
+you the exact version and source commit. If that information is missing, stop
+and report a packaging problem. Do not guess a release tag, mix files from
+different builds, or install a similarly named package from PyPI; Battalion is
+not currently published there.
 
-## 2. Verify and install the CLI wheel
+For formal UAT, use the guide revision supplied with the candidate. See
+[Releases and distribution](release.md) for the full release process.
 
-Prerequisites: Python 3.11 or newer with `venv` and `pip`, Git, disk space for a
-fresh virtual environment, and package-index access for Python dependencies
-(or an organization-provided offline dependency cache). Install these through
-your organization's approved process. No Rust, Node, Qt, Nuitka, or Battalion
-developer extra is required for the CLI. Pytest is separately needed to review
-the example project's Python tests; it is not a core wheel dependency.
+## 2. Verify and install the CLI
 
-Open a fresh PowerShell session outside any Battalion checkout. Run blocks in
-order in the same session. At each path prompt, paste an absolute path without
-surrounding quotes. Do not literally enter angle-bracket placeholders.
+You need:
+
+- Python 3.11 or newer, including `venv` and `pip`
+- Git
+- enough space for a fresh virtual environment
+- access to the Python dependencies, either through a package index or an
+  approved offline cache
+
+You do not need Rust, Node, Qt, Nuitka, or Battalion's developer dependencies.
+
+Open a fresh PowerShell window **outside a Battalion source checkout**. Run the
+following blocks in order and keep using the same shell.
+
+First, identify the wheel and its provenance files:
 
 <!-- check:artifact-input -->
 ```powershell
@@ -65,8 +68,8 @@ $Provenance = Get-Content -LiteralPath $PythonMetadata -Raw | ConvertFrom-Json
 $Provenance | Format-List
 ```
 
-Check `version` and `revision` against the candidate handoff or selected release
-tag/commit. A filename alone is insufficient. Verify the wheel before installing:
+Confirm that `version` and `revision` match the candidate or release you meant
+to install. Then verify the wheel's SHA-256 hash:
 
 <!-- check:checksum -->
 ```powershell
@@ -83,12 +86,11 @@ function Assert-ArtifactHash([string]$Artifact, [string]$ChecksumFile) {
 Assert-ArtifactHash $Wheel $WheelSums
 ```
 
-Checksums detect changed bytes; they do not authenticate an untrusted download.
-Use metadata and checksum files from the same trusted handoff/release.
+A matching checksum tells you that the bytes match the checksum file. It does
+not prove that an untrusted download is authentic, so keep the artifact,
+checksum, and metadata together from the same trusted source.
 
-Create a new directory and environment. The explicit Python path avoids needing
-to activate a PowerShell script or change your execution policy. If any command
-fails, stop; do not continue with a different Python installation accidentally.
+Now create a clean environment and install Battalion:
 
 <!-- check:install -->
 ```powershell
@@ -108,18 +110,22 @@ if ($LASTEXITCODE -ne 0) { throw 'Wheel installation failed' }
 & $Python -m battalion.prompts.smoke
 ```
 
-The reported version must match the provenance. The module path must be under
-this new environment's `Lib\site-packages`, not a source checkout. Help must
-list `run`, `resume`, `status`, and `setup`; the smoke command must load every
-packaged role prompt without credentials. Missing prompts are a packaging
-defect, not a reason to download source files or use `--prompts-dir`.
+Check the output before continuing:
 
-## 3. Prepare a disposable project
+- the installed version should match the provenance metadata;
+- `battalion` should load from the new environment's `site-packages`, not from a
+  source checkout;
+- help should include `run`, `resume`, `status`, and `setup`; and
+- the prompt smoke check should succeed without credentials.
 
-Keep the virtual environment outside the project so Reviewer does not copy it.
-Git need not have a remote or a commit for this example. The test convention is
-`python -m pytest -q` in a disposable project snapshot, using the CLI's Python
-environment. Project dependencies must be installed there too.
+If packaged prompts are missing, treat that as a packaging defect. Do not repair
+the installation by copying prompts from the source repository.
+
+## 3. Create a disposable test project
+
+Your first Run should use throwaway, non-sensitive code. Keep the Battalion
+virtual environment outside the project so Reviewer does not copy it into its
+test snapshot.
 
 <!-- check:project -->
 ```powershell
@@ -149,43 +155,35 @@ Architect writes plan.md. Do not modify configuration or this specification.
 '@ | Set-Content -LiteralPath 'ticket.md' -Encoding UTF8
 ```
 
-The default writing root is `src/`: RED writes tests, GREEN writes production
-code, and Refactorer works on admitted GREEN artifacts. Reviewer has no project
-write tools. Starting with an importable stub makes RED a test failure rather
-than a collection failure. A project with no collected tests is not a pass.
-Repeating this section creates a new project without overwriting a prior Run;
-run setup again in that new directory before starting another scenario.
+This example is intentionally simple. Architect may write `plan.md`; Driver RED
+may write tests under `src/`; Driver GREEN may implement the code; Refactorer
+may work only on admitted GREEN artifacts; Reviewer cannot write project files.
 
-## 4. Choose models and validate configuration (live provider step)
+The existing importable stub is important: RED should fail because the behavior
+is wrong, not because pytest cannot import or collect the tests. Zero collected
+tests is not a valid RED result or a pass.
 
-Read the [model-context disclosure](data-handling.md#model-context) and
-[credential guidance](data-handling.md#credentials) before the live setup step.
-Setup prints the disclosure URL before validation; `--no-validate` does not
-make later Runs offline.
+## 4. Choose models and validate setup
 
-Choose model identifiers for all four roles. Driver and Reviewer must use
-different identifiers. Use explicit provider/model identifiers recognized by
-the installed LiteLLM version. A recognized name or successful ping is not a
-promise that a provider/model meets Battalion's role-output requirements.
+This step contacts your configured model provider and may incur charges. Read
+[what Battalion sends to models](data-handling.md#model-context) and the
+[credential guidance](data-handling.md#credentials) first.
 
-- **Local inference:** install/start your chosen compatible runtime and obtain
-  the selected models yourself before setup. Local-looking provider names do
-  not prove the endpoint is local, private, offline, or zero cost. Check the
-  actual runtime/endpoint configuration. Battalion does not install models.
-- **Remote inference:** arrange provider access and spending limits first.
-  Supply the provider's expected API-key environment variable to this process
-  through your approved secret manager or shell credential procedure. Setup
-  reports the required variable name when absent. Do not paste secrets into
-  model identifiers, commands saved in transcripts, `battalion.config.yaml`,
-  specification files, or Git. Merely creating a `.env` file does not load it.
-  The model setup path reads environment variables; integration keyring
-  references are not a substitute for that model credential path.
+Battalion needs model identifiers for Architect, Driver, Reviewer, and
+Refactorer. **Driver and Reviewer must use different model identifiers.**
 
-Remote models may receive the specification, admitted project content, role
-prompts, and execution context. Use only disposable, non-sensitive content
-here. Connectivity validation makes a real completion and may incur charges.
-The current setup checks one selected model per provider, not all role models,
-and is not a full capability test. Inspect every selected role afterward.
+For local inference, install and start the runtime and models yourself. A model
+name that looks local does not prove that its endpoint is local, private,
+offline, or free; verify the actual runtime configuration.
+
+For remote inference, configure the provider's expected API-key environment
+variable through your normal secret-management process. Do not put credentials
+in model names, `battalion.config.yaml`, tickets, transcripts, or Git. A `.env`
+file is not loaded automatically.
+
+Remote providers may receive the specification, admitted project content, role
+prompts, and execution context. That is why this first Run uses disposable,
+non-sensitive content.
 
 <!-- check:setup -->
 ```powershell
@@ -196,24 +194,33 @@ $RefactorerModel = Read-Host 'Refactorer provider/model'
 & $Python -m battalion setup --model-architect $ArchitectModel --model-driver $DriverModel --model-reviewer $ReviewerModel --model-refactorer $RefactorerModel --validate
 ```
 
-Expected: connectivity succeeds and `battalion.config.yaml` is written in the
-project with the four selected model identifiers and no API keys. Do not
-accept implicit defaults without reviewing them. `--no-validate` deliberately
-skips live connectivity; it does not establish readiness or skip credential
-and diversity checks. Setup is currently CLI-based, including for desktop users.
+Setup should create `battalion.config.yaml` containing the four model identifiers
+and **no API keys**. Review the selected models rather than accepting unexpected
+defaults.
 
-## 5. Run, inspect, and resume (live provider steps)
+Validation performs a real provider request. It checks connectivity for one
+selected model per provider; it does not prove that every selected model can
+successfully perform its Battalion role. `--no-validate` skips the connectivity
+request, but it does not make later Runs offline or prove that setup is ready.
 
-This ticket ID is only a local example; it does not create a GitHub Issue. The
-manual `driver` checkpoint pauses **after Architect and before Driver RED**.
-The budget counts turns rather than dollars; it is not a provider spending cap.
+Setup is currently performed through the CLI even when you plan to use the
+desktop application.
+
+## 5. Run Battalion and review the human checkpoint
+
+Now start the example Run:
 
 <!-- check:run -->
 ```powershell
 & $Python -m battalion run BTN-HELLO-1 --spec ticket.md --checkpoint driver --budget 20
 ```
 
-Copy the canonical Run UUID printed in the command output, then inspect it:
+`BTN-HELLO-1` is only a local example identifier; this command does not create a
+GitHub Issue. The `driver` checkpoint tells Battalion to pause after Architect
+and before Driver RED. The budget counts execution turns, not dollars, and is
+not a provider spending limit.
+
+Battalion prints a canonical Run UUID. Copy it and inspect the saved Run:
 
 <!-- check:status -->
 ```powershell
@@ -222,11 +229,18 @@ $RunId = Read-Host 'Paste the printed Run UUID'
 & $Python -m battalion status $RunId --human
 ```
 
-Expected: `Status: awaiting-human`, a `manual-checkpoint` interrupt, and an
-Architect `plan.md` to review. Read that plan and confirm its paths and scope
-before authorizing continuation. If an earlier provider or scope failure occurs,
-inspect the reason instead of treating it as the intended checkpoint. Never
-edit saved JSON to force progress or expand authority to clear a failure.
+You should see:
+
+- `Status: awaiting-human`
+- a `manual-checkpoint` interrupt
+- an Architect `plan.md`
+
+Read the plan before continuing. Confirm that it matches the ticket and stays
+within the intended paths and scope. If Battalion stopped earlier for another
+reason, investigate that reason instead of treating it as the expected
+checkpoint.
+
+When you are satisfied with the plan, resume the same Run:
 
 <!-- check:resume -->
 ```powershell
@@ -236,42 +250,50 @@ Get-Content -LiteralPath 'plan.md'
 & $Python -m pytest -q
 ```
 
-Expected final state: `done`, with passing tests and the same Run UUID. The
-execution record must show Architect, Driver RED, Reviewer RED, Driver GREEN,
-Reviewer GREEN, Refactorer, and Reviewer refactor in order, plus the durable
-human resolution. A valid Refactorer no-change result still requires review.
-Another interrupt is not completion: inspect and address it before deciding
-whether to resume. A successful process exit alone does not prove `done`.
+A successful first Run should end with `Status: done`, passing tests, and the
+same Run UUID. Its execution history should show Architect, Driver RED,
+Reviewer RED, Driver GREEN, Reviewer GREEN, Refactorer, and the final Reviewer
+check, along with your human resolution.
 
-Status and resume must be run from the same project. New runs use UUIDs, not
-identifiers such as `run-BTN-HELLO-1`. Repeating `run` creates another Run; it
-does not resume the previous one. For structured evidence:
+A Refactorer `no-change` result can be valid, but it still goes through review.
+If Battalion pauses again, the Run is not complete: inspect the new interrupt
+before deciding whether to resume.
+
+A command exiting successfully is also not enough to prove completion. The
+saved Run status is authoritative.
+
+`status` and `resume` must be run from the same project. Running `battalion run`
+again creates a **new** Run; it does not resume this one.
+
+For the structured record:
 
 <!-- check:evidence -->
 ```powershell
 & $Python -m battalion status $RunId
 ```
 
-Keep the transcript, artifact/provenance evidence, configuration with secrets
-removed, and `.battalion/state/<RUN_UUID>.json` for local review. Known costs and
-unknown costs remain distinct. Optional `--trace-output` captures raw provider
-text and may contain sensitive data; it is unnecessary for this first run.
+Keep the Run UUID and relevant provenance/evidence for UAT. The canonical state
+is stored under `.battalion/state/`. Unknown monetary cost remains unknown; it
+is never silently treated as zero.
 
-## 6. Open the Windows desktop ZIP
+`--trace-output` is optional and is not needed for this first Run. It records
+raw provider text and may contain sensitive information.
 
-Complete CLI installation and project setup first. The ZIP contains the Qt UI
-and its worker runtime, but no first-run model/configuration wizard. The CLI
-wheel and desktop ZIP must come from the same candidate/release version and
-source commit. Keep both environments; a frozen worker does not use the CLI
-virtual environment automatically.
+## 6. Optional: open the Windows desktop application
 
-Current packaging has no configured code-signing step or signed installer.
-SmartScreen or organizational policy may block an unfamiliar executable.
-Checksums are not signatures. Record the exact warning and seek your
-organization's approval if needed; do not disable protection or assume that an
-unverified executable is safe.
+The desktop ZIP contains the Qt client and its worker runtime, but it does not
+yet contain a first-run setup wizard. Complete the CLI setup above first.
 
-With the earlier checksum function still defined:
+The CLI wheel and desktop ZIP must have the same version **and source commit**.
+The desktop worker is its own packaged runtime; installing something into the
+CLI virtual environment does not automatically install it into the worker.
+
+The current desktop build is not code-signed. Windows SmartScreen or your
+organization's policy may therefore warn or block it. Do not disable those
+protections. Verify the artifact and follow your organization's approval
+process.
+
+With `Assert-ArtifactHash` from step 2 still available:
 
 <!-- check:desktop-install -->
 ```powershell
@@ -290,40 +312,50 @@ if (!(Test-Path -LiteralPath $DesktopExe) -or !(Test-Path -LiteralPath $WorkerEx
 if ($LASTEXITCODE -ne 0) { throw 'Packaged worker prompt check failed' }
 ```
 
-Preserve all DLLs/data and the sibling directory layout; do not move only the
-EXE. Launch from the same shell if the provider needs its environment variables:
+Keep the extracted directory intact. Do not move only `Battalion.exe`; it needs
+its sibling files and worker directory.
+
+Launch the application from the same shell if your provider credentials are in
+environment variables:
 
 <!-- check:desktop-launch -->
 ```powershell
 & $DesktopExe --project $Project
 ```
 
-The `--project` argument selects the disposable repository. To inspect another
-project, close the window and relaunch with that project's absolute path;
-the current Project menu provides refresh, not an open-project picker.
-**Work** shows active/actionable Runs; **History** shows terminal Runs, including
-the completed CLI example. Select a Run and attempt to inspect the same UUID,
-status, model, artifact, and execution evidence. `Ctrl+R` refreshes authoritative
-state. For a paused Run, review the Actor and resolution before using **Resolve
-and resume**. The UI starts its sibling worker through the shared application
-boundary; closing the window is not a promise to stop that worker.
+The project path determines which Battalion Runs the UI displays. **Work** shows
+active or actionable Runs. **History** shows terminal Runs, including the CLI
+example you just completed. `Ctrl+R` reloads authoritative state.
 
-**Known packaged execution limitation:** the current build excludes pytest,
-while Reviewer launches `sys.executable -m pytest`. In a frozen worker that
-executable is `BattalionWorker.exe`, whose entry point does not accept those
-arguments. Installing pytest into the CLI environment does not fix that bundle
-boundary. Read-only inspection and prompt smoke success therefore do not prove
-desktop completion. Record the first packaged Reviewer result as a release-gate
-finding in [desktop UAT](uat/desktop.md); do not silently switch to source mode
-and call the ZIP accepted. Remediation/acceptance belongs to BTN-132, not this
-onboarding document.
+For a paused Run, inspect the Actor and resolution before choosing **Resolve and
+resume**. Closing the UI does not guarantee that its detached worker has
+stopped.
 
-## Validation and next steps
+### Current desktop execution limitation
 
-The [CLI UAT script](uat/cli.md) and [desktop UAT script](uat/desktop.md) use this
-guide as their documentation-only onboarding pass. Every required undocumented
-step is a defect. Their final live acceptance follows BTN-173 and is owned by
-BTN-129/BTN-132; automated syntax and smoke checks are not human acceptance.
-See [operator workflows](ui/workflow.md) for the existing UI contract and
-[contributor guidance](contributing.md) for source development, which is a
-separate installation path.
+The current packaged worker excludes pytest, while Reviewer expects to launch
+pytest through its own executable. As a result, the current ZIP can be used to
+inspect Runs and verify packaged prompts, but that does **not** prove that a
+full desktop Run can complete.
+
+Installing pytest in the CLI environment does not repair this packaging
+boundary. Record the packaged Reviewer failure in [desktop UAT](uat/desktop.md)
+and use an identified corrected build for acceptance. Do not silently switch to
+source mode and call the ZIP accepted. This is tracked by BTN-132.
+
+## What next?
+
+If this first Run works, you have verified the basic Battalion workflow:
+installation, model setup, planning, a human checkpoint, RED/GREEN execution,
+review, refactoring, persistence, and inspection.
+
+For more detail:
+
+- [Operator workflows](ui/workflow.md) explains the desktop workflow.
+- [Troubleshooting and recovery](troubleshooting.md) covers failed or interrupted Runs.
+- [Data handling and trust boundaries](data-handling.md) explains what Battalion stores and sends.
+- [Contributor guidance](contributing.md) covers source development, which is a separate installation path.
+
+The [CLI UAT](uat/cli.md) and [desktop UAT](uat/desktop.md) scripts use this guide
+for formal onboarding validation. Automated checks are not a substitute for
+human UAT acceptance.
