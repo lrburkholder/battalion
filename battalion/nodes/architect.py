@@ -44,7 +44,8 @@ def run_architect(
     system_prompt, if not given, is loaded from battalion/prompts/architect.md (or
     prompts_dir, if overridden) — see battalion.prompts.loader. Passing
     system_prompt directly is mainly for tests; production callers should
-    rely on the file so prompt iteration stays a config change."""
+    rely on the packaged asset. Prompt edits remain role-contract changes
+    subject to architectural review."""
     write_tools = build_write_tools(
         "architect", state.write_scope, base_dir=base_dir, on_violation=on_violation
     )

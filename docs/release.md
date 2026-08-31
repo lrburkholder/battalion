@@ -27,6 +27,15 @@ release workflow. The workflow refuses to proceed unless the tag equals
 
 ## Maintainer flow
 
+BTN-173 integrates the candidate into `main` without tagging or publishing a
+release. Its handoff must identify the merged revision, version, applicable
+artifact filenames/checksums, guide/UAT scripts, and known limitations. CLI
+UAT (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding
+(BTN-80) remain separate gates; BTN-80 owns the final v1.0 readiness decision.
+The empty-Architect response failure remains BTN-129 remediation, and the
+frozen-worker pytest limitation remains BTN-132 remediation. Neither is
+accepted merely by a successful integration build or prompt smoke check.
+
 1. Merge the approved change set to `main` and verify its ordinary CI.
 2. Confirm the intended SemVer version in `pyproject.toml`; commit that change
    before the release tag.

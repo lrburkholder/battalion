@@ -24,60 +24,72 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 Current work status is generated from the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) and Milestones during GitHub Pages publication. See the [public status dashboard](https://lrburkholder.github.io/battalion/docs/status.html) for the current milestone-level view.
 
-## Component readiness
+## Components
 
-| Component | Purpose | Status |
+These descriptions cover the implementation in this checkout. Canonical Issues
+and the integration PR record delivery to `main`; component availability does
+not establish release or live UAT acceptance.
+
+| Component | Purpose | Provenance |
 |-----------|---------|--------|
-| `battalion.state.models` | Versioned state contract (Pydantic models) | Complete |
-| `battalion.state.persistence` | Local JSON load/save | Complete |
-| `battalion.intel.models` | Versioned candidate/accepted Instinct contract | Complete (BTN-20) |
-| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | Complete (BTN-34) |
-| `battalion.intel.repository` | Immutable accepted-Instinct persistence | Complete (BTN-21) |
-| `battalion.intel.review` | Audited operator review and promotion boundary | Complete (BTN-23) |
-| `battalion.intel.retrieval` | Deterministic active-Instinct selection | Complete (BTN-24) |
-| `battalion.application` | Typed run, resume, inspection, human-action, Intel-review, identity, and worker boundary shared by presentation clients | Complete (BTN-43) |
-| `battalion.actors` | Durable human/system Actor identity, offline FTUE bootstrap, selection, and project-local persistence | Complete (BTN-59) |
-| `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | Complete (BTN-32) |
-| `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | Complete (BTN-31) |
-| `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | Complete (BTN-36) |
-| `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | Complete (BTN-42–43) |
-| `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | Complete (BTN-16, BTN-19, BTN-35) |
-| `battalion.role_results` | Typed role-result submission policy, canonical construction, and bounded evidence validation | In progress (BTN-133) |
-| `battalion.context` | Bounded role context assembly and Instinct injection | Complete (BTN-26) |
-| `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | Complete |
-| `battalion.llm.litellm_client` | Per-node model configuration | Complete |
-| `battalion.nodes.architect` | Architecture planning node | Complete |
-| `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | Complete |
-| `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | Complete |
-| `battalion.nodes.refactorer` | Refactor node sharing Driver's write scope (ADR-008) | Complete |
-| `battalion.nodes.recon` | Post-completion candidate Instinct generation | Complete (BTN-22) |
-| `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | Complete |
-| `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | Complete |
-| `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Complete |
-| `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | Complete |
-| `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | Complete (BTN-66) |
-| `battalion.integrations.runtime` | Validated capability-to-adapter-to-bounded-transport resolution with typed failures | Complete (BTN-67) |
-| `battalion.integrations.effects` | Durable side-effect ledger, replay-safe logical operation identity, and typed reconciliation evidence | Complete (BTN-70) |
-| `battalion.notifications` | Actor-targeted notification routing, configured channel selection, and per-delivery evidence | In progress (BTN-75) |
-| `battalion.setup` | Provider discovery, configuration, and connectivity checks | Complete (BTN-15) |
-| `battalion.progress` | Human-readable CLI progress events | Complete |
-| `battalion.cli` | Typer CLI - run/resume/status/setup | Complete (BTN-9, BTN-15) |
+| `battalion.state.models` | Versioned state contract (Pydantic models) | Core v1 |
+| `battalion.state.persistence` | Local JSON load/save | Core v1 |
+| `battalion.intel.models` | Versioned candidate/accepted Instinct contract | BTN-20 |
+| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | BTN-34 |
+| `battalion.intel.repository` | Immutable accepted-Instinct persistence | BTN-21 |
+| `battalion.intel.review` | Audited operator review and promotion boundary | BTN-23 |
+| `battalion.intel.retrieval` | Deterministic active-Instinct selection | BTN-24 |
+| `battalion.application` | Typed run, resume, inspection, human-action, Intel-review, identity, and worker boundary shared by presentation clients | BTN-43 |
+| `battalion.actors` | Durable human/system Actor identity, offline FTUE bootstrap, selection, and project-local persistence | BTN-59 |
+| `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | BTN-32 |
+| `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | BTN-31 |
+| `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | BTN-36 |
+| `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | BTN-42–43 |
+| `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | BTN-16, BTN-19, BTN-35 |
+| `battalion.role_results` | Typed role-result submission policy, canonical construction, and bounded evidence validation | BTN-133 |
+| `battalion.context` | Bounded role context assembly and Instinct injection | BTN-26 |
+| `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | Core v1 |
+| `battalion.llm.litellm_client` | Per-node model configuration | Core v1 |
+| `battalion.nodes.architect` | Architecture planning node | Core v1 |
+| `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | Core v1 |
+| `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | Core v1 |
+| `battalion.nodes.refactorer` | Behavior-preserving refactoring within admitted GREEN artifacts and configured scope (ADR-008) | Core v1 |
+| `battalion.nodes.recon` | Post-completion candidate Instinct generation | BTN-22 |
+| `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | Core v1 |
+| `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | Core v1 |
+| `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Core v1 |
+| `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | Core v1 |
+| `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | BTN-66 |
+| `battalion.integrations.runtime` | Validated capability-to-adapter-to-bounded-transport resolution with typed failures | BTN-67 |
+| `battalion.integrations.effects` | Durable side-effect ledger, replay-safe logical operation identity, and typed reconciliation evidence | BTN-70 |
+| `battalion.notifications` | Actor-targeted notification routing, configured channel selection, and per-delivery evidence | BTN-75 |
+| `battalion.setup` | Provider discovery, configuration, and connectivity checks | BTN-15 |
+| `battalion.progress` | Human-readable CLI progress events | Core v1 |
+| `battalion.cli` | Typer CLI - run/resume/status/setup | BTN-9, BTN-15 |
 
 ## Roadmap
 
-The v1 milestone (graph, interrupts, CLI, acceptance testing, documentation)
-is complete. Remaining work, by theme:
+The core graph, interrupts, CLI, and deterministic acceptance tests are
+implemented. Formal CLI UAT (BTN-129), desktop UAT (BTN-132), and external
+integration dogfooding (BTN-80) remain release gates after BTN-173's main-based
+candidate handoff. Merging to `main` is not a v1.0 release decision.
+Remaining work, by theme:
 
 - **Desktop v2:** history search and model-by-role analytics remain
   (BTN-44).
 - **Accepted architecture awaiting runtime delivery:** endpoint-aware
   inference identity and zero-cost policy (BTN-52–55, per RFC-0005 /
   ADR-0024); Actor capability enforcement, assignment/ownership, and
-  authentication (BTN-60–62, per RFC-0007 / ADR-0026); transport-neutral
-  integration capabilities (BTN-66–80, per RFC-0006 / ADR-0025), including
-  the WorkSource abstraction (BTN-71) and GitHub Issues adapter (BTN-72).
-  GitHub Issues are already the canonical backlog; BTN-102's narrow reader is
-  deliberately replaceable by that production WorkSource path.
+  authentication (BTN-60–62, per RFC-0007 / ADR-0026); integration operation
+  policy and health (BTN-68–69), email/push adapters and MCP transport
+  (BTN-76–78). Integration configuration/runtime, the side-effect ledger,
+  WorkSource/GitHub adapter, and HTTP/Discord outbound adapters exist as
+  library boundaries; ordinary CLI/worker execution does not yet construct
+  the integration runtime from YAML alone.
+- **Workflow admission:** registered full/compact recipes, deterministic and
+  Tactician assessment, human decision operations, and compact execution policy
+  exist. Durable admission/Run linkage and CLI/desktop presentation remain
+  BTN-143–144; an independent Review Run remains separate implementation work.
 - **Future direction RFCs:** Specifier role (BTN-45), plugin architecture
   (BTN-46), severity-based review and a possible Guardian role (BTN-47),
   bounded self-modification safety (BTN-48), and pluggable repository quality
@@ -108,8 +120,8 @@ The versioned state contract includes:
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
-- `resume_intent` and `graph_progress`: BTN-165's in-progress branch work retains
-  authorization and exact attempt/successor checkpoints for crash recovery.
+- `resume_intent` and `graph_progress`: Retain authorization and exact
+  attempt/successor checkpoints for crash recovery (BTN-165).
 - `execution_record`: Durable node evidence, including per-call tokens and
   nullable decimal cost with separate currency and source. It retains rejected
   pre-write role-contract candidates separately from successful role outcomes,
@@ -117,11 +129,11 @@ The versioned state contract includes:
   Driver and Refactorer attempts also retain a normalized typed role result
   when applicable, so valid change, no-change, blocked, and escalated outcomes
   are inspectable without reconstructing intent from prose.
-  BTN-164 adds actual Reviewer process evidence on this branch: command,
+  Reviewer process evidence (BTN-164) includes command,
   temporary working-directory identity, classification, collected-test counts,
   bounded stdout/stderr, duration, and timeout/cancellation cleanup disposition.
 
-### Crash recovery (BTN-165 branch)
+### Crash recovery
 
 `battalion status RUN_ID --human` and the desktop inspector distinguish safe
 recovery from an attempt with an unknown outcome. Retry `battalion resume`
@@ -135,7 +147,9 @@ human decision.
 
 Completed steps retain their exact successor, including Reviewer checkpoints.
 Recursion limits and unexpected graph failures preserve the latest saved
-progress. If generation started but no outcome was saved, replay is unsafe:
+progress. A typed Driver block at the recursion limit retains its phase and
+requires its own human resolution before retrying. If generation started but
+no outcome was saved, replay is unsafe:
 inspect the execution record and workspace, then start a new run from the
 reviewed workspace. Do not edit saved state to force replay. This does not
 promise exactly-once provider calls or rollback of uncheckpointed file writes.
@@ -148,7 +162,7 @@ promise exactly-once provider calls or rollback of uncheckpointed file writes.
 | 2 | Out-of-scope write attempt | Node tries to write outside declared scope | Hard block, mechanical check |
 | 3 | Budget exceeded | Per-graph-run budget limit reached | Pause, show spend, ask to continue |
 | 4 | Role-definition edit | Any modification to Battalion role definitions | Always interrupt |
-| 5 | Infra failure | Node crash, malformed state, LiteLLM failure | Distinct failure state |
+| 5 | Infra failure | Handled provider, role-output, or test-harness failure | Durable pause; unknown attempt outcomes require inspection |
 | 6 | Manual checkpoint | User-declared pause point | Graph pauses unconditionally |
 
 ### Write Scope Model
@@ -171,8 +185,7 @@ legacy `driver: ["src/"]` declaration remains supported and is still the
 default when no write scope is configured; RED, GREEN, and Refactorer all fall
 back to it when their phase-specific entry is absent.
 
-BTN-166 containment hardening is implemented on this branch, pending review and
-merge. All configured directory and single-file roots are
+All configured directory and single-file roots are
 **project-relative authority declarations**,
 not arbitrary filesystem paths. Both slash styles are normalized, and every
 entry must resolve strictly inside the resolved `base_dir`. Absolute paths
@@ -249,7 +262,7 @@ override.
 
 ### Configure Reviewer Test Execution
 
-BTN-164 is in progress on this branch. Reviewer runs pytest independently in a
+Reviewer runs pytest independently in a
 disposable project snapshot, with a bounded timeout configured in
 `battalion.config.yaml`:
 
@@ -264,6 +277,11 @@ valid passing execution with tests collected. No tests, collection/setup/usage
 or internal errors, malformed JUnit output, launch failures, timeout, and
 cancellation pause through infrastructure interrupt #5 without an LLM judgment.
 After resolution, the same Reviewer checkpoint runs again.
+
+When RED needs a module or symbol whose creation is the requested behavior,
+import it inside the test function. Its absence must fail an executed test;
+a module-level or fixture import error is not RED evidence. Driver RED still
+has no authority to add production stubs.
 
 For Git projects, the snapshot admits tracked files and nonignored untracked
 files, excluding generated build outputs, environments, caches, Battalion state,
@@ -288,7 +306,7 @@ references. The current transport values are `native-local`, `http-rest`,
 `work-source`, `knowledge-source`, `repository-service`, `notification`,
 `outbound-event-sink`, and `human-interaction`.
 
-### Outbound Event Contract (BTN-73; HTTP delivery in BTN-74; Discord in BTN-79, in progress)
+### Outbound Event Contract (BTN-73; HTTP delivery in BTN-74; Discord in BTN-79)
 
 These adapters deliver when an application caller supplies a constructed
 integration runtime. Ordinary CLI run/resume and detached workers do not yet
@@ -643,11 +661,12 @@ desktop resume through the same application command and graph path. A delivered
 intervention is tied to one node-attempt ID, included through a named bounded
 context section, and recorded in execution context provenance.
 
-[ADR-0035](docs/adrs/adr0035.md) guides the in-progress BTN-154 work to correct
+[ADR-0035](docs/adrs/adr0035.md) defines BTN-154's bounded retry to correct
 one mechanically detected, pre-write role-contract mistake in the same
 role/phase. The rejected candidate remains visible in CLI and desktop evidence,
 consumes normal run budget, and never downgrades an actual write-scope
-violation.
+violation. If the budget is exhausted, the correction waits for a human's
+continuation decision; its context and consumed retry allowance survive resume.
 
 See the [complete ADR index](docs/adrs/README.md) for all accepted architecture
 decisions and their implementation status.

@@ -2,23 +2,29 @@
 
 ## Status
 
+This plan describes the implementation in the checkout. Canonical GitHub
+Issues and the integration PR own ticket status and delivery evidence;
+implementation here does not imply delivery on `main` or a published release.
+BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
+(BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
+
 BTN-172 adds [operator data-handling guidance](docs/data-handling.md), public
-navigation, setup/trace notices, and CLI/desktop disclosure UAT scenarios on
-this branch. It documents current boundaries without changing role authority,
+navigation, setup/trace notices, and CLI/desktop disclosure UAT scenarios.
+It documents current boundaries without changing role authority,
 context admission, or retention. Endpoint-aware inference identity remains
 BTN-54 work, explicitly deferred by the operator to post-UAT on 2026-08-30.
 The operator approved the BTN-172 CLI/desktop disclosure scenarios on that date;
-downstream live acceptance and Pages publication still follow the main merge.
+live acceptance remains separate from script approval, and Pages availability
+requires a verified main deployment.
 
-BTN-166 is implemented on this branch, pending review and merge: the scoped-tool
-factory validates every directory and single-file authority declaration against the resolved
-project boundary. Application start/resume and worker launch reject invalid
+BTN-166's scoped-tool factory validates every directory and single-file authority
+declaration against the resolved project boundary. Application start/resume and worker launch reject invalid
 configuration before execution, with binding and use-time checks preserving
 the existing role limits. The amendments to ADR-0002 and ADR-0013 also require
 future BTN-123 isolated workspaces to reuse this containment rule.
 
-The v1 execution architecture is complete and validated. BTN-16 and BTN-19
-through BTN-28 add durable cost and execution evidence, the human-audited Recon
+The core v1 execution architecture has deterministic test coverage. BTN-16 and
+BTN-19 through BTN-28 add durable cost and execution evidence, the human-audited Recon
 and Intel lifecycle, deterministic context assembly, caller-owned run
 configuration, and project-layout-aware scope enforcement. RFC-0004 and all
 desktop foundations through BTN-36 are merged: the shared application boundary,
@@ -32,76 +38,82 @@ human-action and next-attempt intervention contract in ADR-0023, including split
 desktop/worker packaging; analytics remain BTN-44 work.
 BTN-56 applies the supplied desktop visual tokens and bundled brand assets
 without changing application authority or workflow behavior.
-BTN-57 is complete on its feature branch: it adds a public Pages product
-introduction, reviewed production-client captures from deterministic
+BTN-57 adds a Pages product introduction, reviewed production-client captures from deterministic
 credential-free demo projections, and an explicit publication and visual-QA
-path. The live Pages site updates only after merge to `main`. The fixture is
-presentation data only and does not change the application boundary, role
+path. The live Pages site updates through the main publication pipeline. The
+fixture is presentation data only and does not change the application boundary, role
 authority, graph, interrupt semantics, or knowledge lifecycle.
-BTN-136 is in progress to define the pre-1.0 release contract and a
+BTN-136 defines the pre-1.0 release contract and a
 maintainer-tag-gated GitHub Release path. It builds Python distribution
 artifacts and a Windows self-contained desktop ZIP only after deterministic
 release gates; a native installer and interactive first-run onboarding remain
 explicit follow-up work.
-BTN-65 is complete with accepted RFC-0006 and ADR-0025. They separate Battalion
+BTN-65's accepted RFC-0006 and ADR-0025 separate Battalion
 capability contracts from provider adapters and transports and define the six
 initial capability boundaries. BTN-67 now supplies the validated,
 least-authority capability-to-adapter-to-transport runtime; individual
-capability operations remain follow-up implementation work.
-BTN-58 is complete on its feature branch with accepted
+operations are described below with their remaining delivery boundaries.
+BTN-58's accepted
 [RFC-0007](docs/rfcs/rfc0007.md) and
-[ADR-0026](docs/adrs/adr0026.md). They define durable Actor identity, explicit
+[ADR-0026](docs/adrs/adr0026.md) define durable Actor identity, explicit
 project capabilities, FTUE bootstrap provenance, assignment and Ticket
 ownership history, and non-authoritative collaboration evidence. Runtime
 BTN-59 now implements the durable project-local Actor registry, offline FTUE
 bootstrap evidence, local human selection, application queries, and compatible
-Actor attribution for run and Recon evidence. BTN-63 is in progress to add
+Actor attribution for run and Recon evidence. BTN-63 adds
 credential-free, integration-scoped external identity mappings that resolve to
 Actors without granting authority. Capability enforcement, assignment/ownership,
 and authentication remain BTN-60 through BTN-62.
-BTN-138 is in progress: it establishes the finite, versioned `WorkflowRecipe`
+BTN-138 establishes the finite, versioned `WorkflowRecipe`
 policy vocabulary and read-only registry required by accepted RFC-0012. The
-existing full Implementation Run is its initial default/fallback recipe;
-admission, compact execution, durable selected-recipe state, and graph dispatch
-remain follow-up work.
-BTN-139 is in progress: it adds a credential-free, deterministic assessment of
+existing full Implementation Run is the default/fallback recipe. BTN-142 adds
+the compact recipe and shared execution policy; durable selected-recipe state
+and resume linkage remain BTN-143 work.
+BTN-139 adds a credential-free, deterministic assessment of
 bounded, revision-pinned admission evidence. The assessment records its policy
 and evidence identities, fails closed for configured hard-risk surfaces, and
 leaves stale, contradictory, or insufficient evidence explicitly uncertain.
-It does not invoke Tactician, authorize human choices, persist an admission, or
-dispatch a recipe; those remain BTN-140 through BTN-143 work.
-BTN-141 is in progress: its shared application operations let an active human
+The deterministic assessment does not invoke Tactician or authorize a choice.
+BTN-140 supplies a separate, bounded advisory Tactician assessment with
+provenance and usage evidence; it cannot dispatch a recipe.
+BTN-141's shared application operations let an active human
 Actor inspect current deterministic/Tactician evidence and choose full, compact,
 clarification, or cancellation. It fails closed on changed evidence or policy,
-keeps human and Tactician records distinct, and leaves compact execution plus
-durable admission/Run linkage to BTN-142 and BTN-143 respectively.
+keeps human and Tactician records distinct, and leaves durable admission/Run
+linkage to BTN-143 and CLI/desktop presentation to BTN-144.
 Accepted RFC-0013 (BTN-133) defines the versioned typed role-result contract
 for Driver and Refactorer attempts, preserving explicit human authority when a
-Driver is blocked or must escalate rather than fabricating a mutation. BTN-133
-is in progress: its shared domain submission capability validates role/mode
+Driver is blocked or must escalate rather than fabricating a mutation. Its
+shared domain submission capability validates role/mode
 policy, observed writes, and references only to the evidence supplied to the
 active node attempt before durable routing and history projection.
-BTN-142 is in progress on its feature branch. It registers the initial compact
-Implementation Run recipe and an application-owned upgrade-only execution
+BTN-142 registers the initial compact Implementation Run recipe and an
+application-owned upgrade-only execution
 contract. Compact completion requires independent semantic Review Run evidence
 and authorized human acceptance; the existing checkpoint reviewer remains a
 RejectionAnalyzer rather than a substitute for that review. Durable Run linkage,
 restart/resume, and the independent Review Run implementation remain follow-up
 work under BTN-143 and RFC-0014's implementation decomposition.
-BTN-164 is in progress on this branch. Reviewer accepts only classified pytest
-pass/failure evidence with collected tests, bounds execution time, and pauses
+BTN-164's Reviewer accepts only classified pytest pass/failure evidence with
+collected tests, bounds execution time, and pauses
 invalid harness outcomes at the same checkpoint through interrupt #5. The
 explicit project-input materialization policy and execution-record `1.6`
 evidence amend ADR-0007, ADR-0013, and ADR-0014 without changing role authority.
 
-BTN-165 is in progress on this branch. Durable resume intents preserve the
-original human authorization across process failures. Execution-record `1.7`
+BTN-165's durable resume intents preserve the original human authorization
+across process failures. Execution-record `1.7`
 registers unfinished attempts atomically with intervention delivery, and a
 typed graph cursor retains attempt stage, bounded correction context, and the
 exact successor. CLI and desktop classify recovery from this saved evidence.
 Unknown started-attempt outcomes require workspace inspection and a new run;
 they are not automatically replayed. Amendments to ADR-0014 and ADR-0023 keep
 the existing role, write-scope, and six-interrupt authority unchanged.
+
+BTN-173 repairs integration interactions between these contracts: typed blocks
+retain their human authorization at the recursion limit; correction retries
+wait at an exhausted Run budget without losing context or retry bounds; and
+RED prompt examples fail inside collected tests instead of during collection.
+ADR-0007, ADR-0023, and ADR-0035 record those requirements.
 
 ## Architecture overview
 
@@ -241,8 +253,8 @@ ticket or bypassing a checkpoint.
 
 ## Delivery sequence
 
-BTN-171 prepares [Troubleshooting and recovery](docs/troubleshooting.md) on this
-branch, with symptom-based diagnostics, candidate-specific BTN-164/BTN-165
+BTN-171 provides [Troubleshooting and recovery](docs/troubleshooting.md),
+with symptom-based diagnostics, candidate-specific BTN-164/BTN-165
 recovery limits, worker/state backup guidance, stable CLI help/status links,
 and credential-free publication/command checks. CLI and desktop UAT recovery
 scenarios record the operator's 2026-08-30 approval for preparation/PR handoff,
@@ -369,19 +381,19 @@ BTN-70 now makes externally visible operations replay-safe: a versioned
 side-effect ledger inside `RunState` records write-ahead intent, typed
 attempt outcomes, and reconciliation evidence under Battalion-minted stable
 logical operation IDs (ADR-0029). Operation policy and health validation
-remain BTN-68 and BTN-69. BTN-73 now adds versioned, minimized outbound
-machine-event envelopes after durable Run transitions. BTN-74 is in progress
-adding a generic, vendor-neutral HTTP webhook OutboundEventSink: configured
+remain BTN-68 and BTN-69. BTN-73 adds versioned, minimized outbound
+machine-event envelopes after durable Run transitions. BTN-74 provides
+a generic, vendor-neutral HTTP webhook OutboundEventSink: configured
 selected event types post through one bounded endpoint with symbolic
 authorization, a stable idempotency identity, and BTN-70 outcome semantics.
-BTN-72 is in progress delivering the GitHub Issues
+BTN-72 provides the GitHub Issues
 WorkSource adapter: repository-bound Issue normalization remains above
 replaceable transports, and any accepted GitHub mutation must pass through
 application policy plus the shared ledger rather than granting graph nodes
 GitHub access. The remaining capability operations continue to consume the
 ledger rather than redefining delivery semantics.
 
-BTN-75 is in progress: its notification router accepts only Battalion Actor
+BTN-75's notification router accepts only Battalion Actor
 IDs or explicitly configured Actor groups, applies the configured project and
 permitted Actor channel selection, resolves provider subjects from
 integration-scoped external identity mappings at the adapter boundary, and
@@ -390,14 +402,18 @@ destinations, disabled channels, policy denial, unavailable integrations, and
 delivery failures independently without allowing notification delivery to
 mutate HumanInterrupt state.
 
-BTN-79 is in progress: the outbound-only Discord webhook adapter consumes only
+BTN-79's outbound-only Discord webhook adapter consumes only
 the minimized `human_interrupt` event, renders bounded Run/work-item/phase/
 reason details with a CLI return route, and resolves its webhook token below
 the OutboundEventSink boundary. It has no Discord inbound, reply, Actor, or Run
 mutation path; confirmed failures, duplicates, and ambiguous outcomes use the
 shared BTN-70 side-effect ledger semantics.
 
-BTN-154 is in progress: pre-write, mechanically detected RED/GREEN role
+These integration library boundaries require a constructed runtime from their
+application caller. Ordinary CLI run/resume and detached workers do not yet
+construct one from YAML alone; configured bindings are not delivery evidence.
+
+BTN-154's pre-write, mechanically detected RED/GREEN role
 contract violations receive one transparent, budgeted correction retry in the
 shared execution scaffold. The original rejected attempt remains durable
 evidence; write-scope violations remain hard authority interrupts
@@ -405,6 +421,12 @@ evidence; write-scope violations remain hard authority interrupts
 
 ## Risks and watch items
 
+- An empty Architect response still raises `RunRecoveryUnsafe` without an
+  interrupt and retains an `attempt-started` checkpoint. This remains explicit
+  BTN-129 remediation; do not claim it was repaired by integration recovery.
+- The frozen worker cannot run Reviewer's pytest invocation. BTN-132 must
+  supply corrected artifacts and validate packaged execution; prompt loading
+  and read-only desktop inspection do not establish that acceptance.
 - Rejection-cause comparison depends on consistent, specific Reviewer output.
 - Tool construction is a security boundary; tests should assert each node's
   exact authority.

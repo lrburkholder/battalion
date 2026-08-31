@@ -5,14 +5,16 @@
 
 ## Linked Issue
 
-Closes #
+Related to #
 
 <!--
-Use "Closes #123", "Fixes #123", or "Resolves #123" when this PR
-fully implements an issue.
-
-If the PR is related but should NOT close the issue, use:
-Related to #123
+Use Related to #123 for preparatory work that does not complete a ticket.
+For completion, add exactly one full-line Battalion lifecycle declaration:
+the singular form `Battalion-ticket: #123` for one ticket, or the plural form
+`Battalion-tickets: #123, #456` for an integration completing multiple tickets.
+Never mix forms or declare an open ticket before it is eligible and in review.
+Do not use GitHub auto-close keywords for any declared ticket. Battalion owns
+ticket closure after a human merges to main (ADR-0030/ADR-0031).
 -->
 
 
