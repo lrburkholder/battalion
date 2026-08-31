@@ -160,6 +160,7 @@ Before retrying anything, make sure no CLI process or desktop worker is still
 executing the Run. `resume` is an authorization to continue work; it can call
 models and write files. It is not a diagnostic command.
 
+<a id="infra-failure"></a>
 ### Infrastructure or provider failure
 
 For `infra-failure`, inspect the saved error and execution attempt. The actual
