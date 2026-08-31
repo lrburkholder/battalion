@@ -21,6 +21,7 @@ Root-cause rules:
 - Use consistent wording for the same underlying failure across retries.
 - Do not speculate beyond the supplied test output.
 
-Output exactly one plain-text root-cause sentence, no more than 30 words. Do not
-include labels such as `Tests`, `Output`, or `Root cause`; do not include test
-logs, code suggestions, remediation steps, Markdown, or JSON.
+Output exactly one plain-text root-cause sentence, no more than 30 words. Answer
+directly: do not narrate reasoning. Do not include labels such as `Tests`,
+`Output`, or `Root cause`; do not include test logs, code suggestions,
+remediation steps, Markdown, or JSON.

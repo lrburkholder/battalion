@@ -7,6 +7,10 @@ These workflows describe the production BTN-42/43 desktop client. Every query
 and action crosses `battalion.application`; the UI never becomes a second graph,
 run-state, worker, or Intel authority.
 
+For failed commands, worker reconnect, and interrupted resume, follow
+[Troubleshooting and recovery](../troubleshooting.md). Check its artifact
+applicability and recovery disposition before authorizing another attempt.
+
 ## 1. Open or refresh a project
 
 1. Launch `battalion-desktop --project <path>` or `python -m

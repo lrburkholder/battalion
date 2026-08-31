@@ -1,6 +1,6 @@
 # battalion
 
-[![Test](https://github.com/lrburkholder/battalion/actions/workflows/test.yml/badge.svg)](https://github.com/lrburkholder/battalion/actions/workflows/test.yml)
+[![Test](https://github.com/lrburkholder/battalion/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/lrburkholder/battalion/actions/workflows/test.yml?query=branch%3Amain)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://lrburkholder.github.io/battalion)
@@ -24,58 +24,72 @@ The project follows a dogfooding approach: Battalion's first project is itself, 
 
 Current work status is generated from the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) and Milestones during GitHub Pages publication. See the [public status dashboard](https://lrburkholder.github.io/battalion/docs/status.html) for the current milestone-level view.
 
-## Component readiness
+## Components
 
-| Component | Purpose | Status |
+These descriptions cover the implementation in this checkout. Canonical Issues
+and the integration PR record delivery to `main`; component availability does
+not establish release or live UAT acceptance.
+
+| Component | Purpose | Provenance |
 |-----------|---------|--------|
-| `battalion.state.models` | Versioned state contract (Pydantic models) | Complete |
-| `battalion.state.persistence` | Local JSON load/save | Complete |
-| `battalion.intel.models` | Versioned candidate/accepted Instinct contract | Complete (BTN-20) |
-| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | Complete (BTN-34) |
-| `battalion.intel.repository` | Immutable accepted-Instinct persistence | Complete (BTN-21) |
-| `battalion.intel.review` | Audited operator review and promotion boundary | Complete (BTN-23) |
-| `battalion.intel.retrieval` | Deterministic active-Instinct selection | Complete (BTN-24) |
-| `battalion.application` | Typed run, resume, inspection, human-action, Intel-review, identity, and worker boundary shared by presentation clients | Complete (BTN-43) |
-| `battalion.actors` | Durable human/system Actor identity, offline FTUE bootstrap, selection, and project-local persistence | Complete (BTN-59) |
-| `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | Complete (BTN-32) |
-| `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | Complete (BTN-31) |
-| `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | Complete (BTN-36) |
-| `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | Complete (BTN-42–43) |
-| `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | Complete (BTN-16, BTN-19, BTN-35) |
-| `battalion.context` | Bounded role context assembly and Instinct injection | Complete (BTN-26) |
-| `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | Complete |
-| `battalion.llm.litellm_client` | Per-node model configuration | Complete |
-| `battalion.nodes.architect` | Architecture planning node | Complete |
-| `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | Complete |
-| `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | Complete |
-| `battalion.nodes.refactorer` | Refactor node sharing Driver's write scope (ADR-008) | Complete |
-| `battalion.nodes.recon` | Post-completion candidate Instinct generation | Complete (BTN-22) |
-| `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | Complete |
-| `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | Complete |
-| `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Complete |
-| `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | Complete |
-| `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | Complete (BTN-66) |
-| `battalion.integrations.runtime` | Validated capability-to-adapter-to-bounded-transport resolution with typed failures | Complete (BTN-67) |
-| `battalion.integrations.effects` | Durable side-effect ledger, replay-safe logical operation identity, and typed reconciliation evidence | Complete (BTN-70) |
-| `battalion.setup` | Provider discovery, configuration, and connectivity checks | Complete (BTN-15) |
-| `battalion.progress` | Human-readable CLI progress events | Complete |
-| `battalion.cli` | Typer CLI - run/resume/status/setup | Complete (BTN-9, BTN-15) |
+| `battalion.state.models` | Versioned state contract (Pydantic models) | Core v1 |
+| `battalion.state.persistence` | Local JSON load/save | Core v1 |
+| `battalion.intel.models` | Versioned candidate/accepted Instinct contract | BTN-20 |
+| `battalion.intel.candidates` | Immutable Markdown Recon candidate inbox | BTN-34 |
+| `battalion.intel.repository` | Immutable accepted-Instinct persistence | BTN-21 |
+| `battalion.intel.review` | Audited operator review and promotion boundary | BTN-23 |
+| `battalion.intel.retrieval` | Deterministic active-Instinct selection | BTN-24 |
+| `battalion.application` | Typed run, resume, inspection, human-action, Intel-review, identity, and worker boundary shared by presentation clients | BTN-43 |
+| `battalion.actors` | Durable human/system Actor identity, offline FTUE bootstrap, selection, and project-local persistence | BTN-59 |
+| `battalion.identity` | Canonical run UUIDs, project markers, legacy discovery, and project-local run catalogs | BTN-32 |
+| `battalion.workers` | Detached per-run process supervision and durable reconnect evidence | BTN-31 |
+| `battalion.observation` | Typed durable/transient live events, ordering, deduplication, and reconnect cursors | BTN-36 |
+| `battalion.desktop` | PySide6 Work, History, execution evidence, Intel review, interrupt resolution, and next-attempt actions | BTN-42–43 |
+| `battalion.execution` | Durable node execution, artifact provenance, and sourced usage evidence | BTN-16, BTN-19, BTN-35 |
+| `battalion.role_results` | Typed role-result submission policy, canonical construction, and bounded evidence validation | BTN-133 |
+| `battalion.context` | Bounded role context assembly and Instinct injection | BTN-26 |
+| `battalion.scope.tool_binding` | Write-scope enforcement (ADR-002) | Core v1 |
+| `battalion.llm.litellm_client` | Per-node model configuration | Core v1 |
+| `battalion.nodes.architect` | Architecture planning node | Core v1 |
+| `battalion.nodes.driver` | RED/GREEN implementation node (ADR-006) | Core v1 |
+| `battalion.nodes.reviewer` | Skeptical review node, per-checkpoint rejection counters (ADR-007, ADR-009) | Core v1 |
+| `battalion.nodes.refactorer` | Behavior-preserving refactoring within admitted GREEN artifacts and configured scope (ADR-008) | Core v1 |
+| `battalion.nodes.recon` | Post-completion candidate Instinct generation | BTN-22 |
+| `battalion.graph` | LangGraph StateGraph wiring, edges, interrupt pause points | Core v1 |
+| `battalion.interrupts.triggers` | All 6 v1 interrupt trigger checks | Core v1 |
+| `battalion.interrupts.budget` | Per-graph-run budget tracking (trigger #3) | Core v1 |
+| `battalion.config` | YAML/environment/CLI configuration merge and model-diversity validation | Core v1 |
+| `battalion.integrations.configuration` | Portable project integration bindings, symbolic credential references, and bounded precedence validation | BTN-66 |
+| `battalion.integrations.runtime` | Validated capability-to-adapter-to-bounded-transport resolution with typed failures | BTN-67 |
+| `battalion.integrations.effects` | Durable side-effect ledger, replay-safe logical operation identity, and typed reconciliation evidence | BTN-70 |
+| `battalion.notifications` | Actor-targeted notification routing, configured channel selection, and per-delivery evidence | BTN-75 |
+| `battalion.setup` | Provider discovery, configuration, and connectivity checks | BTN-15 |
+| `battalion.progress` | Human-readable CLI progress events | Core v1 |
+| `battalion.cli` | Typer CLI - run/resume/status/setup | BTN-9, BTN-15 |
 
 ## Roadmap
 
-The v1 milestone (graph, interrupts, CLI, acceptance testing, documentation)
-is complete. Remaining work, by theme:
+The core graph, interrupts, CLI, and deterministic acceptance tests are
+implemented. Formal CLI UAT (BTN-129), desktop UAT (BTN-132), and external
+integration dogfooding (BTN-80) remain release gates after BTN-173's main-based
+candidate handoff. Merging to `main` is not a v1.0 release decision.
+Remaining work, by theme:
 
 - **Desktop v2:** history search and model-by-role analytics remain
   (BTN-44).
 - **Accepted architecture awaiting runtime delivery:** endpoint-aware
   inference identity and zero-cost policy (BTN-52–55, per RFC-0005 /
   ADR-0024); Actor capability enforcement, assignment/ownership, and
-  authentication (BTN-60–62, per RFC-0007 / ADR-0026); transport-neutral
-  integration capabilities (BTN-66–80, per RFC-0006 / ADR-0025), including
-  the WorkSource abstraction (BTN-71) and GitHub Issues adapter (BTN-72).
-  GitHub Issues are already the canonical backlog; BTN-102's narrow reader is
-  deliberately replaceable by that production WorkSource path.
+  authentication (BTN-60–62, per RFC-0007 / ADR-0026); integration operation
+  policy and health (BTN-68–69), email/push adapters and MCP transport
+  (BTN-76–78). Integration configuration/runtime, the side-effect ledger,
+  WorkSource/GitHub adapter, and HTTP/Discord outbound adapters exist as
+  library boundaries; ordinary CLI/worker execution does not yet construct
+  the integration runtime from YAML alone.
+- **Workflow admission:** registered full/compact recipes, deterministic and
+  Tactician assessment, human decision operations, and compact execution policy
+  exist. Durable admission/Run linkage and CLI/desktop presentation remain
+  BTN-143–144; an independent Review Run remains separate implementation work.
 - **Future direction RFCs:** Specifier role (BTN-45), plugin architecture
   (BTN-46), severity-based review and a possible Guardian role (BTN-47),
   bounded self-modification safety (BTN-48), and pluggable repository quality
@@ -106,8 +120,39 @@ The versioned state contract includes:
 - `budget`: Per-graph-run budget tracking
 - `interrupt_log`: History of all interrupt triggers
 - `manual_checkpoints`: User-declared pause points
+- `resume_intent` and `graph_progress`: Retain authorization and exact
+  attempt/successor checkpoints for crash recovery (BTN-165).
 - `execution_record`: Durable node evidence, including per-call tokens and
-  nullable decimal cost with separate currency and source
+  nullable decimal cost with separate currency and source. It retains rejected
+  pre-write role-contract candidates separately from successful role outcomes,
+  including the correction attempt and proof that no prohibited write occurred.
+  Driver and Refactorer attempts also retain a normalized typed role result
+  when applicable, so valid change, no-change, blocked, and escalated outcomes
+  are inspectable without reconstructing intent from prose.
+  Reviewer process evidence (BTN-164) includes command,
+  temporary working-directory identity, classification, collected-test counts,
+  bounded stdout/stderr, duration, and timeout/cancellation cleanup disposition.
+
+### Crash recovery
+
+`battalion status RUN_ID --human` and the desktop inspector distinguish safe
+recovery from an attempt with an unknown outcome. Retry `battalion resume`
+with the original actor and resolution after a crash before generation; the
+saved decision and intervention receiving-attempt identity are reused. Clients
+can supply a stable `ResumeRun.action_id` (CLI `--action-id`) or
+`QueueIntervention.action_id` to deduplicate a request even after it completes.
+Reusing an ID with different decision evidence is rejected. Without an explicit
+ID, resume reuses a pending intent; a later, newly paused run requires a new
+human decision.
+
+Completed steps retain their exact successor, including Reviewer checkpoints.
+Recursion limits and unexpected graph failures preserve the latest saved
+progress. A typed Driver block at the recursion limit retains its phase and
+requires its own human resolution before retrying. If generation started but
+no outcome was saved, replay is unsafe:
+inspect the execution record and workspace, then start a new run from the
+reviewed workspace. Do not edit saved state to force replay. This does not
+promise exactly-once provider calls or rollback of uncheckpointed file writes.
 
 ### Interrupt Taxonomy (v1)
 
@@ -117,7 +162,7 @@ The versioned state contract includes:
 | 2 | Out-of-scope write attempt | Node tries to write outside declared scope | Hard block, mechanical check |
 | 3 | Budget exceeded | Per-graph-run budget limit reached | Pause, show spend, ask to continue |
 | 4 | Role-definition edit | Any modification to Battalion role definitions | Always interrupt |
-| 5 | Infra failure | Node crash, malformed state, LiteLLM failure | Distinct failure state |
+| 5 | Infra failure | Handled provider, role-output, or test-harness failure | Durable pause; unknown attempt outcomes require inspection |
 | 6 | Manual checkpoint | User-declared pause point | Graph pauses unconditionally |
 
 ### Write Scope Model
@@ -140,26 +185,43 @@ legacy `driver: ["src/"]` declaration remains supported and is still the
 default when no write scope is configured; RED, GREEN, and Refactorer all fall
 back to it when their phase-specific entry is absent.
 
+All configured directory and single-file roots are
+**project-relative authority declarations**,
+not arbitrary filesystem paths. Both slash styles are normalized, and every
+entry must resolve strictly inside the resolved `base_dir`. Absolute paths
+(even inside the project), parent traversal, Windows drive/device forms, and
+symlink or junction escapes are rejected. No v1 role permits a whole-project
+root such as `./`.
+
+Invalid declarations fail with a typed scope/configuration error before a run
+starts or resumes; they never select a broader fallback. Bound paths are
+rechecked before writes. RED/GREEN test-file rules, Architect's `plan.md` output,
+Refactorer's admitted-artifact checks, and Reviewer's lack of write tools remain
+unchanged. See [ADR-0002](docs/adrs/adr0002.md) and
+[ADR-0013](docs/adrs/adr0013.md).
+
 ## Usage
+
+Read [Data handling and trust boundaries](docs/data-handling.md) before setup,
+supplying project content, enabling integrations, or exporting traces. It
+inventories model context, local evidence, credentials, and retention limits.
 
 ### Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/lrburkholder/battalion.git
-cd battalion
+For failures or interrupted Runs, use [Troubleshooting and recovery](docs/troubleshooting.md)
+to collect diagnostics, distinguish safe resume from ambiguous execution, and
+check artifact-specific limitations before retrying.
 
-# Create a virtual environment, activate it for your shell, then install dependencies
-python -m venv .venv
-python -m pip install -e ".[dev]"
+Start with [Getting Started](docs/getting-started.md): verify an identified
+wheel or Windows x64 desktop ZIP, install outside a source checkout, configure
+models, and complete a disposable ticket with an explicit human checkpoint.
+PowerShell instructions include checksums, canonical Run UUIDs, and current
+desktop packaging limitations. There is no public GitHub Release as of
+2026-08-30; use only a named candidate supplied for UAT until a release exists.
 
-# Add the production desktop client when needed
-python -m pip install -e ".[desktop,dev]"
-```
-
-Battalion requires Python 3.11 or newer. Core installation includes the
-validated LangGraph 1.x runtime. The desktop extra adds pinned PySide6 and
-Nuitka packaging tools.
+Battalion requires Python 3.11 or newer for the CLI. Editable installs and
+developer/desktop build dependencies belong to
+[contributor setup](docs/contributing.md), not end-user onboarding.
 
 ### Releases
 
@@ -172,27 +234,68 @@ Windows desktop ZIP, and the intentionally separate first-run onboarding path.
 
 ### Configure Models
 
-Battalion uses LiteLLM model identifiers such as `openai/gpt-4.1-mini` or
-`anthropic/claude-sonnet-4-20250514`. Configure provider credentials in the
-environment; do not put API keys in `battalion.config.yaml`.
+The [data-handling guide](docs/data-handling.md#model-context) explains what
+each role may send to its configured model. Setup prints that disclosure before
+its live connectivity check.
 
-BTN-15 adds a guided setup command:
+Follow the [Getting Started setup steps](docs/getting-started.md#4-choose-models-and-validate-configuration-live-provider-step)
+to select local or remote inference and supply credentials through environment
+variables, never project configuration. Driver and Reviewer must use different
+model identifiers. Setup validates one selected model per provider; it is not
+an all-model capability or compatibility guarantee. `--no-validate` explicitly
+skips live connectivity checks.
 
-```bash
-python -m battalion setup
+### Configure Role Prompts
 
-# Non-interactive example
-python -m battalion setup \
-  --model-architect provider/model-a \
-  --model-driver provider/model-b \
-  --model-reviewer provider/model-c \
-  --model-refactorer provider/model-b
+Battalion owns and ships the non-empty UTF-8 prompt assets under
+`battalion/prompts/` for Architect, Driver (combined, RED, and GREEN), Reviewer,
+Refactorer, Recon, and Tactician. Default loading uses Python package resources,
+so wheel installs and the frozen desktop worker do not depend on a repository
+checkout or a top-level `prompts/` directory.
+
+`battalion run` and `battalion resume` accept `--prompts-dir` for an explicit
+developer or operator override. Once supplied, that directory is authoritative:
+Battalion does not fill missing files from its packaged defaults. A requested
+missing, empty, or non-UTF-8 override raises a typed error that identifies the
+file and explains that the operator must complete the directory or omit the
+override.
+
+### Configure Reviewer Test Execution
+
+Reviewer runs pytest independently in a
+disposable project snapshot, with a bounded timeout configured in
+`battalion.config.yaml`:
+
+```yaml
+reviewer_test_timeout_seconds: 300
 ```
 
-Driver and Reviewer must use different model identifiers. Use `--no-validate`
-only when intentionally skipping live provider connectivity checks.
+The value must be greater than zero and at most 3600 seconds. It applies to
+RED, GREEN, and REFACTOR checks on start and resume. Only a collected-test
+failure with no harness errors satisfies RED; GREEN and REFACTOR require a
+valid passing execution with tests collected. No tests, collection/setup/usage
+or internal errors, malformed JUnit output, launch failures, timeout, and
+cancellation pause through infrastructure interrupt #5 without an LLM judgment.
+After resolution, the same Reviewer checkpoint runs again.
+
+When RED needs a module or symbol whose creation is the requested behavior,
+import it inside the test function. Its absence must fail an executed test;
+a module-level or fixture import error is not RED evidence. Driver RED still
+has no authority to add production stubs.
+
+For Git projects, the snapshot admits tracked files and nonignored untracked
+files, excluding generated build outputs, environments, caches, Battalion state,
+and VCS metadata. Non-Git projects use the same exclusions while walking regular
+project files. Links outside the project are not admitted. The snapshot does
+not grant Reviewer project write tools and is not an OS security sandbox.
+Timeout and cancellation terminate the test process tree. The execution record
+retains at most 64 KiB from each output stream plus truncation metadata; these
+local records may contain project-generated diagnostic text.
 
 ### Configure Portable Integrations
+
+Review [integration data handling](docs/data-handling.md#integrations) and
+[credential placement](docs/data-handling.md#credentials) before enabling a binding.
 
 Provider bindings belong in the optional, repository-shareable
 `battalion.integrations.yaml`; credentials never do. Each named project binding
@@ -203,48 +306,154 @@ references. The current transport values are `native-local`, `http-rest`,
 `work-source`, `knowledge-source`, `repository-service`, `notification`,
 `outbound-event-sink`, and `human-interaction`.
 
+### Outbound Event Contract (BTN-73; HTTP delivery in BTN-74; Discord in BTN-79)
+
+These adapters deliver when an application caller supplies a constructed
+integration runtime. Ordinary CLI run/resume and detached workers do not yet
+construct that runtime from YAML alone; a declared binding is not delivery
+evidence. See [current integration boundaries](docs/data-handling.md#integrations).
+
+Configured `outbound-event-sink` bindings receive one-way, versioned machine
+events after the corresponding Run state is durable. Schema `1.0` supports
+`human_interrupt`, `run_failed`, and `run_completed`. Every envelope contains
+a stable event ID, type, schema version, timezone-aware occurrence time,
+bounded Run/project provenance, and typed minimized data. The schema excludes
+fields for prompts, transcripts, source content, arbitrary state, model context,
+or credentials. Identifier and alias values are not generally redacted: do not
+put secrets or private prose in them.
+
+Within a major schema version, changes must be additive and optional. Removing,
+renaming, changing the meaning of a field, or adding a required field requires
+a new registered schema version. Consumers must ignore unknown optional fields
+and reject unknown major versions. Delivery uses the durable side-effect ledger
+and Battalion-minted idempotency key; receiving an event grants no command,
+Actor, or Run authority.
+
+The built-in, vendor-neutral `http-webhook` adapter POSTs selected envelopes to
+one configured HTTP(S) endpoint. Its portable configuration accepts only an
+endpoint, a bounded timeout, and a non-empty selection of registered event
+types. Authorization is a symbolic `credential_references.authorization`
+reference, never a literal setting. The transport does not follow redirects;
+it sends the same Battalion operation ID in `Idempotency-Key` on a confirmed
+retry. A timeout, cancellation, malformed response, or unavailable endpoint
+is an ambiguous outcome that requires BTN-70 reconciliation before
+redelivery; a non-2xx response is a confirmed rejection and may retry under
+that same event and operation identity.
+
 ```yaml
 # battalion.integrations.yaml — safe to share
 project:
   integrations:
-    github-work:
-      integration_id: github-work-primary
-      provider: github
-      transport: http-rest
-      capabilities: [work-source]
+    automation-events:
+      integration_id: automation-events-primary
+      provider: http-webhook
+      transport: webhook
+      capabilities: [outbound-event-sink]
       settings:
-        repository: example/battalion
-        endpoint: https://api.github.example
+        endpoint: https://automation.example/events
+        event_types: [human_interrupt, run_failed]
+        timeout_seconds: 10
       credential_references:
-        access_token:
-          reference: env://GITHUB_TOKEN
+        authorization:
+          reference: env://AUTOMATION_WEBHOOK_AUTHORIZATION
+```
+
+The built-in `discord` webhook sink is deliberately narrower: it accepts only
+the `human_interrupt` event and sends an outbound incoming-webhook message. It
+includes the bounded Run ID, work-item ID, phase, interrupt reason, and a
+copyable `battalion status <run-id> --human` route. Discord has no inbound
+command, reply, Actor, or Run-mutation authority. Its numeric webhook ID is a
+provider destination setting below the `outbound-event-sink` boundary; the
+secret webhook token is a required symbolic reference and is never part of the
+shareable configuration.
+
+```yaml
+# battalion.integrations.yaml — safe to share
+project:
+  integrations:
+    discord-operations:
+      integration_id: discord-operations-primary
+      provider: discord
+      transport: webhook
+      capabilities: [outbound-event-sink]
+      settings:
+        webhook_id: "123456789012345678"
+        timeout_seconds: 10
+      credential_references:
+        webhook_token:
+          reference: env://DISCORD_WEBHOOK_TOKEN
 ```
 
 References may use `env://NAME` or `keyring://service/account`; their values
-are resolved outside project configuration by a later integration runtime.
-Literal tokens, passwords, and secret-bearing settings are rejected. An optional
+are resolved outside project configuration by an approved transport resolver.
+The bundled webhook/Discord resolver supports `env://` only; `keyring://`
+requires an explicitly supplied environment-specific resolver. Model setup
+uses provider environment variables, not integration keyring references.
+Integration validation rejects recognized secret-bearing settings; this is not
+a general secret scanner or complete redaction guarantee. An optional
 organization allow-list and Actor preferences can only narrow or select project
 bindings, so they cannot grant a provider or capability forbidden by project
 policy. Provider adapter binding, secret resolution, health checks, and
-operation authorization remain separate follow-up work.
+operation authorization are separate boundaries; declaring a capability alone
+does not provide its implementation or authorize an operation.
+
+Notification routing adds project-owned channel defaults, optional disabled
+channels, and explicitly named Actor groups beneath the same integration
+configuration. A caller supplies durable Actor IDs or one named group; the
+router resolves provider subjects only at the Notification adapter boundary.
+Raw email addresses, Discord IDs, and device tokens never enter graph state or
+notification requests.
+
+```yaml
+project:
+  notification_defaults: [discord-operations, email-work]
+  disabled_notification_integrations: [email-work]
+  notification_actor_groups:
+    on-call:
+      - "0c0560b2-3de8-4e07-9bf5-f4d3efa6c41d"
+```
+
+When an Actor has a permitted `notification` preference, it selects a configured
+channel for that Actor; otherwise the project defaults fan out across their
+configured channels. If no defaults are declared, every configured Notification
+channel is considered. Missing destinations, disabled channels, policy denials,
+unavailable integrations, confirmed failures, and ambiguous delivery are
+reported separately. Delivery itself remains outbound-only and cannot resolve
+or mutate a HumanInterrupt.
 
 ### Run Battalion
 
-```bash
-python -m battalion run BTN-16 --spec path/to/spec.md
-python -m battalion status run-BTN-16 --human
-python -m battalion status run-BTN-16 --costs --human
-python -m battalion resume run-BTN-16
+After installation and project setup, in PowerShell:
+
+```powershell
+battalion run BTN-HELLO-1 --spec ticket.md --checkpoint driver
+$RunId = Read-Host 'Paste the printed Run UUID'
+battalion status $RunId --human
+battalion status $RunId --costs --human
+battalion resume $RunId --resolution 'Reviewed the plan and approved continuation'
 ```
 
-`status --costs` projects persisted LiteLLM input/output tokens and known cost
-by concrete graph phase, currency, and source. Unknown monetary cost remains
-explicit and never becomes zero; token usage is still shown. Without `--human`,
-the command emits the cost summary as JSON. Cost reporting does not change the
-run-level turn budget used by interrupt trigger #3.
+Use the environment's installed `battalion` entry point, or the explicit
+`& $Python -m battalion` form in [Getting Started](docs/getting-started.md).
+Inspect the interrupt and plan before resume. New Runs print canonical UUIDs;
+a ticket ID or a fabricated `run-BTN-*` value is not that UUID.
 
-Run `python -m battalion <command> --help` for the authoritative options while
-the CLI is evolving.
+`status --costs` projects persisted LiteLLM input/output tokens and known cost
+by concrete graph phase, model, currency, and source. It also shows bounded
+streamed reasoning/content character totals for UAT model comparison; raw trace
+text remains opt-in and local. Unknown monetary cost remains explicit and never
+becomes zero; token usage is still shown. Without `--human`, the command emits
+the cost summary as JSON. Cost reporting does not change the run-level turn
+budget used by interrupt trigger #3.
+
+Run `battalion <command> --help` for the authoritative options while the CLI
+is evolving. `python -m battalion <command>` remains an equivalent source-mode
+entry point. `--trace-output` is an explicit local JSONL export of raw streamed
+reasoning and token text; it is not persisted in `RunState`, may contain
+sensitive provider text, and is not acceptance evidence. See
+[raw traces and sharing](docs/data-handling.md#traces) before enabling it;
+run/resume warn before opening the export. Desktop users can reach the same
+guide through **Help -> Data handling (opens browser)**.
 
 ### Browse with the Desktop Console
 
@@ -318,6 +527,9 @@ battalion/
 ├── __init__.py
 ├── __main__.py                 # `python -m battalion`
 ├── application.py              # Shared typed command/query boundary (BTN-30)
+├── workflow_recipes.py         # Finite, versioned workflow-policy registry (BTN-138)
+├── workflow_admission.py       # Deterministic evidence-first admission policy (BTN-139)
+├── workflow_admission_decisions.py # Human pre-execution decision contract
 ├── desktop/                    # PySide6 operator console (BTN-42–43)
 │   ├── app.py                  # Qt Widgets and desktop entry point
 │   ├── controller.py           # Background application queries and reconnect
@@ -353,6 +565,16 @@ battalion/
 │   ├── refactorer.py           # Refactorer node (BTN-13)
 │   ├── recon.py                # Post-completion candidate generation (BTN-22)
 │   └── errors.py               # Shared node error types
+├── prompts/
+│   ├── loader.py             # Install-safe package-resource and override boundary
+│   ├── architect.md
+│   ├── driver.md
+│   ├── driver-red.md
+│   ├── driver-green.md
+│   ├── reviewer.md
+│   ├── refactorer.md
+│   ├── recon.md
+│   └── tactician.md
 ├── scope/
 │   ├── __init__.py
 │   └── tool_binding.py        # Write-scope tool binding (BTN-2)
@@ -360,14 +582,6 @@ battalion/
     ├── __init__.py
     ├── models.py              # State models (BTN-1)
     └── persistence.py          # JSON persistence (BTN-1)
-
-prompts/                        # Node system prompts, overridable per node
-├── architect.md
-├── driver.md
-├── driver-red.md
-├── driver-green.md
-├── reviewer.md
-└── refactorer.md
 
 tests/
 ├── test_acceptance.py         # End-to-end v1 acceptance criteria
@@ -446,6 +660,13 @@ review remains in the append-only Intel decision repository. Both CLI and
 desktop resume through the same application command and graph path. A delivered
 intervention is tied to one node-attempt ID, included through a named bounded
 context section, and recorded in execution context provenance.
+
+[ADR-0035](docs/adrs/adr0035.md) defines BTN-154's bounded retry to correct
+one mechanically detected, pre-write role-contract mistake in the same
+role/phase. The rejected candidate remains visible in CLI and desktop evidence,
+consumes normal run budget, and never downgrades an actual write-scope
+violation. If the budget is exhausted, the correction waits for a human's
+continuation decision; its context and consumed retry allowance survive resume.
 
 See the [complete ADR index](docs/adrs/README.md) for all accepted architecture
 decisions and their implementation status.

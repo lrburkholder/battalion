@@ -250,5 +250,5 @@ def test_run_architect_defaults_to_file_loaded_prompt_when_no_override():
         call_llm_fn=fake_call_llm,
     )
 
-    # Comes from prompts/architect.md, not a hardcoded Python string
+    # Comes from battalion/prompts/architect.md, not a hardcoded Python string
     assert "Architect" in captured["system_content"]

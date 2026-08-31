@@ -25,33 +25,34 @@ production-client screenshots (BTN-57) is live.
 
 ### Milestone overview
 
-| Milestone | Tickets | Shipped | Active | Planned | Cancelled |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| BTN-M0 - Foundation | 52 | 52 | 0 | 0 | 0 |
-| BTN-M1 - External Integration Foundation | 5 | 5 | 0 | 0 | 0 |
-| BTN-M10 - Cartography | 2 | 0 | 0 | 2 | 0 |
-| BTN-M11 - Specification Workflow | 2 | 0 | 0 | 2 | 0 |
-| BTN-M12 - Repository Governance & Quality | 12 | 0 | 0 | 12 | 0 |
-| BTN-M13 - Run History & Analytics | 6 | 0 | 0 | 6 | 0 |
-| BTN-M14 - Review Governance | 1 | 0 | 0 | 1 | 0 |
-| BTN-M15- Safe Self-Evolution Research | 1 | 0 | 0 | 1 | 0 |
-| BTN-M2 - GitHub WorkSource Dogfood | 4 | 3 | 0 | 1 | 0 |
-| BTN-M3 - Human Interrupt Notifications | 4 | 0 | 0 | 4 | 0 |
-| BTN-M4 - Battalion 1.0 Release Gate | 1 | 0 | 0 | 1 | 0 |
-| BTN-M5 - Zero-Cost Inference | 4 | 0 | 0 | 4 | 0 |
-| BTN-M6 - Collaborative Actors | 3 | 0 | 0 | 3 | 0 |
-| BTN-M7 - Integration Hardening & Channels | 10 | 0 | 0 | 10 | 0 |
-| BTN-M8 - GitHub-Native Battalion Development | 5 | 1 | 1 | 3 | 0 |
-| BTN-M9 - Plugin Platform | 11 | 0 | 0 | 11 | 0 |
-| Unassigned | 5 | 3 | 0 | 1 | 1 |
+| Milestone | State | Issues | Completed | Open | Cancelled | Progress |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| BTN-M0 - Foundation | Closed | 52 | 52 | 0 | 0 | 100% |
+| BTN-M1 - External Integration Foundation | Closed | 5 | 5 | 0 | 0 | 100% |
+| BTN-M2 - GitHub WorkSource Dogfood | Open | 4 | 3 | 1 | 0 | 75% |
+| BTN-M3 - Human Interrupt Notifications | Open | 4 | 0 | 4 | 0 | 0% |
+| BTN-M4 - Battalion 1.0 Release Gate | Open | 3 | 0 | 3 | 0 | 0% |
+| BTN-M5 - Zero-Cost Inference | Open | 4 | 0 | 4 | 0 | 0% |
+| BTN-M6 - Collaborative Actors | Open | 3 | 0 | 3 | 0 | 0% |
+| BTN-M7 - Integration Hardening & Channels | Open | 10 | 0 | 10 | 0 | 0% |
+| BTN-M8 - GitHub-Native Battalion Development | Open | 5 | 2 | 3 | 0 | 40% |
+| BTN-M9 - Plugin Platform | Open | 11 | 0 | 11 | 0 | 0% |
+| BTN-M10 - Cartography | Open | 2 | 0 | 2 | 0 | 0% |
+| BTN-M11 - Specification Workflow | Open | 3 | 0 | 3 | 0 | 0% |
+| BTN-M12 - Repository Governance & Quality | Open | 16 | 0 | 16 | 0 | 0% |
+| BTN-M13 - Run History & Analytics | Open | 6 | 0 | 6 | 0 | 0% |
+| BTN-M14 - Review Governance | Open | 1 | 0 | 1 | 0 | 0% |
+| BTN-M15- Safe Self-Evolution Research | Open | 1 | 0 | 1 | 0 | 0% |
+| Unassigned | — | 5 | 3 | 1 | 1 | 75% |
 
 ### Active work
 
 | Ticket | Title | Milestone | Status |
 | --- | --- | --- | --- |
-| [BTN-128](https://github.com/lrburkholder/battalion/issues/199) | Decouple status projection generation from live GitHub drift checks | BTN-M8 - GitHub-Native Battalion Development | Wip |
+| [BTN-104](https://github.com/lrburkholder/battalion/issues/172) | Generate project status from GitHub milestones | BTN-M8 - GitHub-Native Battalion Development | Wip |
+| [BTN-129](https://github.com/lrburkholder/battalion/issues/203) | Release-gate CLI UAT remediation | BTN-M4 - Battalion 1.0 Release Gate | Wip |
 
-Issue-level scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (62 planned/not-started).
+Issue-level scope, dependencies, and acceptance criteria live in the canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) (67 planned/not-started).
 
 <!-- END GENERATED:backlog-delivery -->
 

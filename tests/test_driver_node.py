@@ -15,6 +15,8 @@ from battalion.nodes.driver import (
 )
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig, call_llm
+from battalion.interrupts.triggers import TRIGGER_ROLE_ESCALATION
+from battalion.role_results import RoleResultKind
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import RunStatus
 
@@ -41,6 +43,19 @@ def fenced_files_response(files: dict) -> dict:
     import json
     body = json.dumps({"files": files})
     return {"choices": [{"message": {"content": f"```json\n{body}\n```"}}]}
+
+
+def result_response(kind: str, reason_code: str, summary: str) -> dict:
+    import json
+    return {"choices": [{"message": {"content": json.dumps({
+        "files": {},
+        "result": {
+            "kind": kind,
+            "reason_code": reason_code,
+            "summary": summary,
+            "evidence_refs": [{"kind": "artifact", "reference": "plan.md"}],
+        },
+    })}}]}
 
 
 def test_extract_files_parses_plain_json():
@@ -171,6 +186,48 @@ def test_run_driver_rejects_empty_files_output(tmp_path):
     assert not (tmp_path / "src").exists()
 
 
+def test_driver_red_can_report_missing_context_as_blocked_without_writes(tmp_path):
+    updated = run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        mode="red",
+        call_llm_fn=lambda *a, **kw: result_response(
+            "blocked", "missing-context", "The approved API contract is absent."
+        ),
+    )
+
+    assert updated.status == RunStatus.BLOCKED
+    assert updated.phase == "driver_red"
+    assert updated.resume_target == "driver_red"
+    assert not (tmp_path / "src").exists()
+
+
+def test_driver_green_escalation_enters_human_resolution_boundary(tmp_path):
+    updated = run_driver(
+        make_state(),
+        ticket_text="ticket",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        mode="green",
+        call_llm_fn=lambda *a, **kw: result_response(
+            "escalated",
+            "architectural-decision-required",
+            "The storage boundary must be chosen by an architect.",
+        ),
+    )
+
+    assert updated.status == RunStatus.AWAITING_HUMAN
+    assert updated.phase == "awaiting_human"
+    assert updated.resume_target == "driver_green"
+    assert updated.interrupt_log[-1].trigger == TRIGGER_ROLE_ESCALATION
+    result = updated.interrupt_log[-1].context["role_result"]
+    assert result["kind"] == RoleResultKind.ESCALATED.value
+    assert result["reason_code"] == "architectural-decision-required"
+    assert not (tmp_path / "src").exists()
+
+
 def test_run_driver_validates_all_paths_before_writing_any():
     """A scope violation on a later file must not leave earlier files
     written — pre-validate the whole batch before writing any of it."""
@@ -237,7 +294,7 @@ def test_run_driver_system_prompt_override_takes_effect(tmp_path):
 # --- BTN-11: RED/GREEN mode support ---
 
 def test_run_driver_no_mode_preserves_original_combined_behavior(tmp_path):
-    """Omitting mode entirely must load prompts/driver.md, unchanged from
+    """Omitting mode entirely must load battalion/prompts/driver.md, unchanged from
     BTN-5 -- this is the non-breaking guarantee from BTN-11's AC."""
     captured = {}
 
@@ -348,7 +405,7 @@ def test_run_driver_green_mode_accepts_implementation_files(tmp_path):
 
 
 def test_run_driver_green_mode_rejects_test_files(tmp_path):
-    with pytest.raises(InvalidModeOutput):
+    with pytest.raises(InvalidModeOutput) as exc_info:
         run_driver(
             make_state(),
             ticket_text="ticket",
@@ -357,6 +414,9 @@ def test_run_driver_green_mode_rejects_test_files(tmp_path):
             call_llm_fn=lambda *a, **kw: files_response({"test_module.py": "def test_x(): pass"}),
             mode="green",
         )
+    assert exc_info.value.reason_code == "driver-mode-artifact"
+    assert exc_info.value.offending_paths == ("test_module.py",)
+    assert "prohibited output was not written" in exc_info.value.correction_context()
     assert not (tmp_path / "src" / "test_module.py").exists()
 
 

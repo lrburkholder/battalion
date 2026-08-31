@@ -59,6 +59,32 @@ def test_fresh_setup_creates_loadable_config(tmp_path):
     assert cfg.models["driver"].model != cfg.models["reviewer"].model
 
 
+def test_disclosure_precedes_setup_prompts_and_provider_calls(tmp_path):
+    from battalion.disclosure import DATA_HANDLING_URL
+
+    notices = []
+    calls = []
+
+    def assert_disclosed():
+        assert DATA_HANDLING_URL in notices[0]
+        assert "live provider request" in notices[0]
+
+    def prompt(message, default):
+        assert_disclosed()
+        return default
+
+    def completion(**kwargs):
+        assert_disclosed()
+        calls.append(kwargs)
+
+    run_setup(
+        config_path=tmp_path / "battalion.config.yaml",
+        prompt=prompt, echo=notices.append, completion_fn=completion,
+    )
+    assert calls
+    assert all(call["messages"] == [{"role": "user", "content": "ping"}] for call in calls)
+
+
 def test_existing_config_preserved_except_specified_changes(tmp_path):
     """AC4: existing keys survive; only specified node changes."""
     path = tmp_path / "battalion.config.yaml"
