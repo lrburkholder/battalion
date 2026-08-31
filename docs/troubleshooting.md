@@ -1,18 +1,29 @@
-# Troubleshooting and recovery
+# Troubleshooting and Recovery
 
-## Collect diagnostics first
+Use this guide when Battalion does not install, does not start, pauses
+unexpectedly, or cannot safely continue a Run.
 
-Before retrying, record the artifact filename, SHA-256, package version, source
-commit, build/release URL, OS/architecture, and guide revision from the
-[Getting Started artifact checks](getting-started.md#1-choose-an-available-artifact).
-Keep the exact error and time, absolute project path, ticket ID, canonical Run
-UUID, status, phase, last interrupt, and worker state. A printed UUID alone does
-not prove a state file was saved. If startup failed before a Run existed, record
-that instead of inventing an ID.
+The most important rule is simple: **inspect the saved evidence before retrying.**
+A retry can call a model again, write files again, or repeat work whose outcome
+is uncertain. Do not edit Battalion's saved JSON to make a Run continue.
 
-These commands use Windows PowerShell 5.1 or 7. Set `$Python` to the installed
-CLI environment's Python, **not** `BattalionWorker.exe`. Do not use a source
-checkout as an artifact repair. Keep collected evidence local until sanitized.
+## Start here
+
+Before changing anything, record:
+
+- the Battalion artifact filename, version, SHA-256, and source commit;
+- where the artifact came from;
+- your OS and architecture;
+- the exact error and approximate time;
+- the absolute project path;
+- the ticket ID and canonical Run UUID, if a Run was created;
+- the current Run status, phase, and last interrupt; and
+- the worker status, if the desktop application was involved.
+
+If Battalion failed before creating a Run, say that. Do not invent a Run ID.
+
+These examples use Windows PowerShell. `$Python` must point to the Python from
+your installed Battalion CLI environment, **not** to `BattalionWorker.exe`.
 
 <!-- check:diagnostics -->
 ```powershell
@@ -26,10 +37,10 @@ $RunId = Read-Host 'Canonical Run UUID (only if a Run was created)'
 & $Python -m battalion status $RunId --human
 ```
 
-Use the same project for every status/resume command; `status` has no
-`--base-dir` option. For legacy Runs, copy their actual saved identifier instead
-of applying the UUID check. Do not manufacture a `run-BTN-*` ID for a new Run.
-When human status lacks detail, inspect the structured record:
+Always run `status` and `resume` from the same project that owns the Run. New
+Runs use UUIDs; do not manufacture an ID such as `run-BTN-*`.
+
+For more detail:
 
 <!-- check:evidence -->
 ```powershell
@@ -42,80 +53,66 @@ if (Test-Path -LiteralPath $WorkerFile) {
 }
 ```
 
-The worker file is last-recorded evidence, not a liveness probe. In desktop,
-select the same UUID in Work/History and use **Project -> Refresh authoritative
-state** (`Ctrl+R`) to reconcile it. CLI foreground Runs may have no worker file.
-See [worker recovery](#worker-recovery) before starting another process.
+A worker record tells you what Battalion last recorded. It is not proof that a
+process is still alive. Foreground CLI Runs may not have a worker record at all.
 
-Collect only a bounded excerpt around the failure. Candidate builds containing
-BTN-164 retain Reviewer command, temporary working-directory identity, test
-counts, classification, return code, duration, cleanup disposition, and at most
-64 KiB from each stdout/stderr stream, with truncation metadata. The scratch
-directory is normally removed; its recorded path is not a backup. Detached
-workers discard stdout/stderr; there is no automatic worker console-log file.
-Keep any already-captured terminal excerpt; do not promise missing logs can be
-reconstructed. Missing cost is **unknown**, not zero.
+Keep diagnostics local until you have removed credentials, authorization
+headers, secret URLs, personal data, and private source content. Raw
+`--trace-output` can contain provider text, source code, and secrets; do not
+enable it just because a Run failed.
 
-`--trace-output` is opt-in raw provider text, separate from durable RunState. It
-can include secrets, source content, and reasoning. Do not turn it on merely to
-retry a failure, publish it, or regard it as authoritative execution evidence.
-Before sharing any error, JSON, screenshot, test output, or trace excerpt,
-remove credentials, authorization headers, secret URLs, personal data, and
-private project content. Preserve originals privately; share a sanitized copy.
+## Find your problem
 
-## Find the symptom
-
-| What you see | Guide section / stable reason |
+| What happened | Go to |
 | --- | --- |
-| Cannot install, launch, or load prompts | [Installation and startup](#installation-startup) |
-| Setup rejects credentials, endpoint, or models | [Setup and providers](#setup-provider) |
-| `awaiting-human`, `blocked`, or `failed-infra` | [Understand the saved stop](#run-stopped) |
-| `infra-failure` | [Execution failure](#infra-failure); also inspect [Reviewer evidence](#reviewer-tests) |
-| Invalid JSON, rejected candidate, `role-escalation` | [Role output](#role-output) |
-| `manual-checkpoint`, `budget-exceeded` | [Human checkpoints and budget](#human-checkpoints) |
-| `out-of-scope-write`, `role-definition-edit` | [Authority stop](#authority-stop) |
-| `same-root-cause-twice`, unexpected test result | [Reviewer tests](#reviewer-tests) |
-| Crash during resume, `Recovery: recoverable` or `terminal` | [Resume and interventions](#resume-recovery) |
-| UI stopped updating, worker `crashed` or apparently stale | [Worker recovery](#worker-recovery) |
-| Run not found, unreadable/corrupt state, conflicting Actor | [State and backup](#state-backup) |
+| Battalion will not install or start | [Installation and startup](#installation-startup) |
+| Model setup fails | [Model setup and providers](#setup-provider) |
+| The Run says `awaiting-human`, `blocked`, or `failed-infra` | [The Run stopped](#run-stopped) |
+| A model returned invalid or blocked output | [Role output problems](#role-output) |
+| Battalion paused at a checkpoint or budget limit | [Checkpoints and budget](#human-checkpoints) |
+| Battalion blocked a file or role change | [Authority and write-scope stops](#authority-stop) |
+| Reviewer cannot run or interpret tests | [Reviewer test problems](#reviewer-tests) |
+| A crash happened during resume | [Safe resume and crash recovery](#resume-recovery) |
+| Desktop stopped updating or its worker exited | [Desktop worker recovery](#worker-recovery) |
+| Run state is missing or corrupt | [State and backups](#state-backup) |
 
-## Candidate and release applicability
+## Check which build you are using
 
-This guide is prepared for **BTN-171, 2026-08-30**. A version string alone cannot
-identify an untagged candidate: match the artifact's source commit and handoff.
-Use the implementation boundaries below to check whether an artifact includes
-the required behavior. Documentation in a checkout does not establish release
-or Pages availability. BTN-173 verifies public availability after integration;
-recheck the linked Issues and candidate handoff for later artifacts.
+Recovery behavior has changed during pre-1.0 development. Match your artifact's
+**source commit**, not just its version string, to the UAT candidate or release
+handoff.
 
-| Baseline / canonical Issue | Operator limitation or changed behavior |
+Important current boundaries:
+
+| Build | What you need to know |
 | --- | --- |
-| Before [BTN-164](https://github.com/lrburkholder/battalion/issues/260) | Nonzero pytest exits could be accepted as RED, and tests had no bounded timeout. Do not accept collection errors or no-tests as RED evidence. Stop release acceptance and use an identified corrected candidate. |
-| Candidate containing BTN-164 | Classified, bounded test execution below applies. It does not make arbitrary project tests safe to execute. |
-| Before [BTN-165](https://github.com/lrburkholder/battalion/issues/261) | A crash after resolution/intervention or graph progress may consume authorization or lose the latest progress. Recovery is not guaranteed. Preserve evidence; do not blindly repeat resume or edit state. Seek reviewed recovery or start a new Run only from a reviewed workspace. |
-| Candidate containing BTN-165 | Saved resume intent and exact attempt/successor checkpoints support the conditional recovery below. Ambiguous started attempts still cannot be replayed safely. |
-| Candidate containing BTN-173 remediation | Typed blocks retain their authorization requirement at the recursion limit; over-budget correction attempts wait for a human continuation without losing correction context or retry bounds. |
-| [BTN-129](https://github.com/lrburkholder/battalion/issues/203) | An empty Architect response still reports `RunRecoveryUnsafe`, without an interrupt, and leaves an `attempt-started` checkpoint. Preserve the evidence and inspect the workspace; do not force replay. This remains outstanding CLI remediation. |
-| [BTN-163](https://github.com/lrburkholder/battalion/issues/259) | Packaged prompt assets and smoke checks are required. A source-tree workaround does not validate an installed artifact. |
-| [BTN-132](https://github.com/lrburkholder/battalion/issues/206) | The current frozen desktop worker excludes pytest and cannot accept Reviewer's `sys.executable -m pytest` invocation. CLI pytest installation does not fix this. ZIP execution acceptance requires a corrected artifact and rerun. |
-| [BTN-170](https://github.com/lrburkholder/battalion/issues/266), [BTN-173](https://github.com/lrburkholder/battalion/issues/271) | Artifact-first onboarding and final main/Pages integration govern which guide and artifact to use. Final live CLI/desktop acceptance remains BTN-129/BTN-132. |
+| Before BTN-164 | Reviewer test results are not reliable enough for release acceptance: nonzero pytest exits could be treated as RED and there was no bounded timeout. |
+| BTN-164 or later | Reviewer records classified, bounded test execution. This still does not make arbitrary tests safe to run. |
+| Before BTN-165 | A crash during resume may lose or consume authorization/progress. Do not blindly retry. |
+| BTN-165 or later | Battalion saves resume intent and graph checkpoints, but an attempt that started without saving an outcome can still be unsafe to replay. |
+| BTN-129 outstanding case | An empty Architect response can still leave recovery unsafe. Preserve the evidence and inspect the workspace. |
+| BTN-132 current desktop package | The frozen worker cannot currently execute Reviewer's pytest command correctly. Use a corrected ZIP for desktop execution acceptance. |
+
+For formal UAT, use the exact candidate handoff and guide revision. Documentation
+on another branch does not prove that the candidate contains the behavior it
+describes.
 
 <a id="installation-startup"></a>
-## Cannot install or start Battalion
+## Battalion will not install or start
 
-Installation failures normally have no Run evidence. Retain installer/shell
-output and artifact provenance; leave existing project state untouched.
+Installation failures normally happen before a Run exists. Keep the installer
+or shell output and leave existing project state alone.
 
-| Symptom | Safe next action / retry | Do not bypass |
+| Problem | Safe next step | Do not |
 | --- | --- | --- |
-| Unsupported Python or missing `venv`/`pip` | Use an approved Python 3.11+ installation and a fresh CLI environment, then repeat the verified-wheel steps in Getting Started. Record interpreter path and version. | Do not ignore Python requirements or switch interpreters mid-install. |
-| Unsupported desktop platform | The distributed desktop target is Windows x64. Record OS and architecture; obtain a matching approved artifact or stop. | Do not assume a Windows ZIP supports macOS, Linux, or another architecture. |
-| Dependency download/install failure | Preserve the pip error; repair approved index/proxy/cache access and repeat installation in a fresh environment. | Do not disable TLS verification or install a similarly named registry package. |
-| Checksum mismatch, absent metadata, wheel/ZIP revision mismatch | Stop before executing it. Redownload from the trusted handoff, verify exact filename/hash and matching version/source commit. Quarantine the suspect copy. | Do not recompute the expected checksum from the suspect file or mix candidate versions. Checksums are not signatures. |
-| PowerShell activation blocked | Use the explicit environment Python path shown in Getting Started; activation is unnecessary. | Do not relax machine execution policy. |
-| SmartScreen or organizational execution warning | Record the warning and verified provenance; seek the organization's executable approval. Current packaging has no configured signing step. | Do not disable protection or treat a hash match as organizational approval. |
-| Prompt asset missing, empty, or not UTF-8 | Run the credential-free checks below. Without an override, replace/report the incomplete artifact. With an intentional `--prompts-dir`, complete that approved directory or omit the override to restore packaged defaults. | The override is authoritative; there is no partial fallback. Do not copy prompts from a checkout to call a broken wheel accepted. |
-| Desktop/worker missing or cannot launch | Re-extract the entire verified ZIP into a fresh directory. Preserve `Battalion.dist/Battalion.exe`, sibling `worker/worker_entry.dist/BattalionWorker.exe`, and all DLLs/data. | Do not move only the EXE, substitute another worker, or launch the worker entry point manually for a Run. |
+| Python is too old or `venv`/`pip` is missing | Install an approved Python 3.11+ environment and repeat the verified-wheel steps in [Getting Started](getting-started.md). | Switch interpreters halfway through an installation. |
+| Desktop is on an unsupported platform | The current desktop package targets Windows x64. Use a matching approved artifact or stop. | Assume the Windows ZIP works on macOS, Linux, or another architecture. |
+| Dependency installation fails | Save the pip error, fix approved package-index/proxy/cache access, and retry in a fresh environment. | Disable TLS verification or install a similarly named package. |
+| Checksum or provenance does not match | Stop. Obtain the artifact again from the trusted source and verify filename, hash, version, and source commit. | Recompute the expected checksum from the suspect file or mix builds. |
+| PowerShell will not activate the virtual environment | Use the explicit `$Python` path from Getting Started. Activation is optional. | Weaken machine execution policy just to activate the environment. |
+| SmartScreen or organizational policy blocks the desktop executable | Keep the warning and provenance and follow your organization's approval process. | Disable protection. A checksum is not a code signature. |
+| Packaged prompts are missing or invalid | Run the prompt smoke test below. Replace/report an incomplete artifact. | Copy prompts from a source checkout and call the package valid. |
+| Desktop EXE or worker is missing | Re-extract the entire verified ZIP and preserve its directory structure. | Move only the EXE or substitute another worker. |
 
 <!-- check:prompt-smoke -->
 ```powershell
@@ -123,165 +120,168 @@ output and artifact provenance; leave existing project state untouched.
 & $Python -m battalion.prompts.smoke
 ```
 
-For desktop, use `$WorkerExe` from Getting Started and run
-`& $WorkerExe --smoke-role-prompts`. Smoke success proves prompt availability,
-not provider connectivity or packaged Reviewer execution.
+For the desktop package, run the worker's `--smoke-role-prompts` check from the
+path shown in Getting Started. A successful prompt smoke check proves only that
+the prompts are packaged; it does not prove provider connectivity or a complete
+desktop Run.
 
 <a id="setup-provider"></a>
-## Setup cannot validate the selected models
+## Model setup or provider validation fails
 
-Setup failure occurs before graph execution and normally writes no new model
-configuration. Preserve the error and existing configuration. Read every chosen
-role afterward; setup may select a different default Reviewer to maintain
-diversity. Use the [published setup commands](getting-started.md#4-choose-models-and-validate-configuration-live-provider-step)
-after correcting the specific problem.
+Setup normally fails before graph execution. Preserve the error and any existing
+configuration.
 
-| Symptom | What the operator may change / retry | Stop boundary |
+| Problem | Safe next step | Important boundary |
 | --- | --- | --- |
-| `MissingApiKey`, required variable absent | Supply the named provider environment variable through the approved secret procedure, then rerun setup. Launch desktop from that environment too. | A `.env` file is not automatically loaded. Never save the key in model names, YAML, tickets, or transcripts. |
-| Connection refused, unavailable endpoint, timeout | Check the selected runtime is running and the intended model is installed; repair approved network/endpoint access. Retry validation only when available. | A local-looking model identifier does not guarantee locality, privacy, or zero cost. Do not change trust/TLS policy to get a green check. |
-| `ProviderNotDetected`, unknown/invalid model identifier | Verify the exact provider/model name against the installed runtime/provider and select an accessible model. Keep the original diagnostic. | Do not treat credential changes as a fix for an unknown model or claim every recognized model is supported. |
-| `ConnectivityCheckFailed`, authentication/quota/capability error | Inspect the bounded provider error; correct account access, quota, endpoint, or model choice. Validation makes a real completion and may cost money. | Setup checks one selected model per provider, not all role models or full output capabilities. `--no-validate` skips connectivity; it is not proof of readiness and does not bypass credential/diversity checks. |
-| `ModelDiversityError`, Driver and Reviewer identical | Choose distinct model identifiers explicitly and revalidate. | Never disable diversity or disguise one model with arbitrary aliases to evade the check. |
+| `MissingApiKey` | Set the provider's named environment variable using your approved secret process, then rerun setup. | A `.env` file is not loaded automatically. Never put the key in YAML, model names, tickets, or transcripts. |
+| Connection refused, endpoint unavailable, or timeout | Confirm the intended runtime is running, the model exists, and approved network access works. | A local-looking model name does not prove that the endpoint is local, private, or free. |
+| Unknown provider/model | Check the exact provider/model identifier supported by your installed runtime and LiteLLM version. | Credentials do not fix an invalid model name. |
+| Authentication, quota, or capability error | Fix the account, quota, endpoint, or model selection and retry validation. | Validation performs a real request and may cost money. |
+| Driver and Reviewer use the same model | Select different model identifiers and rerun setup. | Do not bypass Battalion's model-diversity check. |
+
+`--no-validate` skips the live connectivity request. It does not prove that the
+models are usable, and it does not bypass credential or diversity checks.
 
 <a id="run-stopped"></a>
-## The Run stopped before completion
+## The Run stopped
 
-`awaiting-human` with an interrupt entry is a **durable HumanInterrupt**, not a
-generic crash. Inspect its trigger, context/error, recorded target, execution
-attempts, and any human resolution. A handled provider, malformed role-result,
-or test-harness failure may also produce this status. `blocked` can describe a
-valid role outcome requiring human context. `failed-infra` is distinct from
-successful completion; inspect recovery evidence rather than assuming resume
-is safe. An exit code of zero or a worker marked `succeeded` does not prove the
-Run is `done`.
+First inspect the saved status. A stopped Run is not necessarily a crash.
 
-Before **every** retry below: ensure no foreground CLI/worker is still acting
-on the Run, inspect current durable evidence, and stop if recovery is terminal
-or uncertain. Resume authorizes execution and can incur provider costs. It is
-not a read-only diagnostic command. Repeating `run` creates a new Run.
+- `awaiting-human` usually means Battalion deliberately created a durable
+  HumanInterrupt and is waiting for a decision.
+- `blocked` can be a valid role result saying that the role needs information or
+  authority it does not have.
+- `failed-infra` means execution failed and Battalion could not complete the
+  phase normally.
+- `done` is the completion state. A process exit or worker status of `succeeded`
+  does not replace it.
+
+Before retrying anything, make sure no CLI process or desktop worker is still
+executing the Run. `resume` is an authorization to continue work; it can call
+models and write files. It is not a diagnostic command.
 
 <a id="infra-failure"></a>
-## Execution failed or the provider stopped responding
+### Infrastructure or provider failure
 
-For `infra-failure`, inspect the saved error and execution attempt, including
-Reviewer process evidence if present. Older CLI wording may say the LLM failed
-even when the actual cause is malformed role output or a pytest harness error.
-The error context, not that generic label, distinguishes them.
+For `infra-failure`, inspect the saved error and execution attempt. The actual
+cause may be a provider failure, malformed role output, or Reviewer test-harness
+failure.
 
-After a handled provider failure with a durable pause, correct credentials,
-endpoint availability, account limits, or configured models as appropriate,
-retain Driver/Reviewer diversity, and authorize resume from the saved target.
-Provider retries may already have consumed tokens/cost; resume is not an
-exactly-once provider-call guarantee. If a process disappeared instead of
-recording a handled failure, follow [crash recovery](#resume-recovery). Do not
-replay an unknown provider side effect or replace the saved phase with a guess.
+If Battalion saved a handled pause, fix the underlying credential, endpoint,
+quota, model, or harness problem and then resume from the saved target. Previous
+provider calls may already have consumed tokens or money; Battalion does not
+promise exactly-once provider calls.
+
+If the process disappeared without saving a clear outcome, use
+[Safe resume and crash recovery](#resume-recovery). Do not guess which phase
+should run next.
 
 <a id="role-output"></a>
-## Output is malformed, rejected, blocked, or escalated
+## Role output is malformed, blocked, or escalated
 
-| Observation and durable evidence | Safe response / permitted change | Never bypass |
-| --- | --- | --- |
-| Malformed JSON or required fields; `infra-failure` with output-contract error | Inspect the failed attempt. A handled pause can be resumed after reviewing model suitability or correcting an intentional prompt override. Persistent failures need a sanitized defect report. | Do not hand-convert provider text into an accepted persisted result or pretend a failed phase completed. |
-| Pre-write RED/GREEN role-contract rejection | Candidate builds containing [BTN-154](https://github.com/lrburkholder/battalion/issues/241) retain reason, offending paths, attempt and no-write evidence; one bounded correction can occur automatically. Observe it; do not race it with resume. If exhausted, review the durable stop. | This is not a capability/scope violation waiver. Prohibited candidates must not be written, and correction still counts against budget. |
-| Valid `blocked` or `escalated` result / `role-escalation` | [BTN-133](https://github.com/lrburkholder/battalion/issues/207) candidate evidence includes a typed reason such as insufficient scope or an architecture decision. Supply the missing human decision through approved intervention/resolution controls. | Non-action is not malformed JSON or successful RED/GREEN completion. Do not invent requirements, widen authority, or skip review to make progress. |
-| Refactorer valid `no-change` | Inspect its reason and the subsequent Reviewer checkpoint. No repair is needed merely because no files changed. | Do not force a cosmetic mutation or skip refactor review. |
+| What you see | What it means / what to do |
+| --- | --- |
+| Malformed JSON or missing required fields | Inspect the failed attempt. If Battalion created a handled pause, review model suitability or an intentional prompt override before resuming. Do not manually turn provider text into an accepted result. |
+| RED/GREEN role-contract rejection before a write | Newer builds retain the rejected candidate, reason, offending paths, and proof that the prohibited write did not occur. Battalion may make one bounded automatic correction. Let that correction finish before intervening. |
+| `blocked`, `escalated`, or `role-escalation` | The role is explicitly saying that it cannot safely continue. Read the typed reason and supply the missing human decision through Battalion's normal controls. Do not invent requirements or widen scope just to make it proceed. |
+| Refactorer `no-change` | This can be valid. Read the reason and allow the required Reviewer checkpoint to run. Do not force a cosmetic change. |
+
+An automatic role-contract correction does not waive write-scope rules and still
+uses the Run's normal budget.
 
 <a id="human-checkpoints"></a>
-## A manual checkpoint or budget limit paused the Run
+## A checkpoint or budget limit paused the Run
 
-For `manual-checkpoint`, the log retains the phase and the prior execution
-evidence. Review the plan/artifacts and approve only the intended continuation.
-The `driver` checkpoint is after Architect and before Driver RED. A meaningful
-resolution is durable; removing checkpoints from saved state is not recovery.
+### Manual checkpoint
 
-For `budget-exceeded`, inspect saved `used`/`limit`, attempts, and known/unknown
-costs. This budget counts execution turns, not a provider spending cap. A human
-may authorize continuation, but current resume does **not** reset or replace
-the persisted budget; `resume --budget` does not exist. Changing the YAML
-budget does not raise an existing Run's saved limit. If continuation pauses
-again at that limit, stop and request a reviewed continuation plan; do not
-loop resume, zero the counter, or edit state. A newly scoped Run with its own
-approved budget requires workspace/specification review and all normal gates.
+A `manual-checkpoint` is intentional. Review the artifacts and approve only the
+next step you actually intend. For example, a `driver` checkpoint occurs after
+Architect and before Driver RED.
 
-If the pause is before an automatic role-contract correction, BTN-173's
-remediation retains the rejected attempt, correction context, and retry bound.
-The authorized continuation runs that correction in the same phase. It neither
-resets the budget nor grants another automatic retry; a successful correction
-can pause again before Reviewer because the persisted limit is still reached.
+Your resolution becomes durable Run evidence. Do not remove the checkpoint from
+saved state to make the Run continue.
 
-For either condition, preserve the interrupt and human decision history. Use
-the [resume procedure](#resume-recovery) only when the operator has approved the
-next step; an interrupt is not an error to suppress.
+### Budget exceeded
+
+Battalion's Run budget counts execution turns, **not provider dollars**. Inspect
+the saved `used` and `limit` values, attempts, and known/unknown costs before
+deciding whether to continue.
+
+The current `resume` command does not reset an existing Run's budget. Changing
+YAML also does not increase the limit already stored in that Run. If the Run
+immediately reaches the same limit again, stop and reassess instead of repeatedly
+calling resume or editing the counter.
 
 <a id="authority-stop"></a>
-## A write or authority change was blocked
+## Battalion blocked a write or authority change
 
-`out-of-scope-write` retains the error and declared scope in the Run; inspect
-artifact evidence and workspace too. A denied write does not prove that no
-earlier valid write occurred. `role-definition-edit` records a role/scope
-change requiring human architectural review. Invalid path configuration may
-instead fail before a Run or resume attempt is recorded.
+`out-of-scope-write` means a role tried to write outside the authority granted
+to it. `role-definition-edit` means a change would affect Battalion's role
+behavior and requires human architectural review.
 
-Stop and compare the intended task, approved architecture, exact project path,
-and rejected path. Correct a mistaken project selection or an invalid *new-Run*
-configuration using narrow project-relative roots. An existing Run retains its
-saved write scope; changing YAML is not a supported way to widen it on resume.
-If the task actually needs more authority, seek an explicit architectural
-decision and a properly admitted new Run. Do not use `./`, absolute paths,
-traversal, symlink/junction escapes, Reviewer write tools, or direct JSON edits
-to bypass the boundary. Resume a handled stop only after review confirms the
-remaining work fits existing authority; it may stop again if the cause remains.
+Compare:
+
+1. the task you intended,
+2. the approved architecture,
+3. the actual project path,
+4. the Run's saved write scope, and
+5. the path Battalion rejected.
+
+If the project or new-Run configuration is wrong, correct it with narrow,
+project-relative paths. An existing Run keeps its saved authority; changing
+YAML is not a supported way to widen it during resume.
+
+If the task genuinely needs more authority, make that an explicit architectural
+decision and admit a properly scoped new Run. Do not use `./`, absolute paths,
+parent traversal, symlink/junction escapes, Reviewer write tools, or hand-edited
+state to bypass the boundary.
 
 <a id="reviewer-tests"></a>
-## Reviewer reports failures, cannot collect tests, or hangs
+## Reviewer test problems
 
-For artifacts containing BTN-164, inspect `test_execution` on the Reviewer
-attempt in JSON status or the desktop Inspector. All non-verdict outcomes below
-pause through `infra-failure` without an LLM judgment. Fix the harness/environment
-under human review, then resume the **same Reviewer checkpoint**. Preserve the
-original process evidence; never relabel it as a pass or expected RED.
+On builds containing BTN-164, Reviewer records a `test_execution` result. If the
+result is not a valid RED/GREEN/refactor verdict, Battalion pauses with an
+infrastructure failure instead of asking the model to guess.
 
-| Classification / symptom | Meaning and safe next action |
+| Classification | Meaning |
 | --- | --- |
-| `test-failure` | Collected-test failure with no harness errors is eligible RED evidence. In GREEN/refactor it is a rejection: inspect assertions and recorded review cause; let the required correction/review loop operate. Human changes must preserve the approved spec and RED/GREEN separation. |
-| `pass` | Collected tests passed. Required for GREEN/refactor; unexpected in RED and may produce a rejection. Check that the test actually demonstrates the missing behavior. Do not weaken tests to manufacture acceptance. |
-| `same-root-cause-twice` | Saved Reviewer rejection history repeats a cause at a checkpoint. Human analysis/intervention is required before resume; do not clear history or retry counters. |
-| `collection-usage-internal-error` | Includes syntax/import/collection, setup/teardown, usage and internal pytest errors. Repair missing project dependencies, discovery, imports, or harness configuration. When a missing module/symbol is the requested behavior, import it inside the test function so absence fails a collected test. Driver RED must not add production stubs. A nonzero exit alone is not RED evidence. |
-| `no-tests-collected` | Zero collected tests is neither a pass nor valid RED. Check project path, test filenames/discovery settings, and admitted test files. Do not add dummy tests merely to clear the gate. |
-| `timeout` | Inspect duration, configured limit, output and process-tree cleanup. Diagnose hanging tests; a reviewed timeout change is allowed in `reviewer_test_timeout_seconds` (default 300, greater than 0 and at most 3600). It applies on resume. Do not disable the bound or retry while cleanup is uncertain. |
-| `cancellation` | Execution was interrupted; neither acceptance nor a completed failing test is established. Confirm child-process cleanup and inspect durable recovery before resuming. |
-| `process-launch-failure` | The test process could not start. Check the recorded command/interpreter and installed project dependencies. For the frozen worker, see the BTN-132 limitation above; do not silently substitute CLI execution to accept the ZIP. |
-| `malformed-output`, `invalid-pytest-outcome` | Missing/malformed JUnit or contradictory/unsupported exit evidence. Preserve bounded output; investigate/report the harness failure. Never infer success from a partial transcript. |
+| `test-failure` | Tests were collected and failed without a harness error. This can be valid RED evidence. During GREEN/refactor it is a rejection that must go through the normal correction loop. |
+| `pass` | Collected tests passed. This is required for GREEN/refactor. During RED, an unexpected pass means the test may not demonstrate the missing behavior. |
+| `same-root-cause-twice` | Reviewer has rejected the same cause twice at the checkpoint. Human analysis is required. Do not clear rejection history. |
+| `collection-usage-internal-error` | Pytest could not correctly collect or execute the suite because of imports, syntax, setup, usage, or internal errors. Fix the project/harness problem; a nonzero exit alone is not RED. |
+| `no-tests-collected` | Zero tests were collected. This is neither a pass nor valid RED evidence. Check paths and pytest discovery. |
+| `timeout` | Tests exceeded the configured timeout. Diagnose the hang before retrying. The timeout can be reviewed and changed within the supported 1–3600 second range. |
+| `cancellation` | Test execution was interrupted. No pass/fail conclusion is established. |
+| `process-launch-failure` | Pytest could not start. Check the interpreter/runtime and dependencies. The current frozen desktop worker has a known BTN-132 limitation here. |
+| `malformed-output` / `invalid-pytest-outcome` | The recorded pytest evidence is incomplete or contradictory. Preserve it and investigate the harness; do not infer a verdict from partial output. |
 
-Reviewer tests run in a disposable snapshot. It admits tracked and nonignored
-untracked project files while excluding generated builds, virtual environments,
-caches, Battalion state and VCS metadata; outside-project links are excluded.
-If a required file is missing, inspect admission/ignore rules rather than
-copying the entire machine into the snapshot. Tests can execute code: the
-snapshot is **not an OS security sandbox**. Reviewer still has no project write
-tools. Run only trusted, disposable UAT inputs.
+Reviewer runs tests in a disposable project snapshot. The snapshot excludes
+common build outputs, virtual environments, caches, Battalion state, VCS
+metadata, and links outside the project. It is **not an operating-system security
+sandbox**: tests can execute code. Use trusted inputs.
+
+Reviewer still has no project write tools.
 
 <a id="resume-recovery"></a>
-## Resume was interrupted or an intervention seems missing
+## Safe resume and crash recovery
 
-First verify artifact applicability above. On pre-BTN-165 or unknown builds,
-do not promise replay after a crash: preserve state and seek reviewed recovery.
-On a candidate containing BTN-165, inspect `Recovery:` and the saved
-`graph_progress`/`resume_intent`, not just a phase label or stale worker flag.
+This is the area where guessing is most dangerous.
 
-| Durable evidence | Action after confirming no active execution |
+On builds before BTN-165, do not assume that a crashed resume can be replayed.
+Preserve the evidence and use reviewed recovery.
+
+On BTN-165 or later, inspect the Run's `Recovery:` result and its saved progress,
+not just the phase name or worker status.
+
+| Saved evidence | Safe action |
 | --- | --- |
-| Unresolved HumanInterrupt | Review the reason, confirm Actor and resolution, then authorize the ordinary resume below. |
-| `interrupted-before-attempt` or `attempt-created`, recoverable | The saved authorization/attempt identity can be reused before generation. Repeat the original Actor, resolution, and action ID if supplied. Do not queue a duplicate intervention. |
-| `attempt-started` without a durable outcome, terminal | Provider calls or workspace writes may have happened. Stop replay, back up evidence, inspect actual changes, and start a new Run only from the reviewed workspace/specification. Never force the old attempt to run again. |
-| `attempt-completed` or `outcome-checkpointed`, recoverable | Continue from the stored successor, including required Reviewer checkpoints. Do not rerun the completed node or choose a successor by editing JSON. |
-| Recursion limit or unexpected graph exception | A BTN-165 build retains the latest durable checkpoint. Follow its recovery disposition; missing evidence is not permission to guess. Preserve the error and report it. |
+| Unresolved HumanInterrupt | Review the reason and authorize an ordinary resume when ready. |
+| `interrupted-before-attempt` or `attempt-created`, recoverable | Battalion saved enough information to reuse the decision before model generation. Retry with the same Actor, resolution, and action ID if one was used. |
+| `attempt-started` with no durable outcome, terminal | **Do not replay it.** A provider call or file write may already have happened. Back up the evidence, inspect the workspace, and start a new Run only from a reviewed state. |
+| `attempt-completed` or `outcome-checkpointed`, recoverable | Continue from Battalion's stored successor. Do not rerun the completed node. |
+| Recursion limit or unexpected graph exception | Follow the saved recovery disposition. If evidence is missing, stop rather than guessing. |
 
-For a new, reviewed resume decision, choose one action ID and retain it with
-the exact resolution and Actor ID. The selected local human Actor is the CLI
-default; the desktop shows the Actor before **Resolve and resume**. You may
-pass the recorded Actor UUID via `--actor-id` when retrying that decision.
+For a new reviewed resume decision, you can provide an action ID:
 
 <!-- check:resume -->
 ```powershell
@@ -291,73 +291,63 @@ $Resolution = Read-Host 'Reviewed resolution authorizing this continuation'
 & $Python -m battalion status $RunId --human
 ```
 
-After a crash, **do not regenerate** `$ActionId` or change `$Resolution`: rerun
-only the resume command with the original values after inspection says it is
-safe. An explicit ID deduplicates even after completion; a later new interrupt
-requires a new human decision and new ID. Reusing an ID with a different Actor
-or resolution is rejected. Without an explicit ID, a pending intent is reused,
-but a later newly paused Run is a new decision.
+If that resume itself crashes, **reuse the same action ID and resolution** only
+after the saved recovery evidence says retry is safe. Do not generate a new ID
+for the same decision. A later, genuinely new interrupt needs a new decision and
+new ID.
 
-Interventions are tied to an exact receiving-attempt identity. In desktop,
-inspect queued/delivered state and the receiving attempt before trying again.
-Only approved Correction/Design decision targets are available; Reviewer is
-not an intervention target, and active-worker writes are rejected. A delivered
-action with an uncertain started attempt does not justify replay. A conflicting
-Actor/action ID requires the original decision evidence, not registry edits.
-None of these guarantees rolls back file writes or ensures exactly-once
-provider calls. See [operator workflows](ui/workflow.md) for action boundaries.
+These protections deduplicate Battalion's decision handling. They do not roll
+back file writes or guarantee exactly-once provider calls.
 
 <a id="worker-recovery"></a>
-## Desktop stopped updating or the worker exited
+## Desktop stopped updating or its worker exited
 
-Closing the UI does not necessarily stop its detached worker. Reopen the same
-verified desktop with the same absolute project path, select the same UUID,
-and refresh authoritative state. This reloads durable evidence; missing live
-token text need not be replayed. Do not start a second worker/CLI resume while
-the first may still be executing.
+Closing the desktop window does not necessarily stop its detached worker.
+Reopen the same verified desktop package with the same project path and refresh
+authoritative state (`Ctrl+R`). Do not start a CLI resume or second worker while
+the original worker may still be executing.
 
-| Worker observation | Interpretation and safe action |
+For the normal desktop Run lifecycle and controls, see the
+[Desktop operator workflow](ui/workflow.md).
+
+| Worker state | What to do |
 | --- | --- |
-| `starting`, `running`, `cancelling` | Active supervision states; wait/refresh and inspect the exact process if necessary. Do not duplicate work. `cancelling` is not proof that all work stopped. |
-| Old timestamp or apparently stale UI | There is no heartbeat-age recovery guarantee. Metadata/PID existence alone cannot establish a safe restart (including a reused PID or `starting` record with no PID). Refresh and verify the actual process and Run; unresolved ambiguity needs operator investigation. Do not delete metadata to clear the active guard. |
-| `crashed` | Refresh reconciles an active record whose recorded PID no longer exists to a crash (or cancelled if cancellation was requested). Saved state may exist, but only Run recovery evidence determines replay safety. |
-| `failed` or `cancelled` | Worker-level failure/cancellation is not a Run verdict. Inspect error, interrupt and attempt outcome, then follow resume recovery; a worker restart is not an unconditional repair. |
-| `succeeded` | The worker operation returned, possibly at a HumanInterrupt. Inspect Run status before claiming completion. |
-| Run recovery `recoverable` | Once no process is active, use **Resolve and resume** if enabled for this candidate and inspect the saved decision/target. CLI resume is an alternative operation on the same state, never concurrent. |
-| Run recovery `terminal`, or Run `done` | Do not replay the Run. Keep terminal evidence in History; review ambiguous workspace changes before any new Run. |
+| `starting`, `running`, `cancelling` | Treat it as potentially active. Wait, refresh, and identify the actual process before doing anything that could duplicate work. |
+| Old timestamp / apparently stale UI | A stale timestamp or PID is not enough to prove that restart is safe. Investigate the actual process and Run. |
+| `crashed` | Inspect Run recovery evidence. A worker crash does not tell you whether the last model/file operation is safe to replay. |
+| `failed` or `cancelled` | Inspect the Run's error, interrupt, and attempt outcome. Worker status is not the Run verdict. |
+| `succeeded` | Inspect Run status. The worker may have successfully returned because Battalion reached a HumanInterrupt. |
+| Run recovery is `recoverable` | Once you know no process is active, continue through the normal resolve/resume path. |
+| Run recovery is `terminal`, or Run is `done` | Do not replay the Run. Review the workspace before starting any new Run. |
 
-There is no public `battalion worker restart` CLI command. Do not run a worker
-EXE manually with fabricated stdin, kill all Python processes, or delete locks/
-worker records. If an exact worker cannot be safely identified, stop and report
-the diagnostic bundle. A frozen Reviewer failure needs an identified corrected
-ZIP; reconnecting cannot repair the bundled runtime.
+There is no public `battalion worker restart` command. Do not manually launch the
+worker EXE with invented input, delete worker metadata to clear a guard, or kill
+unrelated Python processes.
+
+The current frozen desktop Reviewer problem requires a corrected desktop
+artifact; reconnecting the worker cannot repair that package.
 
 <a id="state-backup"></a>
-## State is missing, unreadable, or needs a recovery backup
+## Run state is missing, unreadable, or needs a backup
 
-Project-local `.battalion/state/<RUN_UUID>.json` contains the versioned Run,
-interrupt/human-action history, execution record, and available recovery
-checkpoints. `.battalion/workers/<RUN_UUID>.json` records worker supervision;
-`.battalion/project.json`, `runs.json`, and `actors.json` hold project/catalog/
-Actor identity. Integration effects are retained in the Run's
-`side_effect_ledger`; Intel and optional trace files are separate evidence.
-Trace files can be outside the project. The Run file is not a complete project
-backup. See [Data handling and trust boundaries](data-handling.md#local-evidence).
+Battalion stores canonical Run state under:
 
-For Run-not-found, verify project path and exact ID against the transcript or
-desktop catalog. For malformed JSON, unsupported schema, permission/I/O error,
-or unreadable Actor registry, retain the original bytes and error. Use the
-matching artifact, correct legitimate filesystem access through the approved
-process, or request maintainer-assisted recovery. Do not replace corrupt state
-with a new empty record, downgrade/migrate it by hand, or treat catalog metadata
-as a replacement for canonical Run evidence.
+`<project>/.battalion/state/<RUN_UUID>.json`
 
-Before recovery work, wait until **all project writers are inactive**, including
-foreground CLI, detached workers, and other clients. Preserve relevant workspace
-changes separately under normal version-control/backup procedures. Then make a
-narrow, private copy of the affected Run and identity files. This deliberately
-excludes unrelated Runs, traces, credentials, integration ledgers and Intel; it
-is diagnostic preservation, not an automatic restore package.
+Related files under `.battalion/` hold worker supervision, project/catalog
+identity, and Actors. Intel, traces, and integration evidence can be stored
+separately. The Run state file is **not** a complete backup of the project.
+
+If Battalion says a Run is missing, first verify the exact project path and Run
+ID. If state is corrupt or unreadable, preserve the original file and error.
+Do not replace it with an empty state file, manually migrate it, or treat catalog
+metadata as a substitute for canonical Run state.
+
+Before copying recovery evidence, make sure all writers are stopped: foreground
+CLI, desktop workers, and other clients. Back up source/workspace changes using
+normal version-control or backup procedures separately.
+
+Then make a narrow private copy of the affected Battalion state:
 
 <!-- check:backup -->
 ```powershell
@@ -381,18 +371,27 @@ foreach ($Relative in @($StateRelative, ('workers/' + $RunId + '.json'), 'projec
 Get-FileHash -LiteralPath (Join-Path $Backup $StateRelative) -Algorithm SHA256
 ```
 
-Keep that backup access-controlled. It may contain private specifications,
-error text, and source artifacts. Do not restore it over live state: a restore
-can rewind an already-applied write or external effect. Ordinary repair never
-requires hand-editing persisted JSON, clearing interrupts, removing Actor
-authority, or broadening scopes. If evidence cannot establish safety, stop.
+Keep this backup private. It may contain specifications, source artifacts, and
+error text. Do **not** restore it over live state without reviewed recovery: that
+could rewind a write or an external effect that already happened.
 
-## Report a reproducible finding
+If the evidence cannot establish that recovery is safe, stop rather than
+forcing the old Run forward.
 
-Record the symptom/anchor, artifact and guide identities, sanitized diagnostic
-excerpt, expected versus actual behavior, last safe checkpoint, and whether
-retry was attempted. Keep raw evidence private. Submit through the project's
-approved issue/reporting process; do not upload a whole `.battalion` directory.
-The prepared [CLI UAT](uat/cli.md) and [desktop UAT](uat/desktop.md) paths use this
-guide alone. Record reviewer/date/script revision and approval before formal
-execution; final live acceptance follows BTN-173 under BTN-129/BTN-132.
+## Reporting a reproducible problem
+
+A useful report includes:
+
+- the symptom;
+- artifact version, SHA-256, and source commit;
+- guide/candidate identity;
+- a sanitized diagnostic excerpt;
+- expected versus actual behavior;
+- the last known safe checkpoint; and
+- whether you attempted a retry.
+
+Keep raw evidence private. Do not upload an entire `.battalion` directory.
+
+For formal testing, see [CLI UAT](uat/cli.md) and [desktop UAT](uat/desktop.md).
+For data sensitivity and retention details, see
+[Data handling and trust boundaries](data-handling.md).

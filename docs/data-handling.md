@@ -1,344 +1,303 @@
-# Data handling and trust boundaries
+# Data Handling and Trust Boundaries
 
-Read this before configuring a model, supplying project content, enabling an
-integration, or exporting a trace. Battalion processes project information
-locally and can send some of it to your configured services. **Use only data
-you are authorized to disclose to those destinations.** Local evidence and
-model output can be sensitive even when you never enable trace export.
+Battalion works with your source code, specifications, model providers, and
+saved Run evidence. Some of that information stays on your machine. Some may be
+sent to services you configure.
 
-This guide describes the implementation reviewed for BTN-172, including the
-candidate work inherited from BTN-163–166. It is not a privacy policy for model
-providers or a claim of regulatory compliance. Match it to your installed
-artifact's source revision. Pages becomes public only after the main merge and
-successful deployment; candidate reviewers should use this repository document
-until then. The [source-to-claim review](#source-review) records the boundaries
-and known gaps. Start installation with [Getting Started](getting-started.md).
+**Only use project information that you are allowed to send to those services.**
 
-## Where information goes
+This guide explains what Battalion may send, what it stores locally, where
+credentials belong, and what to consider before sharing logs or traces. It is
+not a privacy policy for model providers and does not claim regulatory
+compliance.
 
-| Destination | Information and when it moves |
+If you are installing Battalion for the first time, start with
+[Getting Started](getting-started.md).
+
+## The short version
+
+Before using Battalion with sensitive work, know these five things:
+
+1. **Model providers can receive project content.** The exact content depends on
+   the role, but it can include specifications, plans, source code, tests,
+   accepted Intel, human interventions, and test diagnostics.
+2. **Battalion saves evidence locally.** Run state, human decisions, execution
+   history, model/token/cost evidence, diagnostics, and generated artifacts can
+   contain sensitive information.
+3. **Credentials do not belong in project files.** Use environment variables or
+   another approved secret-management mechanism.
+4. **Trace output is especially sensitive.** `--trace-output` can save raw model
+   stream content and has no automatic redaction or expiry.
+5. **Local does not automatically mean private.** A local-looking model name or
+   endpoint does not prove that requests stay on your machine or are not logged.
+
+## Where your information can go
+
+| Destination | What may go there |
 | --- | --- |
-| Local Battalion process and filesystem | Reads configuration, specifications, admitted context, accepted Intel, and saved Runs. Processes model responses, runs project tests, writes scoped artifacts, and saves the evidence listed below. Plain JSON/Markdown persistence is not an encrypted vault. |
-| Configured LLM provider/runtime | Setup validation sends a small `ping` completion with model selection and authentication where required. Execution sends the role prompt and the context described below, with configured generation parameters. Retries can repeat requests. A proxy can introduce further destinations. |
-| Configured outbound integration | An enabled, constructed sink can receive selected domain events after Run state is durable. Other capability adapters have their own request contracts; the minimized event envelope does not describe all integrations. Credentials are resolved at the transport boundary. |
-| CLI/desktop presentation | Status JSON can expose the full Run; human status, Work, History, and Intel show projections of local evidence. CLI live output can show raw streamed content/reasoning even without a trace file. Desktop live observations are transient; refreshed durable evidence is authoritative. Screenshots, terminal scrollback, screen sharing, and redirected output create additional copies under your control. |
-| Opt-in trace export | CLI `run` or `resume --trace-output PATH` appends raw stream observations to a file you choose. This is separate from Run persistence, can be outside the project, and has no automatic redaction or expiry. |
+| Your local machine | Configuration, specifications, model results, Run state, generated files, test results, Intel, and other execution evidence. Battalion's JSON and Markdown files are not encrypted storage. |
+| Your configured model provider or runtime | Role prompts plus the project context needed for that role. Setup validation also sends a small test completion. Retries can send similar information more than once. |
+| Configured integrations | Selected events or capability requests when that integration is actually enabled and invoked. Credentials are resolved at the transport boundary rather than being included in portable configuration. |
+| Terminal or desktop UI | Run status and evidence. Terminal scrollback, redirected output, screenshots, and screen sharing can create additional copies. |
+| A trace file you request | Raw streamed model observations written to the path supplied with `--trace-output`. This file can live outside the project. |
 
-There is no universal telemetry-absence claim here. Battalion's bounded evidence
-and suppression of particular LiteLLM debug/stream-logging paths do not audit
-every dependency, provider, proxy, callback, OS diagnostic, or operator-configured
-service. Review the actual deployment and its settings before sensitive use.
+Battalion does not make a blanket claim that every dependency, provider, proxy,
+operating system, or user-configured service is free of telemetry or logging.
+Review the services and deployment you actually use.
 
 <a id="model-context"></a>
-## What can enter model context
+## What Battalion can send to a model
 
-The ordinary CLI/desktop execution path uses the full Implementation Run:
-Architect, Driver RED, Reviewer, Driver GREEN, Reviewer, Refactorer, Reviewer.
-Resume continues that path from durable evidence and may read updated on-disk
-context. A role's packaged prompt (or explicitly selected override) is sent as
-a system message. Configuration/model identifiers are not evidence that a
-provider received only public content.
+Battalion gives each role the context it needs for its job. That means different
+roles can see different parts of the project.
 
-| Role or supported operation | Categories sent to its configured model |
+| Role | Typical model context |
 | --- | --- |
-| Architect | Ticket ID, specification, selected active accepted Instincts, and any delivered Design decision for that exact attempt, including its text, action ID, and Actor attribution. The standard assembler does not enumerate repository files for Architect. |
-| Driver RED | Ticket/specification, selected accepted Instincts, delivered Correction, `plan.md` as approved-plan context, and eligible existing implementation files from the configured production roots. A bounded automatic role-contract correction can add Battalion's diagnostic and offending-path context. |
-| Driver GREEN | Ticket/specification, selected accepted Instincts, delivered Correction, approved-plan context, and eligible RED test files from test roots; automatic correction context when applicable. It does not use RED's implementation-file selection. |
-| Checkpoint Reviewer | Mechanical tests run first. Only a valid but rejected test outcome triggers the LLM call, with Reviewer prompt and bounded test output. When selected accepted Instincts are present, the graph also supplies ticket/specification and those Instincts. With no selected Instincts, that extra context is absent. Accepted tests and invalid harness outcomes do not call the model. No queued human intervention targets Reviewer. Test output may contain source excerpts, paths, or private diagnostic text. |
-| Refactorer | Ticket/specification, selected accepted Instincts, delivered Correction, approved-plan context, eligible test/implementation files, and the authorized production artifact paths from the accepted GREEN attempt. Read context is broader than the files it may change. |
-| Recon, when explicitly invoked by a caller | Recon prompt, Run ID, the completed `execution_record` serialized in full, and supplied accepted Instinct records for duplicate comparison. The execution record can contain test diagnostics, human-intervention evidence, role-result text, and provenance. It does not automatically serialize the whole Run/specification, although excerpts may already be in that evidence. Recon returns untrusted candidates; ordinary run/resume does not automatically invoke it. |
-| Tactician advisory assessment, when invoked for uncertain admission | Tactician prompt and the supplied structured assessment input: deterministic admission assessment, bounded revision-pinned work-item/specification/context evidence text, known scope, registered recipe summaries, policy references, and human constraints. Its recommendation is advisory, not human authorization. |
+| Architect | Ticket ID, specification, accepted Instincts, and a delivered Design decision when one applies. The normal Architect context does not enumerate repository files. |
+| Driver RED | Specification, accepted Instincts, approved plan, eligible existing implementation files, delivered Corrections, and bounded correction diagnostics when Battalion catches a role-contract violation. |
+| Driver GREEN | Specification, accepted Instincts, approved plan, eligible RED test files, delivered Corrections, and bounded correction diagnostics when applicable. |
+| Reviewer | Battalion runs mechanical tests first. When model review is needed, Reviewer can receive bounded test output and, when applicable, specification and accepted Instinct context. Test output may itself contain paths, source excerpts, or private diagnostics. |
+| Refactorer | Specification, accepted Instincts, approved plan, eligible test and implementation context, accepted GREEN artifact paths, and delivered Corrections. |
+| Recon | When explicitly invoked, Recon can receive the completed execution record and accepted Instincts used for comparison. That record may include diagnostics, human actions, role results, and provenance. Recon is not automatically invoked by ordinary `run` or `resume`. |
+| Tactician | When used for an uncertain admission decision, Tactician receives the bounded assessment evidence supplied for that decision. Its recommendation is advisory; it does not grant authority. |
 
-The finite recipe registry, deterministic admission, human decisions, and compact
-execution policy exist as application contracts. Compact selection/persistence
-and graph dispatch are not integrated into ordinary run/resume in this reviewed
-baseline (BTN-143). Independent semantic Review Runs are accepted architecture
-with implementation still pending; the checkpoint Reviewer above is not that
-future role. These contracts do not justify claiming additional automatic model
-calls, durable admission files, or a UI workflow selector.
+Battalion limits how much context it assembles, but **size limits are not secret
+filters**. Eligible files are not scanned for secrets before being included.
+`.gitignore` is also not a confidentiality boundary for model context.
 
-Context assembly is bounded: ordinary role context has a 32,000-character
-allowance, eligible files are truncated to 8,000 characters each, and accepted
-Instinct rendering has a separate 6,000-character cap within that context.
-Truncation can omit later sections. **These are size limits, not secret filters.**
-The repository-context reader selects supported text suffixes inside configured
-phase roots; it does not apply `.gitignore` or scan for secrets. Keep private
-files out of those roots. Reviewer test snapshots use a different admission
-policy, including tracked/nonignored project files and generated-file exclusions.
-Neither policy makes executing project tests an OS security sandbox: tests run
-with the process's privileges and may access inherited credentials or network.
+Keep secrets and other information that should never reach a model outside the
+configured roots Battalion is allowed to read.
 
-Queued interventions become context only for their delivered target attempt.
-Ordinary interrupt-resolution text is retained as a human decision; it is not
-automatically inserted as a new prompt instruction. Human action text or excerpts
-can still be retained in execution evidence and reach Recon if invoked. Review
-specifications, plans, code/tests, prompt overrides, accepted Intel, and human
-text for disclosure suitability before calling a model.
+Reviewer tests are different from model context. They run against a temporary
+project snapshot. Tests execute with the Battalion process's operating-system
+permissions and may be able to use inherited credentials or network access.
+The snapshot is **not an OS security sandbox**.
 
-## Local and remote inference
+Human intervention text is stored as evidence. A queued intervention is sent to
+the model only when it is delivered to its intended attempt, but human text may
+also appear later in execution evidence used by features such as Recon.
 
-A remote provider receives requests outside the local Battalion process. A
-compatible endpoint running on your machine can keep inference on that machine,
-but a local-looking provider/model name is not proof of local execution, offline
-operation, privacy, zero cost, or zero retention. Local servers and proxies may
-log, forward, or back up requests. Verify the actual endpoint, routing, access
-controls, and service policies yourself; this guide makes no provider-specific
-training or retention promise.
+## Local and remote models
 
-Current evidence records configured model identity and per-call model/token/cost
-information. It does **not** reliably classify effective endpoints or routed
-providers. Requested/effective identity and alias-aware diversity provenance are
-tracked by [BTN-54](https://github.com/lrburkholder/battalion/issues/87), under
-[ADR-0024](adrs/adr0024.md). The operator deferred BTN-54 to post-UAT on
-2026-08-30; it remains open and does not block delivery of this disclosure.
-Do not infer locality from a display string or unknown
-cost. Keep Driver and Reviewer configured with different models and verify their
-actual routing; string diversity alone cannot establish independent backends.
-`setup --no-validate` skips the connectivity completion, not subsequent model IO.
+A remote provider receives Battalion requests outside the local Battalion
+process.
+
+A model server running on your machine can keep inference local, but do not infer
+that from its name alone. A provider string containing `localhost`, `ollama`, or
+another local-looking value does not prove that requests stay local, remain
+offline, cost nothing, or are never logged. Proxies and local runtimes can also
+forward or retain requests.
+
+Verify the actual endpoint and routing you configured.
+
+Battalion currently records the configured model identity and available
+per-call model/token/cost evidence, but it does not always establish the final
+routed provider or effective endpoint. More complete inference identity and
+routing provenance is tracked by [BTN-54](https://github.com/lrburkholder/battalion/issues/87).
+
+Driver and Reviewer must use different configured model identifiers. That is an
+important diversity check, but different strings alone do not prove that two
+requests ultimately reached independent backends.
+
+`setup --no-validate` only skips the setup connectivity request. It does not
+make later Battalion Runs offline.
 
 <a id="credentials"></a>
 ## Where credentials belong
 
-Use your approved secret manager or environment-injection procedure. For model
-setup, supply the provider environment variable expected by the installed
-runtime (for example `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`). Merely writing a
-`.env` file does not load it. The provider credential path is separate from
-`BATTALION_MODEL_DRIVER` and similar model-selection variables.
+Do **not** put API keys or other secrets in:
 
-For a PowerShell 7 session, this example avoids putting the secret value in a
-saved command or printing it. It still creates a plaintext process environment
-value, which child processes may inherit; it is not a vault:
+- tickets or specifications,
+- `plan.md`, source code, or tests,
+- role prompts or human intervention text,
+- `battalion.config.yaml`,
+- screenshots or logs,
+- Git history, or
+- model identifiers and ordinary configuration values.
+
+For model providers, use the environment variable expected by the configured
+runtime or your organization's approved secret-management process. Battalion
+does not automatically load a `.env` file merely because one exists.
+
+For example, in PowerShell 7:
 
 ```powershell
 $env:OPENAI_API_KEY = Read-Host 'Provider API key for this session' -MaskInput
-# Run the reviewed setup/Run commands in this session; never echo the variable.
+# Run Battalion from this session without printing the variable.
 # After all intended child processes have exited:
 Remove-Item Env:OPENAI_API_KEY
 ```
 
-This removes the parent session variable only; it neither revokes the credential
-nor removes copies already inherited by workers. Use provider revocation/rotation
-procedures for an exposed credential. Do not paste credentials into tickets,
-specifications, plans, source/tests, prompts, human actions, screenshots, logs,
-tracked YAML, or commit history. Fresh setup writes model identifiers, but it
-preserves unrelated existing configuration keys; it is not a cleanup or
-redaction operation. `extra_params` are passed to the runtime, so never store
-literal keys there in tracked configuration.
+An environment variable is still plaintext process data. Child processes can
+inherit it. Removing it from the parent shell does not revoke the credential or
+remove copies already inherited elsewhere. Rotate or revoke an exposed key at
+the provider.
 
-Portable `battalion.integrations.yaml` stores **symbolic references**, not values:
+### Integration credentials
+
+Portable integration configuration stores **references to credentials**, not the
+credential values themselves. For example:
 
 ```yaml
-project:
-  integrations:
-    automation-events:
-      integration_id: automation-events-primary
-      provider: http-webhook
-      transport: webhook
-      capabilities: [outbound-event-sink]
-      settings:
-        endpoint: https://automation.example/events
-        event_types: [human_interrupt, run_failed]
-        timeout_seconds: 10
-      credential_references:
-        authorization:
-          reference: env://AUTOMATION_WEBHOOK_AUTHORIZATION
+credential_references:
+  authorization:
+    reference: env://AUTOMATION_WEBHOOK_AUTHORIZATION
 ```
 
-Supply the referenced authorization value privately to the process that sends
-the request. `keyring://battalion/automation` is also a valid symbolic form, but
-the bundled webhook/Discord resolver supports only `env://`; keyring lookup
-requires an explicitly injected environment-specific resolver. Battalion does
-not provide a general keyring provisioning UI or use integration keyring
-references for model setup. Discord stores its numeric webhook ID as a setting
-and its secret token via `credential_references.webhook_token`; never paste a
-complete token-bearing webhook URL into portable settings.
+The actual value should be supplied privately to the process that performs the
+request.
 
-Integration validation rejects recognized secret-bearing field names and
-invalid references. It cannot prove arbitrary text is secret-free. Endpoint
-names, identifiers, aliases, Actor names, and free text must also be chosen
-carefully. A symbolic reference is not itself a credential, but may reveal
-internal account/service naming. Review configuration before sharing it.
+Battalion validates recognized credential fields and reference formats, but it
+cannot prove that arbitrary free text contains no secrets. Review configuration
+before committing or sharing it.
 
 <a id="local-evidence"></a>
-## What is stored locally
+## What Battalion stores locally
 
-These are defaults when operating from the project root. The CLI's state path
-is relative to its working directory; `--base-dir` selects file-operation roots
-and does not automatically relocate CLI state. Application callers can supply
-other state directories. Desktop resolves state under its selected project.
-Check the printed state path, selected project, and explicit trace path.
+By default, Battalion keeps its operational state under `.battalion/` in the
+project. Generated project files, such as `plan.md`, source changes, and tests,
+remain in the workspace itself.
 
-| Location | Contents |
+| Location | What it contains |
 | --- | --- |
-| `.battalion/state/<RUN_UUID>.json` (legacy IDs remain readable) | Versioned Run, supplied specification and optional normalized work item; scopes, budget, phase/status, rejection history, interrupt context and resolutions; queued/delivered interventions, Actor attribution and human-action history; recovery intent and execution checkpoints. |
-| `execution_record` inside that Run JSON | Node/attempt IDs, times, model identity, input/output references, normalized role results, rejected-candidate/no-write evidence, tool activity, test/review results, summaries, interruption links, and context provenance. Per-call input/output tokens, nullable cost/currency/source, and streamed character counts are evidence, not raw reasoning. Prompt provenance stores identity/path/version/hash rather than the rendered prompt. Artifact provenance stores paths/digests, not file snapshots; Git provenance does not retain dirty patches. |
-| Reviewer `test_execution` inside that Run JSON | Command, scratch working-directory identity, outcome classification, collected-test counts, duration, timeout/cancellation disposition, and at most 64 KiB each of stdout/stderr plus truncation metadata. Treat diagnostic text as sensitive. |
-| `side_effect_ledger` inside that Run JSON | Logical operation/deduplication IDs, Run/Actor/integration/provider/transport identity, attempts, timestamps, request digests, provider references, status/failure and reconciliation details. It is not a separate ledger directory or a full request/response archive. Detail text may still be sensitive. |
-| `.battalion/project.json`, `runs.json`, `actors.json` | Project UUID/identity, Run catalog and state references; human/system Actor identities, bootstrap/selection evidence, and external-identity mappings where configured. These are personal/operational data, not authentication credentials. |
-| `.battalion/workers/<RUN_UUID>.json` | Worker ID/PID, operation, lifecycle/timestamps, state path, cancellation and bounded errors. Locks also exist during coordination. Detached execution redirects stdout/stderr to the null device; this is not a promise that other diagnostics never exist. |
-| `.battalion/recon/candidates/INS-*.md` | Immutable candidate Instincts with validated YAML front matter, recommendation/applicability and evidence provenance. |
-| `.battalion/recon/decisions/INS-*.json`, `.battalion/intel/INS-*.json` | Separate immutable human review decisions and accepted Instinct records. Rejected candidates remain; active accepted records can later be selected into model context. |
-| `plan.md`, admitted source/test paths, explicit trace path | Actual generated artifacts stay in the workspace. Trace JSONL stays wherever the operator placed it. Neither is contained by an artifact digest in Run state. |
+| `.battalion/state/<RUN_UUID>.json` | The canonical saved Run: specification/work-item information, scopes, budget, status, interrupts, human decisions, recovery state, and execution history. |
+| Execution records inside Run state | Role attempts/results, model identity, token/cost evidence, artifact references and hashes, tool activity, review/test results, summaries, and provenance. This is not normally a raw prompt/response transcript, but it can still contain sensitive content. |
+| Reviewer test evidence | Test command, outcome, counts, duration, timeout/cancellation information, and bounded stdout/stderr. Diagnostics may contain private project information. |
+| Side-effect evidence | IDs and status used to track integration operations, retries, provider references, failures, and reconciliation. It is evidence, not a complete archive of every external request and response. |
+| `.battalion/project.json`, `runs.json`, `actors.json` | Project identity, Run catalog information, Actor identities, and related mappings. |
+| `.battalion/workers/` | Worker/process supervision information and bounded errors. |
+| `.battalion/recon/` and `.battalion/intel/` | Recon candidates, human review decisions, and accepted Instinct records. Rejected candidates are retained rather than silently erased. |
+| A path supplied to `--trace-output` | Raw trace JSONL. This can be outside the project and is managed separately from normal Run state. |
 
-Reviewer uses temporary project snapshots and attempts to remove them after
-execution. Cleanup is best effort, not secure erasure; process/OS failure can
-leave scratch files. Filesystem permissions, disk encryption, backup policy,
-and exclusion from Git/cloud sync are operator responsibilities. `.gitignore`
-alone provides neither access control nor a model-context confidentiality rule.
+The CLI normally stores state relative to the project from which it is run. The
+desktop uses its selected project. If you use custom application paths or trace
+paths, data may be elsewhere.
+
+Reviewer creates temporary snapshots and attempts to remove them after testing.
+Cleanup is best effort, not secure deletion. A crash or operating-system failure
+can leave temporary files behind.
+
+Filesystem permissions, disk encryption, backups, cloud synchronization, and
+other local storage controls remain the operator's responsibility.
 
 <a id="traces"></a>
-## Raw output, traces, and sharing
+## Trace output and sharing diagnostics
 
-The ordinary execution record does not store a raw prompt/response transcript
-or raw streamed reasoning. That does **not** make it content-free: specification,
-human text, model-produced review causes/role results, summaries, and test/error
-diagnostics can be retained. Generated model content also becomes workspace
-artifacts. Reading a Run as JSON exposes more than a concise human status view.
+Normal Battalion Run state does not store a complete raw prompt/response or raw
+reasoning transcript. It can still contain specifications, human decisions,
+model-produced role results, review causes, summaries, and test/error output.
 
-`--trace-output` appends received stream events with schema version, Run reference,
-sequence, time, node, kind (`token` or `reasoning`), and raw content. It is not a
-request-prompt export, a complete provider transcript, or acceptance evidence.
-Provider streaming support determines what appears; a missing reasoning stream
-does not prove the provider produced none. Reusing a path appends more sessions;
-sequence numbers are session-local. There is no automatic rotation, redaction,
-encryption, or deletion. The CLI warns before opening it. Omitting the flag
-avoids this file export but does not disable model calls or all terminal output.
-Desktop has no equivalent trace-export/setup wizard; setup uses the CLI, and
-**Help -> Data handling (opens browser)** exposes this guide without running a model.
+`--trace-output PATH` is different. It writes raw streamed observations received
+from the provider to a file you choose.
 
-Before sharing, make a separate copy and inspect it manually. Remove private
-specification/source excerpts, human/Actor identifiers, paths, endpoints, tokens,
-and other sensitive text; do not assume a built-in redaction pass made it safe.
-Prefer a minimal sanitized finding with artifact/version and error category to
-uploading an entire Run, trace, or `.battalion` directory. Preserve original
-evidence privately; never edit authoritative Run JSON to sanitize a report.
+Trace files:
+
+- can contain sensitive model output or reasoning,
+- can be written outside the project,
+- are appended to if you reuse the same path,
+- are not automatically redacted,
+- are not automatically encrypted,
+- are not automatically rotated or deleted, and
+- are not authoritative acceptance evidence for a Run.
+
+Not using `--trace-output` avoids that file, but it does not prevent model calls
+or guarantee that nothing sensitive appears in terminal output or normal Run
+evidence.
+
+Before sharing diagnostics, make a separate copy and inspect it manually. Prefer
+a small sanitized excerpt containing the artifact/version and relevant failure
+over uploading an entire Run, trace, or `.battalion` directory.
+
+Do not edit the authoritative Run JSON merely to make it safe to share. Keep the
+original evidence private and sanitize a copy instead.
 
 ## Retention, backup, deletion, and uninstall
 
-Current persistence retains saved Runs/evidence until an operator manages the
-files; it has no general expiry, retention scheduler, per-Run purge command,
-backup/restore service, or secure-delete guarantee. Recon candidates, decisions,
-and accepted Intel use create-only persistence; rejection does not erase them.
-Status JSON and opt-in trace JSONL are available outputs, not a portable full
-project backup or a privacy-safe diagnostic bundle.
+Battalion currently keeps saved Runs and related evidence until you manage those
+files. It does **not** currently provide a general:
 
-For a private diagnostic copy, follow the narrow, inactive-writers-only
-[recovery backup procedure](troubleshooting.md#state-backup). Preserve relevant
-workspace changes separately. Copying a Run alone misses artifacts, Intel and
-external copies; restoring old state can replay already-applied effects. Do
-not delete locks, reset ledgers, rewrite JSON, or recursively remove a project
-as a recovery shortcut. A reviewed lifecycle/deletion feature requires a
-separate contract and ticket; this guide does not invent one.
+- automatic retention or expiry policy,
+- per-Run purge command,
+- backup/restore service, or
+- secure-delete guarantee.
 
-The wheel/desktop ZIP distribution has no Battalion data-uninstall routine.
-Removing an environment or extracted application directory does not establish
-that project state, external trace paths, credentials, backups, terminal logs,
-or provider/integration copies were removed. Inventory exact locations and use
-your approved retention/revocation process after all writers stop. Third-party
-retention, exports, deletion and backups are governed by those services; local
-file removal cannot retract a request already sent to them.
+Recon candidates and their review records are also retained as evidence.
+
+If you need a diagnostic backup before recovery work, follow the narrow
+[recovery backup procedure](troubleshooting.md#state-backup). Do not restore old
+Run state over current state casually: external effects or file writes may
+already have happened.
+
+Removing Battalion's virtual environment or desktop application does not remove
+project-local `.battalion` state, external trace files, terminal logs, backups,
+provider-side data, integration-side data, or credentials stored elsewhere.
+There is currently no Battalion-wide data-uninstall command.
+
+Deletion or retention at a third-party model provider or integration is governed
+by that service. Removing a local file cannot retract a request already sent to
+another system.
 
 <a id="integrations"></a>
-## Outbound integrations and authority
+## Integrations and authority
 
-In this baseline, application callers must supply a constructed integration
-runtime to deliver events. Ordinary CLI run/resume and detached desktop workers
-do not construct that runtime from YAML alone. Declaring a binding validates
-configuration; it is not evidence that any event was delivered. The contracts
-below describe the adapters when actually invoked.
+Battalion integrations do not automatically gain authority merely because they
+are configured. Configuration, credentials, provider capability, and model
+output are all separate from **human authorization**.
 
-The current OutboundEventSink schema `1.0` supports `human_interrupt`,
-`run_failed`, and `run_completed`. Its envelope has event ID/type/version/time,
-bounded Run/project provenance (including optional alias and work-item ID),
-and typed status/phase or interrupt ID/trigger data. It has no fields for raw
-exception context, prompts, transcripts, source, model context, arbitrary Run
-state, or credential values. This structural minimization cannot remove a
-secret that an operator put in an identifier or alias.
+For outbound events, Battalion records Run state before attempting delivery and
+tracks delivery attempts in durable side-effect evidence. An ambiguous external
+result is not silently treated as success.
 
-The generic HTTP webhook adapter sends selected events to its configured
-endpoint with transport authorization if configured and an `Idempotency-Key`.
-It does not follow redirects. Discord's sink accepts only `human_interrupt`
-and renders bounded Run/work-item/phase/reason information plus a copyable
-status command; its webhook token is used below the adapter boundary. Delivery
-may leave copies at the receiver. Ambiguous delivery requires reconciliation
-before retry; a saved ledger does not guarantee deletion at the recipient.
+Current integration support is still bounded. In the reviewed baseline, ordinary
+CLI `run`/`resume` and detached desktop workers do not automatically construct a
+full integration runtime just because `battalion.integrations.yaml` exists.
+Declaring valid configuration therefore does not prove that an event was sent.
 
-See the [accepted integration boundary](rfcs/rfc0006.md#outboundeventsink) and
-the [detailed current event schema][events]. Other implemented contracts such
-as GitHub work-item reading/authorized mutation and Actor-targeted notification
-routing have different inputs (for example issue content, mutation data, or
-notification text/destination resolution). They are not automatically enabled
-by selecting a model, nor does a configured capability name prove that an
-adapter exists. Review each adapter and any future integration separately.
+When an outbound event sink is actually invoked, the event envelope is designed
+to be small: identifiers, event type, timestamp, and a bounded summary rather
+than a complete Run dump. Other capability adapters can have different request
+contracts, so do not assume every integration receives exactly the same fields.
 
-Provider capability, a valid credential, a model recommendation, and successful
-integration delivery **do not grant human authorization**. The existing scoped
-write tools, RED/GREEN/refactor reviews, interrupt decisions, and human Intel
-promotion remain required. Outbound-event replies do not become a command channel.
-Actor identity is attribution, not proof that all planned capability/authentication
-enforcement exists. See [operator actions](ui/workflow.md),
-[ADR-0023](adrs/adr0023.md), and [ADR-0026](adrs/adr0026.md).
+Integration credentials are resolved at the transport boundary and should not
+be copied into portable project configuration.
 
-<a id="source-review"></a>
-## Source-to-claim review and delivery evidence
+## Important current limitations
 
-Reviewed against baseline `d5e3580d77a75de9e7dfb380ebcf0604cb0081d8` and BTN-172's
-presentation-only notice/navigation changes. Links below pin runtime sources to
-that baseline. The guide does not change context, authority, or retention policy.
+Keep these limitations in mind when evaluating a Battalion deployment:
 
-| Disclosure | Source and verification boundary |
-| --- | --- |
-| Role inputs, file selection, bounds, Instincts and interventions | [Context assembly][context], [graph wiring][graph], [role implementations][nodes]; credential-free graph/node/context tests. Reviewer context is conditional on selected Instincts, not always the full specification. |
-| Recon and Tactician; compact/Review Run limitations | [Recon caller][recon], [Tactician input/call][tactician], [application operations][application], [workflow execution policy][workflows]; `test_recon_node.py`, `test_tactician.py`, workflow tests; accepted [RFC-0012](rfcs/rfc0012.md) and [RFC-0014](rfcs/rfc0014.md) are not proof of integrated future execution. |
-| Setup ping, model environment credentials, preserved config | [Setup][setup], [configuration][config]; `test_setup.py`. Setup and trace warning ordering are checked without providers in BTN-172 tests. |
-| Requests/retries and limited inference identity | [LiteLLM wrapper][llm], [execution evidence][execution], [state models][state]; `test_litellm_client.py`; missing effective endpoint provenance is canonical BTN-54, not a local/privacy guarantee. |
-| Integration references and actual keyring support | [Integration configuration][integration-config], [webhook resolver/transport][webhook], [Discord][discord]; integration configuration/webhook/Discord tests. README wording now distinguishes schema support from resolver implementation. |
-| Events versus other capability payloads | [Event schema][events], [GitHub adapter][github], [notification routing][notifications], [ADR-0025](adrs/adr0025.md); outbound/integration/notification tests. Free-text fields and third-party destinations remain operator review boundaries. |
-| Run, human decisions, prompt/code/artifact and effect evidence | [State models][state], [execution capture][execution], [state persistence][persistence], [side effects][effects]; persistence/execution/effect tests. Troubleshooting was corrected: the ledger is inside Run JSON, not a separate directory. |
-| Identity, worker and Intel locations | [Identity][identity], [Actors][actors], [workers][workers], [Intel repositories][intel], [application][application]; identity/worker/Intel tests. |
-| Tests, scratch files and diagnostic limits | [Reviewer process boundary][review-tests], [Reviewer node][reviewer], [ADR-0007](adrs/adr0007.md); Reviewer process/node tests. Process privileges are not a sandbox guarantee. |
-| Trace fields, append behavior and presentation | [Progress/trace writer][progress], [CLI][cli], [observation contract][observation]; CLI/progress/desktop tests. No complete transcript, redaction, or retention inference follows from bounded durable evidence. |
-| Lifecycle/uninstall limitations | [Persistence][persistence], [Intel repositories][intel], [CLI commands][cli], and [distribution contract](release.md). No implemented general purge/restore/data-uninstall API; manual backup guidance is diagnostic preservation only. |
-| Authority and provider-neutral limits | [Specification](../spec.md), [ADR-0002](adrs/adr0002.md), [ADR-0023](adrs/adr0023.md), [ADR-0025](adrs/adr0025.md). Provider routing, retention, training, dependency telemetry and secure deletion are outside the guarantees established by these sources. |
+- Battalion cannot guarantee what a third-party provider logs, retains, trains
+  on, or forwards.
+- A local-looking model identifier does not prove local execution.
+- Context-size limits do not remove secrets.
+- `.gitignore` does not define what model context is safe.
+- Reviewer test snapshots are not security sandboxes.
+- Saved Run evidence can contain sensitive content even without trace export.
+- Trace files have no automatic redaction, encryption, rotation, or expiry.
+- Battalion has no general data-retention, purge, backup/restore, or secure-delete
+  service today.
+- Installing or uninstalling the application does not automatically manage all
+  copies of project evidence.
+- Configuring an integration does not itself prove that the integration is
+  active or authorized.
 
-Credential-free Pages checks stage this document, its navigation and rewritten
-links. The [CLI UAT](uat/cli.md#data-handling) and
-[desktop UAT](uat/desktop.md#data-handling) additions check pre-use disclosure,
-evidence sensitivity, and trace handling using disposable content. The operator
-approved both BTN-172 scenarios on 2026-08-30; retain the approved script revision
-with formal execution evidence. This is script approval, not live acceptance.
-Final live confirmation
-belongs to BTN-129/BTN-132 after BTN-173; successful main Pages deployment is
-verified by BTN-173, not asserted by local staging. Broader site framing remains
-BTN-116. Any newly discovered code/contract conflict must become a canonical
-code/policy ticket rather than an invented assurance in this guide.
+These are boundaries to understand, not reasons to bypass Battalion's evidence,
+write-scope, Actor, interrupt, or human-approval controls.
 
-[context]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/context.py
-[graph]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/graph.py
-[nodes]: https://github.com/lrburkholder/battalion/tree/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/nodes
-[recon]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/nodes/recon.py
-[tactician]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/tactician.py
-[application]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/application.py
-[workflows]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/workflow_execution.py
-[setup]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/setup.py
-[config]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/config.py
-[llm]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/llm/litellm_client.py
-[execution]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/execution.py
-[state]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/state/models.py
-[integration-config]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/integrations/configuration.py
-[webhook]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/integrations/webhook.py
-[discord]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/integrations/discord.py
-[events]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/integrations/events.py
-[github]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/integrations/github.py
-[notifications]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/notifications.py
-[persistence]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/state/persistence.py
-[effects]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/integrations/effects.py
-[identity]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/identity.py
-[actors]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/actors.py
-[workers]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/workers.py
-[intel]: https://github.com/lrburkholder/battalion/tree/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/intel
-[review-tests]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/reviewer_testing.py
-[reviewer]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/nodes/reviewer.py
-[progress]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/progress.py
-[cli]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/cli.py
-[observation]: https://github.com/lrburkholder/battalion/blob/d5e3580d77a75de9e7dfb380ebcf0604cb0081d8/battalion/observation.py
+## Source and implementation notes
+
+This guide describes the current user-facing data-handling contract. The detailed
+architecture and historical decisions remain in the repository's ADRs, RFCs,
+canonical GitHub Issues, and implementation tests. In particular:
+
+- [BTN-172](https://github.com/lrburkholder/battalion/issues/268) established the
+  public data-handling disclosure.
+- [BTN-54](https://github.com/lrburkholder/battalion/issues/87) tracks stronger
+  requested/effective model and routing identity evidence.
+- [ADR-0024](adrs/adr0024.md) covers the inference configuration architecture.
+
+For day-to-day desktop operation, see the [Desktop Workflow](ui/workflow.md).
+For operational recovery, use [Troubleshooting and Recovery](troubleshooting.md),
+including the [recovery backup procedure](troubleshooting.md#state-backup).
+For installation and a first disposable Run, use [Getting Started](getting-started.md).
+For formal artifact validation, see the [CLI UAT data-handling checks](uat/cli.md#data-handling)
+and [desktop UAT data-handling checks](uat/desktop.md#data-handling).
