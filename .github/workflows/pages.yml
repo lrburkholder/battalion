@@ -49,11 +49,11 @@ on:
       - scripts/capture_pages_screenshots.py
       - .github/pages/**
       - .github/workflows/pages.yml
-  # The lifecycle workflow uses GITHUB_TOKEN to close its validated Issue.
+  # The lifecycle workflow uses GITHUB_TOKEN to close its validated Issues.
   # That mutation does not itself trigger an issues workflow, so rebuild after
   # the successful lifecycle run to publish the post-merge canonical status.
   workflow_run:
-    workflows: [Complete merged Battalion ticket]
+    workflows: [Complete merged Battalion tickets]
     types: [completed]
   workflow_dispatch:
 

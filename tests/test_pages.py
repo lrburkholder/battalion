@@ -263,10 +263,15 @@ def test_pages_workflow_limits_deployment_permissions() -> None:
             encoding="utf-8"
         )
     )
+    lifecycle_workflow = yaml.safe_load(
+        (REPOSITORY_ROOT / ".github" / "workflows" / "ticket-lifecycle.yml").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert workflow["permissions"] == {"contents": "read"}
     assert workflow[True]["workflow_run"] == {
-        "workflows": ["Complete merged Battalion ticket"],
+        "workflows": [lifecycle_workflow["name"]],
         "types": ["completed"],
     }
     assert workflow["jobs"]["build"]["permissions"] == {
