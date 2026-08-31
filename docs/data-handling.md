@@ -295,5 +295,9 @@ canonical GitHub Issues, and implementation tests. In particular:
   requested/effective model and routing identity evidence.
 - [ADR-0024](adrs/adr0024.md) covers the inference configuration architecture.
 
-For operational recovery, use [Troubleshooting and Recovery](troubleshooting.md).
+For day-to-day desktop operation, see the [Desktop Workflow](ui/workflow.md).
+For operational recovery, use [Troubleshooting and Recovery](troubleshooting.md),
+including the [recovery backup procedure](troubleshooting.md#state-backup).
 For installation and a first disposable Run, use [Getting Started](getting-started.md).
+For formal artifact validation, see the [CLI UAT data-handling checks](uat/cli.md#data-handling)
+and [desktop UAT data-handling checks](uat/desktop.md#data-handling).
