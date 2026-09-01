@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from battalion.config import DEFAULT_CONFIG_PATH, save_config
+from battalion.disclosure import DATA_HANDLING_URL
 from battalion.llm.litellm_client import ModelDiversityError, _silence_litellm_output
 
 
@@ -199,6 +200,10 @@ def run_setup(
         ProviderNotDetected, MissingApiKey, ConnectivityCheckFailed,
         ModelDiversityError — nothing is saved until all checks pass.
     """
+    echo(
+        "Data handling: setup validation sends a live provider request; runs may "
+        f"send project context. Read {DATA_HANDLING_URL} before continuing."
+    )
     path = Path(config_path)
     if existing_yaml is None and path.exists():
         import yaml

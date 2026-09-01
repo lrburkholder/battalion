@@ -6,8 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QFont, QPixmap
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QAction, QDesktopServices, QFont, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from battalion.application import IntelInspection, ProjectInspection, ProjectRunInspection
 from battalion.desktop.controller import DesktopController
+from battalion.disclosure import DATA_HANDLING_URL
 from battalion.desktop.presentation import (
     intel_empty,
     partition_runs,
@@ -318,6 +319,12 @@ class BattalionWindow(QMainWindow):
         self.refresh_action.triggered.connect(self.controller.refresh)
         self.project_menu = self.menuBar().addMenu("Project")
         self.project_menu.addAction(self.refresh_action)
+        self.data_handling_action = QAction("Data handling (opens browser)", self)
+        self.data_handling_action.triggered.connect(
+            lambda: QDesktopServices.openUrl(QUrl(DATA_HANDLING_URL))
+        )
+        self.help_menu = self.menuBar().addMenu("Help")
+        self.help_menu.addAction(self.data_handling_action)
 
     def _connect_controller(self) -> None:
         self.controller.loading.connect(self.show_loading)
@@ -455,13 +462,22 @@ class BattalionWindow(QMainWindow):
             return
         self.selected_run = run
         available = run.inspection is not None
-        self.queue_button.setEnabled(available)
+        worker = self.controller.worker_for(run.inspection.run_id) if available else None
+        inactive = worker is None or not worker.active
+        self.queue_button.setEnabled(available and inactive)
         self.resume_button.setEnabled(
-            available and run.inspection.state.status is RunStatus.AWAITING_HUMAN
+            available and inactive and (
+                run.inspection.recovery.disposition == "recoverable"
+                if run.inspection.recovery else
+                run.inspection.state.status is RunStatus.AWAITING_HUMAN
+            )
         )
-        worker = None
-        if run.inspection is not None:
-            worker = self.controller.worker_for(run.inspection.run_id)
+        if available and run.inspection.state.resume_intent is not None:
+            intent = run.inspection.state.resume_intent
+            if not intent.completed:
+                action = next(a for a in run.inspection.state.human_action_log
+                              if a.action_id == intent.action_id)
+                self.resolution_edit.setText(action.detail)
         inspector.setPlainText(render_run(run, worker))
         if run.inspection is None:
             return

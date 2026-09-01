@@ -132,6 +132,61 @@ def _stream_chunk(content=None, reasoning=None):
 
 
 class TestCallLlmStreaming:
+    def test_streaming_disables_litellm_background_logging_only_while_consuming(self):
+        import litellm
+
+        original = litellm.disable_streaming_logging
+        observed = []
+
+        def fake_completion(**kwargs):
+            observed.append(("completion", litellm.disable_streaming_logging))
+
+            def chunks():
+                observed.append(("iteration", litellm.disable_streaming_logging))
+                yield _stream_chunk(content="ok")
+
+            return chunks()
+
+        try:
+            litellm.disable_streaming_logging = False
+            result = call_llm(
+                "driver", NodeLLMConfig(model="m", max_retries=0),
+                [{"role": "user", "content": "hi"}],
+                completion_fn=fake_completion,
+                sleep_fn=lambda s: None,
+                on_stream=lambda event: None,
+            )
+
+            assert result["choices"][0]["message"]["content"] == "ok"
+            assert observed == [("completion", True), ("iteration", True)]
+            assert litellm.disable_streaming_logging is False
+        finally:
+            litellm.disable_streaming_logging = original
+
+    def test_streaming_restores_litellm_logging_setting_after_failure(self):
+        import litellm
+
+        original = litellm.disable_streaming_logging
+        try:
+            litellm.disable_streaming_logging = False
+
+            def broken_completion(**kwargs):
+                assert litellm.disable_streaming_logging is True
+                raise RuntimeError("stream unavailable")
+
+            with pytest.raises(InfraFailure):
+                call_llm(
+                    "driver", NodeLLMConfig(model="m", max_retries=0),
+                    [{"role": "user", "content": "hi"}],
+                    completion_fn=broken_completion,
+                    sleep_fn=lambda s: None,
+                    on_stream=lambda event: None,
+                )
+
+            assert litellm.disable_streaming_logging is False
+        finally:
+            litellm.disable_streaming_logging = original
+
     def test_on_stream_emits_tokens_and_returns_assembled_response(self):
         events = []
 
