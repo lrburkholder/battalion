@@ -10,11 +10,13 @@ unhandled.
 from __future__ import annotations
 
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Any, Callable
 from uuid import uuid4
 
-from battalion.execution import record_llm_call
+from battalion.execution import record_llm_call, record_stream_observation
 from battalion.state.models import CostSource, LLMCallCost
 
 
@@ -86,6 +88,9 @@ def build_node_configs(raw: dict[str, dict]) -> dict[str, NodeLLMConfig]:
 
 
 _litellm_silenced = False
+_streaming_logging_lock = Lock()
+_active_streaming_calls = 0
+_previous_streaming_logging_setting: bool | None = None
 
 
 def _silence_litellm_output() -> None:
@@ -112,6 +117,35 @@ def _default_completion_fn(**kwargs):  # pragma: no cover - thin passthrough
 
     _silence_litellm_output()
     return litellm.completion(**kwargs)
+
+
+@contextmanager
+def _without_litellm_streaming_logging():
+    """Prevent LiteLLM's optional per-chunk callback worker from leaking.
+
+    Battalion already owns live observation and durable LLM-call cost evidence.
+    LiteLLM's independent streaming logging path therefore adds no product
+    evidence, but LiteLLM 1.98 can create unawaited ``async_success_handler``
+    coroutines on Windows while that worker drains.  The provider stream itself
+    remains enabled.  Preserve the caller's global LiteLLM setting and keep it
+    disabled until every concurrent Battalion stream has finished.
+    """
+    global _active_streaming_calls, _previous_streaming_logging_setting
+    import litellm
+
+    with _streaming_logging_lock:
+        if _active_streaming_calls == 0:
+            _previous_streaming_logging_setting = litellm.disable_streaming_logging
+            litellm.disable_streaming_logging = True
+        _active_streaming_calls += 1
+    try:
+        yield
+    finally:
+        with _streaming_logging_lock:
+            _active_streaming_calls -= 1
+            if _active_streaming_calls == 0:
+                litellm.disable_streaming_logging = _previous_streaming_logging_setting
+                _previous_streaming_logging_setting = None
 
 
 def _streamed_response(
@@ -200,41 +234,44 @@ def _completion_streaming(
     params = dict(config.extra_params)
     params["stream"] = True
     params.setdefault("stream_options", {"include_usage": True})
-    stream = completion_fn(
-        model=config.model,
-        messages=messages,
-        temperature=config.temperature,
-        **params,
-    )
     pieces: list[str] = []
     usage = None
     response_cost = None
-    for chunk in stream:
-        chunk_usage = getattr(chunk, "usage", None)
-        if chunk_usage is not None:
-            usage = chunk_usage
-            usage_cost = _value(chunk_usage, "cost")
-            if usage_cost is not None:
-                response_cost = usage_cost
-        hidden = getattr(chunk, "_hidden_params", None) or {}
-        chunk_cost = _value(hidden, "response_cost")
-        if chunk_cost is not None:
-            response_cost = chunk_cost
-        choices = getattr(chunk, "choices", None)
-        if not choices:
-            continue
-        delta = choices[0].delta
-        if delta is None:
-            continue
-        reasoning = getattr(delta, "reasoning_content", None)
-        if not reasoning:
-            reasoning = getattr(delta, "reasoning", None)
-        if reasoning:
-            on_stream({"type": "reasoning", "content": reasoning})
-        content = getattr(delta, "content", None)
-        if content:
-            on_stream({"type": "token", "content": content})
-            pieces.append(content)
+    with _without_litellm_streaming_logging():
+        stream = completion_fn(
+            model=config.model,
+            messages=messages,
+            temperature=config.temperature,
+            **params,
+        )
+        for chunk in stream:
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage = chunk_usage
+                usage_cost = _value(chunk_usage, "cost")
+                if usage_cost is not None:
+                    response_cost = usage_cost
+            hidden = getattr(chunk, "_hidden_params", None) or {}
+            chunk_cost = _value(hidden, "response_cost")
+            if chunk_cost is not None:
+                response_cost = chunk_cost
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            delta = choices[0].delta
+            if delta is None:
+                continue
+            reasoning = getattr(delta, "reasoning_content", None)
+            if not reasoning:
+                reasoning = getattr(delta, "reasoning", None)
+            if reasoning:
+                on_stream({"type": "reasoning", "content": reasoning})
+                record_stream_observation("reasoning", reasoning)
+            content = getattr(delta, "content", None)
+            if content:
+                on_stream({"type": "token", "content": content})
+                record_stream_observation("token", content)
+                pieces.append(content)
     return _streamed_response(
         "".join(pieces), config.model, usage=usage, response_cost=response_cost
     )

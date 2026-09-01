@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from battalion.llm.litellm_client import InfraFailure
+from battalion.nodes.errors import RoleOutputError
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import CheckpointType, RunState, RunStatus
 
@@ -30,6 +31,9 @@ TRIGGER_BUDGET_EXCEEDED = "budget-exceeded"
 TRIGGER_ROLE_EDIT = "role-definition-edit"
 TRIGGER_INFRA_FAILURE = "infra-failure"
 TRIGGER_MANUAL_CHECKPOINT = "manual-checkpoint"
+# A valid Driver authority escalation.  This is intentionally not a seventh
+# system-detected v1 trigger; it labels the existing human-resolution boundary.
+TRIGGER_ROLE_ESCALATION = "role-escalation"
 
 
 def get_trigger_name(trigger_id: str) -> str:
@@ -41,6 +45,7 @@ def get_trigger_name(trigger_id: str) -> str:
         TRIGGER_ROLE_EDIT: "#4: Role-definition edit",
         TRIGGER_INFRA_FAILURE: "#5: Infra failure",
         TRIGGER_MANUAL_CHECKPOINT: "#6: Manual checkpoint",
+        TRIGGER_ROLE_ESCALATION: "Role authority escalation",
     }
     return names.get(trigger_id, f"Unknown trigger: {trigger_id}")
 
@@ -151,16 +156,17 @@ def check_infra_failure(error: Exception | None = None) -> tuple[bool, str]:
     
     Distinct handling path — not folded into triggers #1 or #3.
     Fires when a node crash, malformed state, or LiteLLM call fails after
-    retries (InfraFailure exception).
+    retries (InfraFailure exception), or a role returns malformed, empty, or
+    contract-violating provider output (RoleOutputError).
     
     Args:
         error: Exception that was raised (if any)
     
     Returns:
         (should_trigger, trigger_id) tuple. Trigger fires if error
-        is an InfraFailure.
+        is an InfraFailure or RoleOutputError.
     """
-    if error is not None and isinstance(error, InfraFailure):
+    if error is not None and isinstance(error, (InfraFailure, RoleOutputError)):
         return True, TRIGGER_INFRA_FAILURE
     return False, TRIGGER_INFRA_FAILURE
 

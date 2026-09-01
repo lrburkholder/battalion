@@ -35,6 +35,7 @@ from battalion.interrupts.triggers import (
     log_interrupt,
 )
 from battalion.llm.litellm_client import InfraFailure
+from battalion.nodes.errors import RoleOutputError
 from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import (
     Budget,
@@ -279,6 +280,12 @@ class TestTrigger5InfraFailure:
         error = RuntimeError("Some other error")
         fired, trigger_id = check_infra_failure(error)
         assert fired is False
+
+    def test_role_output_error_triggers(self):
+        error = RoleOutputError("Refactorer output was not valid JSON")
+        fired, trigger_id = check_infra_failure(error)
+        assert fired is True
+        assert trigger_id == TRIGGER_INFRA_FAILURE
 
     def test_no_error_no_trigger(self):
         fired, trigger_id = check_infra_failure(None)

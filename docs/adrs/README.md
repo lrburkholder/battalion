@@ -32,11 +32,17 @@ status states whether it is part of the shipped system.
 | [ADR-0024](adr0024.md) | Keep inference identity and cost policy in Battalion | Accepted | BTN-51; implementation deferred to BTN-52–55 |
 | [ADR-0025](adr0025.md) | Put provider adapters and transports beneath Battalion capabilities | Accepted | BTN-65; runtime deferred to BTN-66–80 |
 | [ADR-0026](adr0026.md) | Separate Actor identity, authority, and responsibility | Accepted | BTN-58; implementation deferred to BTN-59–62 |
-| [ADR-0027](adr0027.md) | Generate status documentation from canonical GitHub Issues | Accepted | BTN-83; amended by BTN-102 and BTN-128 |
+| [ADR-0027](adr0027.md) | Generate status documentation from canonical GitHub Issues and Milestones | Accepted | BTN-83; amended by BTN-102, BTN-104, and BTN-128 |
 | [ADR-0028](adr0028.md) | Authorize Battalion operations, not identities or transports | Accepted | BTN-64 architecture; runtime consumed by BTN-60/61/68 |
 | [ADR-0029](adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity | Accepted | BTN-70 substrate; consumed by BTN-71–80 |
 | [ADR-0030](adr0030.md) | Complete explicitly linked tickets after human PR merge | Accepted | BTN-126 |
 | [ADR-0031](adr0031.md) | Separate canonical status validation from public status rendering | Accepted | BTN-128 |
+| [ADR-0032](adr0032.md) | Register finite, versioned WorkflowRecipe policy artifacts | Accepted | BTN-138 |
+| [ADR-0033](adr0033.md) | Classify workflow admission from bounded deterministic evidence | Accepted | BTN-139 |
+| [ADR-0034](adr0034.md) | Keep Tactician advisory and outside Implementation Runs | Accepted | BTN-140 |
+| [ADR-0035](adr0035.md) | Correct pre-write role-contract violations in-run | Accepted | BTN-154 |
+| [ADR-0036](adr0036.md) | Keep human workflow admission separate from evidence and execution | Accepted | BTN-141 |
+| [ADR-0037](adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion | Accepted | BTN-142 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique

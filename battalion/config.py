@@ -23,6 +23,7 @@ class BattalionConfig(BaseModel):
     base_dir: str = "."
     prompts_dir: str | None = None
     budget_limit: int = 100
+    reviewer_test_timeout_seconds: float = Field(default=300.0, gt=0, le=3600)
     manual_checkpoints: list[str] = Field(default_factory=list)
     write_scope: dict[str, list[str]] = Field(default_factory=dict)
     integrations: IntegrationConfiguration = Field(default_factory=IntegrationConfiguration)
@@ -61,7 +62,7 @@ def load_config(
 
     # 2. Apply environment variable overrides
     env_models = {}
-    for node in ("architect", "driver", "reviewer", "refactorer"):
+    for node in ("architect", "driver", "reviewer", "refactorer", "tactician"):
         model_key = f"BATTALION_MODEL_{node.upper()}"
         if model_key in os.environ:
             env_models[node] = NodeLLMConfig(model=os.environ[model_key])
@@ -120,6 +121,10 @@ def load_config(
     base_dir = (cli_overrides or {}).get("base_dir", yaml_data.get("base_dir", "."))
     prompts_dir = (cli_overrides or {}).get("prompts_dir", yaml_data.get("prompts_dir"))
     budget_limit = (cli_overrides or {}).get("budget_limit", yaml_data.get("budget_limit", 100))
+    reviewer_test_timeout_seconds = (cli_overrides or {}).get(
+        "reviewer_test_timeout_seconds",
+        yaml_data.get("reviewer_test_timeout_seconds", 300.0),
+    )
     manual_checkpoints = (cli_overrides or {}).get("manual_checkpoints", yaml_data.get("manual_checkpoints", []))
     write_scope = yaml_data.get("write_scope", {
         "architect": ["plan.md"],
@@ -133,6 +138,7 @@ def load_config(
         base_dir=base_dir,
         prompts_dir=prompts_dir,
         budget_limit=budget_limit,
+        reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
         manual_checkpoints=manual_checkpoints,
         write_scope=write_scope,
         integrations=integrations,

@@ -22,6 +22,7 @@ from battalion.config import BattalionConfig
 from battalion.identity import load_project_identity
 from battalion.context import driver_context, reviewer_context
 from battalion.graph import _deliver_interventions, _make_driver_node
+from battalion.execution import ExecutionCapture
 from battalion.intel import CandidateInstinct, ReviewAction
 from battalion.intel.candidates import CandidateRepository
 from battalion.state.models import (
@@ -223,6 +224,9 @@ def test_delivery_checkpoints_before_context_and_never_reaches_reviewer(tmp_path
         "interventions": [queued], "human_action_log": [action]
     })
     checkpoints = []
+    capture = ExecutionCapture.start(state, "driver_red", "test-model", tmp_path)
+    capture.execution_id = "node-attempt-43"
+    state = capture.create_attempt(state)
 
     delivered = _deliver_interventions(
         state, "driver_red", "node-attempt-43", checkpoints.append
@@ -288,8 +292,10 @@ def test_driver_attempt_checkpoints_delivery_before_model_generation(tmp_path):
 
     assert events[0][0] == "checkpoint"
     assert events[0][1].interventions[0].delivered_to_execution_id
-    assert events[1][0] == "model"
-    assert queued.text in events[1][1]
+    assert events[1][0] == "checkpoint"
+    assert events[1][1].graph_progress.stage.value == "attempt-started"
+    assert events[2][0] == "model"
+    assert queued.text in events[2][1]
     execution = result.execution_record.node_executions[-1]
     references = [item for item in execution.input_references if queued.action_id in item.reference]
     assert len(references) == 1

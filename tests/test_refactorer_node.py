@@ -4,18 +4,23 @@ Refactorer is structurally identical to Driver (same file output format and
 scope enforcement). It accepts an explicit phase scope and preserves the
 legacy shared Driver scope per ADR-0008/ADR-0013.
 """
+from datetime import datetime, timezone
+
 import pytest
 
 from battalion.nodes.refactorer import (
     EmptyRefactorerOutput,
     MalformedRefactorerOutput,
+    UnauthorizedRefactorerOutput,
+    extract_output,
     extract_files,
     run_refactorer,
 )
+from battalion.execution import ExecutionCapture
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig, call_llm
 from battalion.scope.tool_binding import ScopeViolationError
-from battalion.state.models import RunStatus
+from battalion.state.models import ArtifactProvenance, ExecutionRecord, NodeExecution, RunStatus
 
 
 # --- Fixtures / Helpers ---
@@ -36,6 +41,36 @@ def make_state(write_scope=None, **overrides):
 def files_response(files: dict) -> dict:
     import json
     return {"choices": [{"message": {"content": json.dumps({"files": files})}}]}
+
+
+def no_change_response(reason: str = "The implementation is already clear.") -> dict:
+    import json
+    return {"choices": [{"message": {"content": json.dumps({
+        "outcome": "no-change", "files": {}, "reason": reason,
+    })}}]}
+
+
+def state_with_green_artifacts(*paths: str):
+    now = datetime.now(timezone.utc)
+    execution = NodeExecution(
+        execution_id="node-green",
+        role="driver",
+        phase="driver_green",
+        model_identity="test-model",
+        started_at=now,
+        ended_at=now,
+        outcome="succeeded",
+        artifact_provenance=[
+            ArtifactProvenance(
+                path=path,
+                sha256="0" * 64,
+                originating_run_id="run-001",
+                originating_node_execution_id="node-green",
+            )
+            for path in paths
+        ],
+    )
+    return make_state(execution_record=ExecutionRecord(node_executions=[execution]))
 
 
 def fenced_files_response(files: dict) -> dict:
@@ -86,6 +121,16 @@ def test_extract_files_rejects_empty_string_path():
         extract_files(resp)
 
 
+def test_extract_output_accepts_explicit_no_change_only_with_reason():
+    output = extract_output(no_change_response("No smaller safe change exists."))
+
+    assert output.files == {}
+    assert output.no_change_reason == "No smaller safe change exists."
+
+    with pytest.raises(EmptyRefactorerOutput):
+        extract_output(files_response({}))
+
+
 # --- run_refactorer tests ---
 
 def test_run_refactorer_writes_refactored_files(tmp_path):
@@ -104,6 +149,32 @@ def test_run_refactorer_writes_refactored_files(tmp_path):
     assert (tmp_path / "src" / "module.py").read_text() == files["module.py"]
     assert updated.phase == "reviewer"
     assert updated.status == RunStatus.IN_PROGRESS
+
+
+def test_run_refactorer_rejects_files_not_written_by_accepted_green_driver(tmp_path):
+    with pytest.raises(UnauthorizedRefactorerOutput, match="not written by accepted GREEN Driver"):
+        run_refactorer(
+            state_with_green_artifacts("src/widget.py"),
+            refactor_text="refactor",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({"other.py": "VALUE = 1"}),
+        )
+
+    assert not (tmp_path / "src" / "other.py").exists()
+
+
+def test_run_refactorer_rejects_test_or_documentation_artifacts(tmp_path):
+    with pytest.raises(UnauthorizedRefactorerOutput, match="non-production paths"):
+        run_refactorer(
+            state_with_green_artifacts("src/test_widget.py"),
+            refactor_text="refactor",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *a, **kw: files_response({"test_widget.py": "pass"}),
+        )
+
+    assert not (tmp_path / "src" / "test_widget.py").exists()
 
 
 def test_run_refactorer_uses_driver_scope_entry(tmp_path, monkeypatch):
@@ -197,7 +268,7 @@ def test_run_refactorer_propagates_infra_failure(tmp_path):
     assert not (tmp_path / "src").exists()
 
 
-def test_run_refactorer_rejects_empty_files_output(tmp_path):
+def test_run_refactorer_rejects_unexplained_empty_files_output(tmp_path):
     with pytest.raises(EmptyRefactorerOutput):
         run_refactorer(
             make_state(),
@@ -207,6 +278,27 @@ def test_run_refactorer_rejects_empty_files_output(tmp_path):
             call_llm_fn=lambda *a, **kw: files_response({}),
         )
     assert not (tmp_path / "src").exists()
+
+
+def test_run_refactorer_no_change_writes_nothing_and_records_decision(tmp_path):
+    state = make_state()
+    capture = ExecutionCapture.start(state, "refactorer", "test-model", tmp_path)
+
+    updated = run_refactorer(
+        state,
+        refactor_text="refactor",
+        llm_config=NodeLLMConfig(model="test-model"),
+        base_dir=tmp_path,
+        call_llm_fn=lambda *a, **kw: no_change_response("Already minimal."),
+    )
+    finished = capture.finish(state, updated)
+    execution = finished.execution_record.node_executions[-1]
+
+    assert updated.phase == "reviewer"
+    assert not (tmp_path / "src").exists()
+    assert execution.output_reference == "refactorer:no-change"
+    assert execution.artifact_provenance == []
+    assert "Already minimal." in execution.operator_summary.what_i_did
 
 
 def test_run_refactorer_validates_all_paths_before_writing_any(tmp_path):

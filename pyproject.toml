@@ -25,6 +25,7 @@ dev = [
 ]
 
 [project.scripts]
+battalion = "battalion.cli:main"
 battalion-desktop = "battalion.desktop.app:main"
 
 [tool.setuptools.packages.find]
@@ -32,6 +33,7 @@ include = ["battalion*"]
 
 [tool.setuptools.package-data]
 "battalion.desktop" = ["assets/*", "assets/fonts/*"]
+"battalion.prompts" = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

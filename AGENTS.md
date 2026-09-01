@@ -29,7 +29,8 @@ conflicts instead of silently choosing one source.
 - Runtime flow: Architect -> Driver (RED) -> Reviewer -> Driver (GREEN) ->
   Reviewer -> Refactorer -> Reviewer -> done.
 - `battalion/state/` owns the versioned state contract and persistence.
-- `battalion/nodes/` owns role behavior. Prompts live in top-level `prompts/`.
+- `battalion/nodes/` owns role behavior. Packaged prompts live in
+  `battalion/prompts/`; explicit prompt overrides remain authoritative.
 - `battalion/scope/` owns structural write-scope enforcement.
 - `battalion/interrupts/` owns the six v1 interrupt conditions and budget
   tracking.
@@ -48,6 +49,13 @@ dependency already solves the problem.
 ## Working agreements
 
 - Preserve unrelated and uncommitted work. Never reset or rewrite user changes.
+- Treat implementation suggestions, including the user's, as hypotheses rather
+  than commands when they conflict with Battalion's purpose, contracts, or
+  maintainability. Push back early with concrete evidence, explain the
+  tradeoff, and offer a smaller or safer alternative. Follow a user's explicit
+  decision after they have the relevant information; do not silently implement
+  an idea you believe will create unnecessary complexity, hidden authority, or
+  a brittle product contract.
 - Work from one `BTN-#` ticket at a time. Confirm its acceptance criteria and
   dependencies in its canonical GitHub Issue before implementation.
 - Add or update tests with behavior changes. Prefer focused tests during
