@@ -77,7 +77,7 @@ Reviewer
 
 Battalion can interrupt this flow when something requires human attention. The Run is saved so it can be inspected and, when safe, resumed.
 
-Not every task needs the full workflow. Battalion also has compact workflow recipes for work that does not justify every role. Workflow admission can use deterministic evidence, Tactician assessment, and human decisions to select the appropriate path. Durable admission/Run linkage and CLI/desktop presentation remain BTN-143–144.
+Not every task needs the full workflow. Battalion also has compact workflow recipes for work that does not justify every role. Workflow admission can use deterministic evidence, Tactician assessment, and human decisions to select the appropriate path. The selected evidence, decision, exact recipe, and later upgrades are durable across restart; CLI/desktop presentation remains BTN-144.
 
 ## Human Control
 
@@ -268,7 +268,7 @@ Major remaining or future work includes:
 - **Inference policy:** endpoint-aware inference identity and zero-cost policy (BTN-52–55; RFC-0005 / ADR-0024).
 - **Actors:** capability enforcement, assignment/ownership, and authentication (BTN-60–62; RFC-0007 / ADR-0026).
 - **Integrations:** operation policy and health, email/push adapters, and MCP transport (BTN-68–69, BTN-76–78).
-- **Workflow admission:** durable admission/Run linkage and CLI/desktop presentation (BTN-143–144), plus separate Review Run work.
+- **Workflow admission:** CLI/desktop presentation (BTN-144), plus separate Review Run and recipe-dispatch work.
 - **Future RFCs:** Specifier (BTN-45), plugin architecture (BTN-46), severity-based review and possible Guardian role (BTN-47), bounded self-modification (BTN-48), and pluggable repository quality gates (BTN-49).
 
 Draft future briefs live under `docs/future/`. They do not change Battalion's current roles or authority until their RFCs are accepted.

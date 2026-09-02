@@ -47,6 +47,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "spec.md",
             "docs/adrs/index.md",
             *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 38)},
+            "docs/adrs/adr0039.md",
             "docs/rfcs/rfc0004.md",
             "docs/operator/workflow.md",
             "docs/operator/screens.md",

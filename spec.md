@@ -37,13 +37,15 @@ run automatically.
   research is limited to carefully bounded, human-authorized proposals; the
   dogfooding model is "used to build Battalion's next work," not autonomous
   self-editing.
-- Dynamic workflow admission or graph dispatch. BTN-138 provides a finite,
+- Dynamic workflow admission or graph dispatch remains outside the v1 graph.
+  BTN-138 provides a finite,
   versioned `WorkflowRecipe` policy vocabulary and BTN-139 provides an
   inspectable deterministic evidence assessment for post-v2 work. BTN-141 adds
-  a pre-execution, Actor-authorized human decision contract, but none of these
-  alters the v1 graph or allows model-produced node lists. Compact execution,
-  admission persistence, and dispatch remain separately scoped follow-up work
-  under RFC-0012.
+  a pre-execution, Actor-authorized human decision contract, BTN-142 adds the
+  compact execution/upgrade policy, and BTN-143 adds durable admission/Run
+  linkage and resume validation. None alters the v1 graph or allows
+  model-produced node lists; recipe-specific dispatch remains separately
+  scoped under RFC-0012.
 
 ## Accepted Post-v1 Inference Contract (delivery pending)
 
@@ -131,6 +133,11 @@ Fields per ticket/run (draft — to be refined during Architect phase):
   operation references, timestamps, bounded detail text, and optional SHA-256
   request digests; never secrets or external payload contents — see
   ADR-0029)
+- `workflow_admission` (optional on legacy schema `1.0`; schema `1.1` stores a
+  separately versioned record containing the deterministic assessment,
+  optional Tactician assessment, Actor-authorized decision, exact selected
+  recipe/version, completed stage/completion evidence, and append-only upgrade
+  state. Cross-record inconsistencies fail validation; see ADR-0039.)
 
 New-run construction belongs to the shared application boundary. It generates
 the canonical run UUID and project marker before execution; graph nodes cannot

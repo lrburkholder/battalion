@@ -8,13 +8,16 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Annotated, Any, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from battalion.role_results import RoleExecutionResult
 from battalion.work import WorkItem
+
+if TYPE_CHECKING:
+    from battalion.workflow_admission_state import WorkflowAdmissionRunRecord
 
 
 class RunStatus(str, Enum):
@@ -651,9 +654,14 @@ class RunState(BaseModel):
     interventions: list[HumanIntervention] = Field(default_factory=list, max_length=100)
     human_action_log: list[HumanActionRecord] = Field(default_factory=list, max_length=500)
     side_effect_ledger: SideEffectLedger = Field(default_factory=SideEffectLedger)
+    workflow_admission: WorkflowAdmissionRunRecord | None = None
 
     @model_validator(mode="after")
     def validate_recovery_evidence(self) -> Self:
+        if self.workflow_admission is not None and self.schema_version != "1.1":
+            raise ValueError(
+                "workflow admission persistence requires RunState schema version 1.1"
+            )
         progress = self.graph_progress
         if progress is not None and progress.execution_id is not None:
             matches = [e for e in self.execution_record.node_executions
@@ -680,3 +688,11 @@ class RunState(BaseModel):
         if value is None:
             return None
         return str(UUID(value))
+
+
+# Resolve the durable admission type after the legacy state models are defined.
+# Tactician usage evidence imports CostSource from this module, so importing the
+# linkage model earlier would create a partial-module cycle.
+from battalion.workflow_admission_state import WorkflowAdmissionRunRecord
+
+RunState.model_rebuild()
