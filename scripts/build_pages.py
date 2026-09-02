@@ -30,6 +30,7 @@ PUBLISHED_DOCUMENTS = {
         f"docs/adrs/adr{number:04d}.md": f"docs/adrs/adr{number:04d}.md"
         for number in range(1, 38)
     },
+    "docs/adrs/adr0039.md": "docs/adrs/adr0039.md",
     "docs/rfcs/rfc0004.md": "docs/rfcs/rfc0004.md",
     "docs/ui/workflow.md": "docs/operator/workflow.md",
     "docs/ui/screen-runs.md": "docs/operator/screens.md",

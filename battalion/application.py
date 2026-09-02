@@ -92,6 +92,7 @@ from battalion.workflow_recipes import (
     DEFAULT_WORKFLOW_RECIPE_REGISTRY,
     WorkflowRecipe,
     WorkflowRecipeRegistry,
+    WorkflowStage,
 )
 from battalion.workflow_execution import (
     WorkflowCompletionEvidence,
@@ -117,6 +118,14 @@ from battalion.workflow_admission import (
 from battalion.workflow_admission_decisions import (
     WorkflowAdmissionDecision,
     WorkflowAdmissionDisposition,
+)
+from battalion.workflow_admission_state import (
+    InconsistentPersistedWorkflowAdmission,
+    StalePersistedWorkflowAdmission,
+    UnknownPersistedWorkflowRecipe,
+    WorkflowAdmissionRunRecord,
+    validate_persisted_workflow_recipes,
+    validate_workflow_admission_resume,
 )
 from battalion.tactician import (
     TacticianAssessment,
@@ -247,6 +256,10 @@ class StaleWorkflowAdmission(WorkflowAdmissionRejected):
     """Raised when an assessment no longer matches the supplied current evidence/policy."""
 
 
+class WorkflowAdmissionResumeRejected(WorkflowAdmissionRejected):
+    """Raised when persisted admission state cannot safely resume."""
+
+
 class CandidateReviewFailed(ApplicationError):
     """Raised when candidate review cannot complete through the canonical workflow."""
 
@@ -328,6 +341,7 @@ class ResumeRun:
     actor_id: UUID | None = None
     resolution: str = "authorized resume"
     action_id: str | None = None
+    current_admission_evidence: WorkflowAdmissionEvidence | None = None
 
 
 @dataclass(frozen=True)
@@ -357,6 +371,13 @@ class ReviewCandidate:
 @dataclass(frozen=True)
 class InspectRun:
     """Read-only request for current durable run evidence."""
+
+    run_id: str
+
+
+@dataclass(frozen=True)
+class InspectRunWorkflowAdmission:
+    """Read the durable admission and upgrade evidence for one Run."""
 
     run_id: str
 
@@ -439,6 +460,41 @@ class UpgradeWorkflowForDriverResult:
 
 
 @dataclass(frozen=True)
+class RecordAdmittedWorkflowStage:
+    """Durably retain one stage result in an admitted Run."""
+
+    run_id: str
+    evidence: WorkflowStageEvidence
+
+
+@dataclass(frozen=True)
+class RecordAdmittedWorkflowCompletion:
+    """Durably retain one ordered completion requirement in an admitted Run."""
+
+    run_id: str
+    evidence: WorkflowCompletionEvidence
+
+
+@dataclass(frozen=True)
+class UpgradeAdmittedWorkflow:
+    """Durably apply the upgrade-only ratchet to an admitted Run."""
+
+    run_id: str
+    trigger: WorkflowUpgradeTrigger
+    reason: str
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class UpgradeAdmittedWorkflowForDriverResult:
+    """Durably apply deterministic upgrade policy from one Driver result."""
+
+    run_id: str
+    result: RoleExecutionResult
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class AssessWorkflowAdmission:
     """Create a deterministic pre-admission assessment from bounded evidence."""
 
@@ -480,6 +536,24 @@ class DecideWorkflowAdmission:
     recipe_id: str | None = None
     recipe_version: str | None = None
     annotation: str | None = None
+
+
+@dataclass(frozen=True)
+class CreateAdmittedRun:
+    """Authorize and durably create one Run from current admission evidence."""
+
+    ticket_id: str
+    spec: str
+    config: BattalionConfig
+    assessment: WorkflowAdmissionAssessment
+    evidence: WorkflowAdmissionEvidence
+    disposition: WorkflowAdmissionDisposition
+    actor_id: UUID | None = None
+    tactician_assessment: TacticianAssessment | None = None
+    recipe_id: str | None = None
+    recipe_version: str | None = None
+    annotation: str | None = None
+    work_item: WorkItem | None = None
 
 
 @dataclass(frozen=True)
@@ -664,6 +738,17 @@ class WorkflowAdmissionDecisionResult:
 
     decision: WorkflowAdmissionDecision
     recipe: WorkflowRecipe | None
+
+
+@dataclass(frozen=True)
+class WorkflowAdmissionRunInspection:
+    """Typed history projection for admitted and pre-admission legacy Runs."""
+
+    run_id: str
+    state_path: Path
+    availability: Literal["available", "legacy", "unknown-recipe"]
+    record: WorkflowAdmissionRunRecord | None
+    limitation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -935,6 +1020,8 @@ def resume_run(
     command: ResumeRun,
     *,
     state_dir: str | Path = DEFAULT_STATE_DIR,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
     integration_runtime: IntegrationRuntime | None = None,
     on_node_event: EventCallback | None = None,
     on_token: EventCallback | None = None,
@@ -943,6 +1030,13 @@ def resume_run(
 ) -> RunOperationResult:
     """Load, resume through the canonical graph behavior, and save one run."""
     state = _load_run(command.run_id, state_dir)
+    if state.workflow_admission is not None:
+        _validate_admitted_resume(
+            state.workflow_admission,
+            current_evidence=command.current_admission_evidence,
+            policy=policy,
+            registry=registry,
+        )
     _validate_write_scope(state.write_scope, command.config.base_dir)
     actor = _resolve_human_actor(command.config.base_dir, command.actor_id)
     state, replayed, warning = _prepare_resume(state, command, actor)
@@ -1039,6 +1133,41 @@ def _publish_durable_outbound_events(
             continue
 
 
+def _validate_admitted_resume(
+    record: WorkflowAdmissionRunRecord,
+    *,
+    current_evidence: WorkflowAdmissionEvidence | None,
+    policy: WorkflowAdmissionPolicy,
+    registry: WorkflowRecipeRegistry,
+) -> WorkflowExecutionState:
+    """Translate persisted admission failures at the application boundary."""
+
+    try:
+        execution = validate_workflow_admission_resume(
+            record,
+            registry=registry,
+            policy=policy,
+            current_evidence=current_evidence,
+        )
+    except StalePersistedWorkflowAdmission as exc:
+        raise StaleWorkflowAdmission(str(exc)) from exc
+    except UnknownPersistedWorkflowRecipe as exc:
+        raise WorkflowAdmissionResumeRejected(str(exc)) from exc
+    except InconsistentPersistedWorkflowAdmission as exc:
+        raise WorkflowAdmissionResumeRejected(str(exc)) from exc
+    if execution.upgrade_target is not None:
+        target = execution.upgrade_target.value
+        raise WorkflowAdmissionResumeRejected(
+            f"the admitted workflow upgraded to {target!r}; its persisted continuation "
+            "requires recipe-specific stronger handling, not the v1 resume graph"
+        )
+    elif execution.recipe_id != "full-implementation-run":
+        raise WorkflowAdmissionResumeRejected(
+            "the persisted compact recipe cannot be resumed through the full-workflow graph"
+        )
+    return execution
+
+
 def inspect_run(
     query: InspectRun, *, state_dir: str | Path = DEFAULT_STATE_DIR
 ) -> RunInspection:
@@ -1051,6 +1180,43 @@ def inspect_run(
         state_path=state_path(query.run_id, state_dir),
         state=state,
         costs=summarize_costs(state.execution_record),
+    )
+
+
+def inspect_run_workflow_admission(
+    query: InspectRunWorkflowAdmission,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowAdmissionRunInspection:
+    """Expose durable admission and upgrade history without storage access."""
+
+    state = _load_run(query.run_id, state_dir)
+    path = state_path(query.run_id, state_dir)
+    record = state.workflow_admission
+    if record is None:
+        return WorkflowAdmissionRunInspection(
+            run_id=state.run_id,
+            state_path=path,
+            availability="legacy",
+            record=None,
+            limitation="Run predates durable workflow admission.",
+        )
+    try:
+        validate_persisted_workflow_recipes(record, registry=registry)
+    except UnknownPersistedWorkflowRecipe as exc:
+        return WorkflowAdmissionRunInspection(
+            run_id=state.run_id,
+            state_path=path,
+            availability="unknown-recipe",
+            record=record,
+            limitation=str(exc),
+        )
+    return WorkflowAdmissionRunInspection(
+        run_id=state.run_id,
+        state_path=path,
+        availability="available",
+        record=record,
     )
 
 
@@ -1243,6 +1409,129 @@ def upgrade_workflow_for_driver_result(
     )
 
 
+def record_admitted_workflow_stage(
+    command: RecordAdmittedWorkflowStage,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Apply one recipe stage transition and atomically save its evidence."""
+
+    return _persist_admitted_workflow_execution(
+        command.run_id,
+        state_dir=state_dir,
+        registry=registry,
+        transition=lambda execution: _record_workflow_stage(
+            execution, command.evidence, registry=registry
+        ),
+    )
+
+
+def record_admitted_workflow_completion(
+    command: RecordAdmittedWorkflowCompletion,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Apply one ordered completion transition and save its evidence."""
+
+    return _persist_admitted_workflow_execution(
+        command.run_id,
+        state_dir=state_dir,
+        registry=registry,
+        transition=lambda execution: _record_workflow_completion(
+            execution, command.evidence, registry=registry
+        ),
+    )
+
+
+def upgrade_admitted_workflow(
+    command: UpgradeAdmittedWorkflow,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Persist the first irreversible compact-to-stronger transition."""
+
+    return _persist_admitted_workflow_execution(
+        command.run_id,
+        state_dir=state_dir,
+        registry=registry,
+        transition=lambda execution: _upgrade_workflow_execution(
+            execution,
+            trigger=command.trigger,
+            reason=command.reason,
+            evidence_ids=command.evidence_ids,
+            registry=registry,
+        ),
+    )
+
+
+def upgrade_admitted_workflow_for_driver_result(
+    command: UpgradeAdmittedWorkflowForDriverResult,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Persist deterministic compact ratchet policy from a Driver result."""
+
+    return _persist_admitted_workflow_execution(
+        command.run_id,
+        state_dir=state_dir,
+        registry=registry,
+        transition=lambda execution: _upgrade_for_driver_result(
+            execution,
+            command.result,
+            evidence_ids=command.evidence_ids,
+            registry=registry,
+        ),
+    )
+
+
+def _persist_admitted_workflow_execution(
+    run_id: str,
+    *,
+    state_dir: str | Path,
+    registry: WorkflowRecipeRegistry,
+    transition: Callable[[WorkflowExecutionState], WorkflowExecutionState],
+) -> RunOperationResult:
+    """Load, validate, transition, and save one admission-owned execution record."""
+
+    state = _load_run(run_id, state_dir)
+    record = state.workflow_admission
+    if record is None:
+        raise WorkflowAdmissionRejected(
+            "legacy Run has no durable workflow admission to update"
+        )
+    recovery = assess_recovery(state)
+    if state.status is RunStatus.DONE or (
+        recovery is not None and recovery.disposition == "terminal"
+    ):
+        raise WorkflowAdmissionRejected(
+            "terminal Run admission and execution evidence is immutable"
+        )
+    try:
+        validate_persisted_workflow_recipes(record, registry=registry)
+    except UnknownPersistedWorkflowRecipe as exc:
+        raise WorkflowAdmissionRejected(str(exc)) from exc
+    execution = transition(record.execution)
+    updated_record = WorkflowAdmissionRunRecord.model_validate(
+        record.model_copy(update={"execution": execution}).model_dump()
+    )
+    updated_state = RunState.model_validate(
+        state.model_copy(update={"workflow_admission": updated_record}).model_dump()
+    )
+    path = state_path(run_id, state_dir)
+    save_state(updated_state, path)
+    return RunOperationResult(
+        run_id=updated_state.run_id,
+        run_alias=updated_state.run_alias,
+        state_version=updated_state.schema_version,
+        state_path=path,
+        state=updated_state,
+    )
+
+
 def assess_workflow_admission(
     command: AssessWorkflowAdmission,
     *,
@@ -1320,11 +1609,7 @@ def decide_workflow_admission(
     _clock: Callable[[], datetime] | None = None,
     _decision_id: str | None = None,
 ) -> WorkflowAdmissionDecisionResult:
-    """Authorize and record one human workflow choice without graph dispatch.
-
-    The operation is deliberately pre-execution. BTN-143 will persist its
-    immutable output alongside distinct assessment and Tactician evidence.
-    """
+    """Authorize and record one human workflow choice without graph dispatch."""
     assessment = _require_current_workflow_assessment(
         command.assessment, command.evidence, policy
     )
@@ -1360,6 +1645,84 @@ def decide_workflow_admission(
     except ValueError as exc:
         raise WorkflowAdmissionRejected(str(exc)) from exc
     return WorkflowAdmissionDecisionResult(decision=decision, recipe=recipe)
+
+
+def create_admitted_run(
+    command: CreateAdmittedRun,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    _clock: Callable[[], datetime] | None = None,
+    _decision_id: str | None = None,
+) -> RunOperationResult:
+    """Authorize, link, catalog, and persist an admitted Run before execution."""
+
+    decision_result = decide_workflow_admission(
+        DecideWorkflowAdmission(
+            project_root=command.config.base_dir,
+            assessment=command.assessment,
+            evidence=command.evidence,
+            disposition=command.disposition,
+            actor_id=command.actor_id,
+            tactician_assessment=command.tactician_assessment,
+            recipe_id=command.recipe_id,
+            recipe_version=command.recipe_version,
+            annotation=command.annotation,
+        ),
+        policy=policy,
+        registry=registry,
+        _clock=_clock,
+        _decision_id=_decision_id,
+    )
+    recipe = decision_result.recipe
+    if recipe is None:
+        raise WorkflowAdmissionRejected(
+            "clarification or cancellation does not create an executable Run"
+        )
+    initial = create_initial_state(
+        command.ticket_id,
+        command.spec,
+        command.config,
+        work_item=command.work_item,
+    )
+    first_stage = recipe.stages[0]
+    if first_stage is WorkflowStage.ARCHITECTURE:
+        initial_phase = "architect"
+    elif first_stage is WorkflowStage.DRIVER_RED:
+        initial_phase = "driver_red"
+    else:
+        raise WorkflowAdmissionRejected(
+            f"workflow recipe {recipe.recipe_id!r} starts at unsupported stage "
+            f"{first_stage.value!r}"
+        )
+    record = WorkflowAdmissionRunRecord(
+        assessment=command.assessment,
+        tactician_assessment=command.tactician_assessment,
+        decision=decision_result.decision,
+        execution=_start_workflow_execution(recipe),
+    )
+    state = RunState.model_validate(
+        initial.model_copy(
+            update={
+                "schema_version": "1.1",
+                "phase": initial_phase,
+                "workflow_admission": record,
+            }
+        ).model_dump()
+    )
+    path = state_path(state.run_id, state_dir)
+    if path.exists():
+        raise RunAlreadyExists(state.run_id, path)
+    _register_canonical_run(state, command.config, path)
+    save_state(state, path)
+    return RunOperationResult(
+        run_id=state.run_id,
+        run_alias=state.run_alias,
+        state_version=state.schema_version,
+        state_path=path,
+        state=state,
+    )
 
 
 def _require_current_workflow_assessment(
@@ -1661,6 +2024,8 @@ def start_worker(
     *,
     state_dir: str | Path = DEFAULT_STATE_DIR,
     worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
 ) -> WorkerRecord:
     """Start one isolated process without exposing process handles to clients."""
     operation = command.command
@@ -1690,6 +2055,13 @@ def start_worker(
 
     state_path(operation.run_id, state_dir)  # validate before using it as a filename
     state = _load_run(operation.run_id, state_dir)
+    if state.workflow_admission is not None:
+        _validate_admitted_resume(
+            state.workflow_admission,
+            current_evidence=operation.current_admission_evidence,
+            policy=policy,
+            registry=registry,
+        )
     _validate_write_scope(state.write_scope, operation.config.base_dir)
     actor = _resolve_human_actor(operation.config.base_dir, operation.actor_id)
     if not operation.resolution.strip():
@@ -1714,6 +2086,7 @@ def start_worker(
                 (prepared.resume_intent.action_id
                  if prepared.resume_intent and not prepared.resume_intent.completed else None)
             ),
+            resume_admission_evidence=operation.current_admission_evidence,
         )
     except _WorkerAlreadyActive as exc:
         raise WorkerAlreadyActive(str(exc)) from exc

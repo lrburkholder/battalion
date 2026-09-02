@@ -14,14 +14,35 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from battalion.tactician import TacticianAssessment
 from battalion.workflow_admission import (
+    AdmissionEvidenceSource,
+    WorkflowAdmissionEvidence,
+    WorkflowAdmissionPolicy,
     WorkflowAdmissionAssessment,
     WorkflowAdmissionOutcome,
+    assess_workflow_admission,
 )
 from battalion.workflow_admission_decisions import (
     WorkflowAdmissionDecision,
     WorkflowAdmissionDisposition,
 )
 from battalion.workflow_execution import WorkflowExecutionState
+from battalion.workflow_recipes import UnknownWorkflowRecipe, WorkflowRecipeRegistry
+
+
+class WorkflowAdmissionResumeError(ValueError):
+    """Base class for persisted admission state that cannot safely resume."""
+
+
+class UnknownPersistedWorkflowRecipe(WorkflowAdmissionResumeError):
+    """An exact historical recipe key is unavailable to the current runtime."""
+
+
+class StalePersistedWorkflowAdmission(WorkflowAdmissionResumeError):
+    """Current policy or evidence no longer matches the admitted snapshot."""
+
+
+class InconsistentPersistedWorkflowAdmission(WorkflowAdmissionResumeError):
+    """Persisted disposition and registered recipe semantics disagree."""
 
 
 class WorkflowAdmissionRunRecord(BaseModel):
@@ -69,6 +90,13 @@ class WorkflowAdmissionRunRecord(BaseModel):
         if tactician is None:
             if decision.tactician_assessment_id is not None:
                 raise ValueError("admission decision references missing Tactician evidence")
+            if (
+                assessment.outcome is WorkflowAdmissionOutcome.UNCERTAIN
+                and decision.disposition is WorkflowAdmissionDisposition.COMPACT
+            ):
+                raise ValueError(
+                    "uncertain compact admission requires retained Tactician evidence"
+                )
         else:
             if assessment.outcome is not WorkflowAdmissionOutcome.UNCERTAIN:
                 raise ValueError(
@@ -96,6 +124,22 @@ class WorkflowAdmissionRunRecord(BaseModel):
                 raise ValueError(
                     "Tactician evidence does not belong to the persisted assessment"
                 )
+            if not any(
+                reference.source is AdmissionEvidenceSource.WORK_ITEM
+                and reference.source_revision == assessment.work_item_revision
+                for reference in tactician.input_evidence_references
+            ):
+                raise ValueError(
+                    "Tactician evidence omits the assessed work-item revision"
+                )
+            if assessment.specification_revision is not None and not any(
+                reference.source is AdmissionEvidenceSource.SPECIFICATION
+                and reference.source_revision == assessment.specification_revision
+                for reference in tactician.input_evidence_references
+            ):
+                raise ValueError(
+                    "Tactician evidence omits the assessed specification revision"
+                )
 
         expected_risk_flags = set(assessment.hard_risk_flags)
         if tactician is not None:
@@ -116,3 +160,72 @@ class WorkflowAdmissionRunRecord(BaseModel):
         ):
             raise ValueError("full-required evidence cannot persist a compact admission")
         return self
+
+
+def validate_workflow_admission_resume(
+    record: WorkflowAdmissionRunRecord,
+    *,
+    registry: WorkflowRecipeRegistry,
+    policy: WorkflowAdmissionPolicy,
+    current_evidence: WorkflowAdmissionEvidence | None = None,
+) -> WorkflowExecutionState:
+    """Validate exact persisted semantics without re-running Tactician.
+
+    A process restart may resume directly from the retained record.  When the
+    caller has refreshed authoritative evidence, it may supply that snapshot;
+    any difference requires explicit re-admission or stronger handling.
+    """
+
+    execution = validate_persisted_workflow_recipes(record, registry=registry)
+    assessment = record.assessment
+    if (
+        assessment.policy_id != policy.policy_id
+        or assessment.policy_version != policy.policy_version
+    ):
+        raise StalePersistedWorkflowAdmission(
+            "persisted workflow admission uses a different policy version; "
+            "re-admission or stronger handling is required"
+        )
+    selected_recipe_id = record.decision.selected_recipe_id
+    if (
+        record.decision.disposition is WorkflowAdmissionDisposition.FULL
+        and selected_recipe_id != policy.full_recipe_id
+    ):
+        raise InconsistentPersistedWorkflowAdmission(
+            "persisted full admission does not select the policy's full recipe"
+        )
+    if (
+        record.decision.disposition is WorkflowAdmissionDisposition.COMPACT
+        and selected_recipe_id not in policy.compact_recipe_ids
+    ):
+        raise InconsistentPersistedWorkflowAdmission(
+            "persisted compact admission does not select a policy compact recipe"
+        )
+    if current_evidence is not None:
+        current = assess_workflow_admission(current_evidence, policy=policy)
+        if current != assessment:
+            raise StalePersistedWorkflowAdmission(
+                "current work-item, specification, or evidence no longer matches "
+                "the persisted admission; re-admission or stronger handling is required"
+            )
+    return execution
+
+
+def validate_persisted_workflow_recipes(
+    record: WorkflowAdmissionRunRecord,
+    *,
+    registry: WorkflowRecipeRegistry,
+) -> WorkflowExecutionState:
+    """Resolve every exact recipe key needed to interpret retained history."""
+
+    execution = record.execution
+    try:
+        registry.resolve(execution.recipe_id, execution.recipe_version)
+        if execution.continuation_recipe_id is not None:
+            registry.resolve(
+                execution.continuation_recipe_id,
+                execution.continuation_recipe_version or "",
+            )
+    except UnknownWorkflowRecipe as exc:
+        raise UnknownPersistedWorkflowRecipe(str(exc)) from exc
+    return execution

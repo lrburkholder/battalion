@@ -143,6 +143,16 @@ def test_unknown_admission_record_version_fails_closed() -> None:
         )
 
 
+def test_unknown_deterministic_assessment_version_fails_closed() -> None:
+    record = _admission_record()
+    assessment = {**record.assessment.model_dump(), "assessment_version": "9.0"}
+
+    with pytest.raises(ValidationError, match="assessment_version"):
+        WorkflowAdmissionRunRecord.model_validate(
+            {**record.model_dump(), "assessment": assessment}
+        )
+
+
 def test_missing_referenced_assessment_fails_closed() -> None:
     record = _admission_record()
     rewritten = record.decision.model_copy(

@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from enum import Enum
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -191,6 +191,7 @@ class WorkflowAdmissionAssessment(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
+    assessment_version: Literal["1.0"] = "1.0"
     assessment_id: str = Field(min_length=1, max_length=100)
     work_item_revision: str = Field(min_length=1, max_length=1_000)
     specification_revision: str | None = Field(default=None, min_length=1, max_length=1_000)
@@ -324,6 +325,7 @@ def _assessment_identity(
     """Return a stable identity for identical evidence and policy inputs."""
 
     payload = {
+        "assessment_version": "1.0",
         "evidence": evidence.model_dump(mode="python"),
         "policy": policy.model_dump(mode="python"),
     }
