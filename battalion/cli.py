@@ -10,16 +10,31 @@ from typing import Iterator, TextIO
 from uuid import UUID
 
 import typer
+from pydantic import ValidationError
 
+from battalion.admission_presentation import (
+    render_workflow_admission,
+    render_workflow_admission_history,
+    workflow_admission_payload,
+)
 from battalion.disclosure import DATA_HANDLING_URL
 from battalion.application import (
     ApplicationError,
+    AssessWorkflowAdmission,
+    CreateAdmittedRun,
+    DecideWorkflowAdmission,
     InspectRun,
+    InspectWorkflowAdmission,
     ResumeRun,
     RunAlreadyExists,
     StartRun,
+    WorkflowAdmissionRunInspection,
+    assess_workflow_admission,
+    create_admitted_run,
     create_initial_state,
+    decide_workflow_admission,
     inspect_run,
+    inspect_workflow_admission,
     resume_run,
     start_run,
     state_path,
@@ -45,6 +60,9 @@ from battalion.setup import (
     ProviderNotDetected,
     run_setup,
 )
+from battalion.tactician import TacticianAssessment
+from battalion.workflow_admission import WorkflowAdmissionEvidence
+from battalion.workflow_admission_decisions import WorkflowAdmissionDisposition
 
 TROUBLESHOOTING_URL = "https://lrburkholder.github.io/battalion/docs/troubleshooting.html"
 INTERRUPT_GUIDES = {
@@ -104,6 +122,7 @@ def _print_status(
     human: bool = False,
     costs: bool = False,
     cost_summary: dict[str, object] | None = None,
+    workflow_admission: WorkflowAdmissionRunInspection | None = None,
 ) -> None:
     """Print run status as JSON or human-readable."""
     if human:
@@ -142,6 +161,8 @@ def _print_status(
                     f"  {execution.phase}: {result.kind.value}"
                     + (f" ({detail})" if detail else "")
                 )
+        if workflow_admission is not None:
+            typer.echo("\n" + render_workflow_admission_history(workflow_admission))
         if costs:
             summary = cost_summary or {}
             typer.echo("\nLLM costs:")
@@ -240,6 +261,142 @@ def _load_spec_text(spec_path: str) -> str:
         return path.read_text(encoding="utf-8")
     # If not a file, treat as literal spec text
     return spec_path
+
+
+def _load_admission_evidence(path: Path) -> WorkflowAdmissionEvidence:
+    return WorkflowAdmissionEvidence.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _load_tactician_assessment(path: Path | None) -> TacticianAssessment | None:
+    if path is None:
+        return None
+    return TacticianAssessment.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+@app.command()
+def admit(
+    ticket_id: str = typer.Argument(..., help="Ticket ID for an admitted Run"),
+    spec: str = typer.Option(..., "--spec", "-s", help="Path to spec file or spec text"),
+    evidence: Path = typer.Option(
+        ..., "--evidence", exists=True, dir_okay=False, readable=True,
+        help="WorkflowAdmissionEvidence JSON file",
+    ),
+    tactician_assessment: Path | None = typer.Option(
+        None, "--tactician-assessment", exists=True, dir_okay=False, readable=True,
+        help="Optional advisory TacticianAssessment JSON file",
+    ),
+    decision: WorkflowAdmissionDisposition | None = typer.Option(
+        None,
+        "--decision",
+        help="Authorized choice: full, compact, clarification, or cancelled",
+    ),
+    annotation: str | None = typer.Option(
+        None,
+        "--annotation",
+        help="Human rationale, including any disagreement with Tactician",
+    ),
+    actor_id: UUID | None = typer.Option(
+        None, "--actor-id", help="Durable Actor ID; defaults to the local human Actor",
+    ),
+    config: str | None = typer.Option(
+        None, "--config", "-c", help="Path to battalion.config.yaml",
+    ),
+    base_dir: str = typer.Option(".", "--base-dir", help="Project root"),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit stable JSON and never prompt for a decision",
+    ),
+):
+    """Inspect admission evidence and optionally record an authorized decision.
+
+    Omitting ``--decision`` is read-only in both human and JSON modes. This is
+    deliberate for scripts: Battalion never turns absent input into approval.
+    """
+
+    try:
+        cfg = load_config(config, {"base_dir": base_dir})
+        supplied_evidence = _load_admission_evidence(evidence)
+        supplied_tactician = _load_tactician_assessment(tactician_assessment)
+        assessment = assess_workflow_admission(
+            AssessWorkflowAdmission(evidence=supplied_evidence)
+        )
+        inspection = inspect_workflow_admission(
+            InspectWorkflowAdmission(
+                assessment=assessment,
+                evidence=supplied_evidence,
+                tactician_assessment=supplied_tactician,
+            )
+        )
+        output: dict[str, object] = {
+            "inspection": workflow_admission_payload(inspection),
+            "decision": None,
+            "run": None,
+        }
+        if decision is not None:
+            if decision in {
+                WorkflowAdmissionDisposition.FULL,
+                WorkflowAdmissionDisposition.COMPACT,
+            }:
+                result = create_admitted_run(
+                    CreateAdmittedRun(
+                        ticket_id=ticket_id,
+                        spec=_load_spec_text(spec),
+                        config=cfg,
+                        assessment=assessment,
+                        evidence=supplied_evidence,
+                        disposition=decision,
+                        actor_id=actor_id,
+                        tactician_assessment=supplied_tactician,
+                        annotation=annotation,
+                    ),
+                    state_dir=STATE_DIR,
+                )
+                assert result.state.workflow_admission is not None
+                output["decision"] = result.state.workflow_admission.decision.model_dump(
+                    mode="json"
+                )
+                output["run"] = {
+                    "run_id": result.run_id,
+                    "run_alias": result.run_alias,
+                    "state_version": result.state_version,
+                    "state_path": str(result.state_path),
+                }
+            else:
+                result = decide_workflow_admission(
+                    DecideWorkflowAdmission(
+                        project_root=cfg.base_dir,
+                        assessment=assessment,
+                        evidence=supplied_evidence,
+                        disposition=decision,
+                        actor_id=actor_id,
+                        tactician_assessment=supplied_tactician,
+                        annotation=annotation,
+                    )
+                )
+                output["decision"] = result.decision.model_dump(mode="json")
+    except (ApplicationError, OSError, ValidationError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"error": {"message": str(exc)}}), err=True)
+        else:
+            typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if json_output:
+        typer.echo(json.dumps(output, indent=2))
+        return
+    typer.echo(render_workflow_admission(inspection))
+    if decision is None:
+        typer.echo("\nNo decision recorded. Use --decision to authorize an action.")
+    elif output["run"] is None:
+        typer.echo(
+            f"\nDecision authorized: {decision.value}; no executable Run created."
+        )
+    else:
+        run = output["run"]
+        assert isinstance(run, dict)
+        typer.echo(
+            f"\nDecision recorded: {decision.value}; created Run {run['run_id']} "
+            f"at {run['state_path']}."
+        )
 
 
 @app.command()
@@ -390,6 +547,7 @@ def status(
         human=human,
         costs=costs,
         cost_summary=result.costs,
+        workflow_admission=result.workflow_admission,
     )
 
 

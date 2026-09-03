@@ -71,6 +71,15 @@ from battalion.state.models import (
     TestExecutionEvidence as ExecutionTestEvidence,
     TestOutcome as ExecutionTestOutcome,
 )
+from battalion.workflow_admission import (
+    AdmissionEvidenceCondition,
+    AdmissionEvidenceReference,
+    AdmissionEvidenceSource,
+    CompactAdmissionEvidence,
+    HardRiskFlag,
+    WorkflowAdmissionEvidence,
+)
+from battalion.workflow_admission_decisions import WorkflowAdmissionDisposition
 from battalion.workers import WorkerRecord, WorkerStatus, _write_record
 
 
@@ -277,6 +286,7 @@ class StubController(DesktopController):
         self.resumes = []
         self.interventions = []
         self.reviews = []
+        self.admissions = []
 
     def refresh(self) -> None:
         self.refresh_count += 1
@@ -293,6 +303,40 @@ class StubController(DesktopController):
 
     def review_candidate(self, candidate_id, action, edits=None):
         self.reviews.append((candidate_id, action, edits))
+
+    def submit_admission_decision(self, session, disposition, annotation=None):
+        self.admissions.append((session, disposition, annotation))
+
+
+def _workflow_admission_evidence(
+    *,
+    compact: bool = False,
+    hard_risk: str | None = None,
+) -> WorkflowAdmissionEvidence:
+    references = [AdmissionEvidenceReference(
+        evidence_id="work-item:BTN-144",
+        source=AdmissionEvidenceSource.WORK_ITEM,
+        source_revision="BTN-144@1",
+        condition=AdmissionEvidenceCondition.PRESENT,
+        authoritative=True,
+        hard_risk_flags=frozenset((hard_risk,)) if hard_risk else frozenset(),
+    )]
+    if compact:
+        references.extend(
+            AdmissionEvidenceReference(
+                evidence_id=f"evidence:{fact.value}",
+                source=AdmissionEvidenceSource.REPOSITORY,
+                source_revision="repository@1",
+                condition=AdmissionEvidenceCondition.PRESENT,
+                authoritative=True,
+                establishes=frozenset((fact,)),
+            )
+            for fact in CompactAdmissionEvidence
+        )
+    return WorkflowAdmissionEvidence(
+        work_item_revision="BTN-144@1",
+        evidence_references=tuple(references),
+    )
 
 
 def test_execution_inspector_exposes_provenance_verification_and_cost_semantics():
@@ -380,8 +424,8 @@ def test_window_presents_work_history_and_human_action_surfaces(qt_app, tmp_path
 
     window.render_snapshot(_project(active, done), IntelInspection((), ()))
 
-    assert [window.navigation.item(index).text() for index in range(3)] == [
-        "Work", "History", "Intel"
+    assert [window.navigation.item(index).text() for index in range(4)] == [
+        "Work", "Admission", "History", "Intel"
     ]
     assert window.work_tree.topLevelItem(0).childCount() == 1
     assert window.history_tree.topLevelItem(0).childCount() == 1
@@ -398,7 +442,8 @@ def test_window_presents_work_history_and_human_action_surfaces(qt_app, tmp_path
     button_text = {button.text() for button in window.findChildren(QPushButton)}
     assert button_text == {
         "Resolve and resume", "Queue for next attempt", "Promote",
-        "Edit and promote", "Reject",
+        "Edit and promote", "Reject", "Inspect admission", "Use compact",
+        "Use full", "Clarify", "Cancel",
     }
     window.close()
 
@@ -442,6 +487,82 @@ def test_work_actions_are_exact_targeted_and_resume_only_paused_runs(qt_app, tmp
     assert controller.interventions[0][0] == "paused"
     assert controller.interventions[0][2] == "architect"
     window.close()
+
+
+def test_admission_surface_uses_shared_three_outcome_contract_and_human_override(
+    qt_app, tmp_path
+):
+    controller = StubController(tmp_path)
+    window = BattalionWindow(tmp_path, controller=controller, autoload=False)
+    scenarios = (
+        (_workflow_admission_evidence(compact=True), "compact-admissible", True),
+        (
+            _workflow_admission_evidence(
+                compact=True,
+                hard_risk=HardRiskFlag.AUTHORIZATION_SECRETS_PRIVACY_SECURITY.value,
+            ),
+            "full-required",
+            False,
+        ),
+        (_workflow_admission_evidence(), "uncertain", False),
+    )
+
+    for evidence, outcome, compact_enabled in scenarios:
+        session = controller.prepare_admission(
+            "BTN-144", "Present workflow admission.", evidence
+        )
+        window.render_admission(session)
+        assert f"Outcome: {outcome}" in window.admission_inspector.toPlainText()
+        assert window.admission_buttons[
+            WorkflowAdmissionDisposition.COMPACT
+        ].isEnabled() is compact_enabled
+        assert window.admission_buttons[WorkflowAdmissionDisposition.FULL].isEnabled()
+        assert window.admission_buttons[
+            WorkflowAdmissionDisposition.CLARIFICATION
+        ].isEnabled()
+        assert window.admission_buttons[
+            WorkflowAdmissionDisposition.CANCELLED
+        ].isEnabled()
+
+    compact_session = controller.prepare_admission(
+        "BTN-144", "Present workflow admission.", _workflow_admission_evidence(compact=True)
+    )
+    window.render_admission(compact_session)
+    window.admission_annotation.setText(
+        "Use full despite compact eligibility because the operator prefers more assurance."
+    )
+    window.admission_buttons[WorkflowAdmissionDisposition.FULL].click()
+
+    assert controller.admissions == [(
+        compact_session,
+        WorkflowAdmissionDisposition.FULL,
+        "Use full despite compact eligibility because the operator prefers more assurance.",
+    )]
+    window.close()
+
+
+def test_desktop_admission_decision_uses_application_owned_persistence(tmp_path) -> None:
+    controller = DesktopController(tmp_path)
+    session = controller.prepare_admission(
+        "BTN-144",
+        "Present workflow admission.",
+        _workflow_admission_evidence(compact=True),
+    )
+
+    result = controller.decide_admission(
+        session,
+        WorkflowAdmissionDisposition.FULL,
+        "The human selected the stronger workflow.",
+    )
+
+    assert result.state.workflow_admission is not None
+    assert result.state.workflow_admission.decision.disposition is (
+        WorkflowAdmissionDisposition.FULL
+    )
+    assert result.state.workflow_admission.decision.annotation == (
+        "The human selected the stronger workflow."
+    )
+    assert result.state_path.exists()
 
 
 def test_pending_candidate_actions_use_canonical_review_intents(qt_app, tmp_path):
@@ -530,6 +651,13 @@ def test_every_primary_surface_has_an_accessible_name(qt_app, tmp_path):
         window.history_tree,
         window.history_executions,
         window.history_inspector,
+        window.admission_ticket,
+        window.admission_spec,
+        window.admission_evidence,
+        window.admission_tactician,
+        window.admission_inspector,
+        window.admission_annotation,
+        window.load_admission_button,
         window.intel_tree,
         window.intel_inspector,
         window.view_state,
@@ -552,11 +680,14 @@ def test_keyboard_navigation_reaches_every_destination(qt_app, tmp_path):
     window.navigation.setCurrentRow(0)
 
     QTest.keyClick(window.navigation, Qt.Key.Key_Down)
-    assert window.navigation.currentItem().text() == "History"
+    assert window.navigation.currentItem().text() == "Admission"
     assert window.pages.currentIndex() == 1
     QTest.keyClick(window.navigation, Qt.Key.Key_Down)
-    assert window.navigation.currentItem().text() == "Intel"
+    assert window.navigation.currentItem().text() == "History"
     assert window.pages.currentIndex() == 2
+    QTest.keyClick(window.navigation, Qt.Key.Key_Down)
+    assert window.navigation.currentItem().text() == "Intel"
+    assert window.pages.currentIndex() == 3
 
     window.close()
 

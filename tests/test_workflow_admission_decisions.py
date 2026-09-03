@@ -7,6 +7,10 @@ from uuid import uuid4
 
 import pytest
 
+from battalion.admission_presentation import (
+    render_workflow_admission,
+    workflow_admission_payload,
+)
 from battalion.application import (
     DecideWorkflowAdmission,
     HumanActionRejected,
@@ -299,3 +303,39 @@ def test_inspection_exposes_only_valid_choices_and_keeps_tactician_separate(tmp_
         WorkflowAdmissionDisposition.CLARIFICATION,
         WorkflowAdmissionDisposition.CANCELLED,
     )
+    assert [
+        (recipe.recipe_id, recipe.recipe_version)
+        for recipe in inspection.available_recipes
+    ] == [
+        ("compact-implementation-run", "1.0"),
+        ("full-implementation-run", "1.0"),
+    ]
+    assert [stage.value for stage in inspection.available_recipes[0].stages] == [
+        "driver-red",
+        "driver-green",
+        "review-green",
+    ]
+
+    payload = workflow_admission_payload(inspection)
+    assert payload["assessment"]["outcome"] == "uncertain"
+    assert payload["tactician_assessment"]["assessment_id"] == tactician.assessment_id
+    assert payload["available_actions"] == [
+        "full",
+        "compact",
+        "clarification",
+        "cancelled",
+    ]
+    assert payload["recipes"][0]["omitted_full_stages"] == [
+        "architecture",
+        "review-red",
+        "refactor",
+        "review-refactor",
+    ]
+
+    rendered = render_workflow_admission(inspection)
+    assert "GOVERNING EVIDENCE" in rendered
+    assert "TACTICIAN ASSESSMENT (ADVISORY)" in rendered
+    assert "AVAILABLE HUMAN ACTIONS" in rendered
+    assert "Runs: driver-red, driver-green, review-green" in rendered
+    assert "Assurance gates: authorization" in rendered
+    assert "chain-of-thought" not in rendered

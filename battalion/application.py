@@ -671,6 +671,7 @@ class RunInspection:
     state_path: Path
     state: RunState
     costs: dict[str, object]
+    workflow_admission: WorkflowAdmissionRunInspection | None = None
 
     @property
     def recovery(self) -> RecoveryAssessment | None:
@@ -729,6 +730,7 @@ class WorkflowAdmissionInspection:
     assessment: WorkflowAdmissionAssessment
     tactician_assessment: TacticianAssessment | None
     available_dispositions: tuple[WorkflowAdmissionDisposition, ...]
+    available_recipes: tuple[WorkflowRecipe, ...]
     compact_unavailable_reason: str | None = None
 
 
@@ -1173,13 +1175,17 @@ def inspect_run(
 ) -> RunInspection:
     """Load authoritative state and derive its current cost projection."""
     state = _load_run(query.run_id, state_dir)
+    path = state_path(query.run_id, state_dir)
     return RunInspection(
         run_id=state.run_id,
         run_alias=state.run_alias,
         state_version=state.schema_version,
-        state_path=state_path(query.run_id, state_dir),
+        state_path=path,
         state=state,
         costs=summarize_costs(state.execution_record),
+        workflow_admission=_workflow_admission_run_inspection(
+            state, path, registry=DEFAULT_WORKFLOW_RECIPE_REGISTRY
+        ),
     )
 
 
@@ -1193,6 +1199,17 @@ def inspect_run_workflow_admission(
 
     state = _load_run(query.run_id, state_dir)
     path = state_path(query.run_id, state_dir)
+    return _workflow_admission_run_inspection(state, path, registry=registry)
+
+
+def _workflow_admission_run_inspection(
+    state: RunState,
+    path: Path,
+    *,
+    registry: WorkflowRecipeRegistry,
+) -> WorkflowAdmissionRunInspection:
+    """Build the shared durable admission projection from validated state."""
+
     record = state.workflow_admission
     if record is None:
         return WorkflowAdmissionRunInspection(
@@ -1230,9 +1247,7 @@ def inspect_project(query: InspectProject) -> ProjectInspection:
         raise ProjectReadFailed(root, exc) from exc
 
     entries = _discover_desktop_runs(root, catalog)
-    runs = tuple(
-        _inspect_catalog_entry(root, entry, identity) for entry in entries
-    )
+    runs = tuple(_inspect_catalog_entry(root, entry, identity) for entry in entries)
     return ProjectInspection(project_root=root, identity=identity, runs=runs)
 
 
@@ -1579,6 +1594,7 @@ def inspect_workflow_admission(
     query: InspectWorkflowAdmission,
     *,
     policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
 ) -> WorkflowAdmissionInspection:
     """Inspect the current human decision surface without authorizing a choice."""
     assessment = _require_current_workflow_assessment(
@@ -1593,10 +1609,19 @@ def inspect_workflow_admission(
     ]
     if compact_reason is None:
         choices.insert(1, WorkflowAdmissionDisposition.COMPACT)
+    recipe_ids = [policy.full_recipe_id]
+    if WorkflowAdmissionDisposition.COMPACT in choices:
+        recipe_ids = [*policy.compact_recipe_ids, *recipe_ids]
+    recipes = tuple(
+        recipe
+        for recipe_id in recipe_ids
+        for recipe in registry.versions(recipe_id)
+    )
     return WorkflowAdmissionInspection(
         assessment=assessment,
         tactician_assessment=query.tactician_assessment,
         available_dispositions=tuple(choices),
+        available_recipes=recipes,
         compact_unavailable_reason=compact_reason,
     )
 
@@ -2265,7 +2290,11 @@ def _load_run(run_id: str, state_dir: str | Path) -> RunState:
 
 
 def _inspect_catalog_entry(
-    project_root: Path, entry: RunCatalogEntry, identity: ProjectIdentity
+    project_root: Path,
+    entry: RunCatalogEntry,
+    identity: ProjectIdentity,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
 ) -> ProjectRunInspection:
     path = Path(entry.state_path)
     if not path.is_absolute():
@@ -2312,6 +2341,9 @@ def _inspect_catalog_entry(
             state_path=path,
             state=state,
             costs=summarize_costs(state.execution_record),
+            workflow_admission=_workflow_admission_run_inspection(
+                state, path, registry=registry
+            ),
         ),
     )
 
