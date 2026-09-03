@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID
@@ -11,8 +12,12 @@ from PySide6.QtCore import QObject, QThreadPool, Signal
 
 from battalion.application import (
     ApplicationError,
+    AssessWorkflowAdmission,
+    CreateAdmittedRun,
+    DecideWorkflowAdmission,
     InspectIntel,
     InspectProject,
+    InspectWorkflowAdmission,
     IntelInspection,
     ProjectInspection,
     ReconnectObservation,
@@ -20,10 +25,17 @@ from battalion.application import (
     QueueIntervention,
     ResumeRun,
     ReviewCandidate,
+    RunOperationResult,
     StartWorker,
     WorkerNotFound,
+    WorkflowAdmissionDecisionResult,
+    WorkflowAdmissionInspection,
+    assess_workflow_admission,
+    create_admitted_run,
+    decide_workflow_admission,
     inspect_intel,
     inspect_project,
+    inspect_workflow_admission,
     queue_intervention,
     reconnect_observation,
     reconnect_worker,
@@ -34,6 +46,12 @@ from battalion.config import load_config
 from battalion.intel.review import ReviewAction
 from battalion.observation import ObservationCursor, ObservationEvent, ObservationSource
 from battalion.state.models import InterventionKind, InterventionTarget
+from battalion.tactician import TacticianAssessment
+from battalion.workflow_admission import (
+    WorkflowAdmissionAssessment,
+    WorkflowAdmissionEvidence,
+)
+from battalion.workflow_admission_decisions import WorkflowAdmissionDisposition
 from battalion.workers import WorkerRecord
 
 
@@ -41,6 +59,18 @@ class DesktopObservationSource(ObservationSource, Protocol):
     """Observation transport capability consumed by the desktop client."""
 
     def after(self, cursor: ObservationCursor) -> tuple[ObservationEvent, ...]: ...
+
+
+@dataclass(frozen=True)
+class DesktopAdmissionSession:
+    """One immutable desktop view of current pre-admission evidence."""
+
+    ticket_id: str
+    spec: str
+    evidence: WorkflowAdmissionEvidence
+    assessment: WorkflowAdmissionAssessment
+    tactician_assessment: TacticianAssessment | None
+    inspection: WorkflowAdmissionInspection
 
 
 class DesktopController(QObject):
@@ -53,6 +83,7 @@ class DesktopController(QObject):
     live_observation = Signal(object)
     action_completed = Signal(str)
     action_failed = Signal(str)
+    admission_ready = Signal(object)
 
     def __init__(
         self,
@@ -131,6 +162,134 @@ class DesktopController(QObject):
             path if path.exists() else None,
             {"base_dir": str(self.project_root)},
         )
+
+    def prepare_admission(
+        self,
+        ticket_id: str,
+        spec: str,
+        evidence: WorkflowAdmissionEvidence,
+        tactician_assessment: TacticianAssessment | None = None,
+    ) -> DesktopAdmissionSession:
+        """Build the same application-owned decision surface used by CLI."""
+
+        assessment = assess_workflow_admission(
+            AssessWorkflowAdmission(evidence=evidence)
+        )
+        inspection = inspect_workflow_admission(
+            InspectWorkflowAdmission(
+                assessment=assessment,
+                evidence=evidence,
+                tactician_assessment=tactician_assessment,
+            )
+        )
+        return DesktopAdmissionSession(
+            ticket_id=ticket_id,
+            spec=spec,
+            evidence=evidence,
+            assessment=assessment,
+            tactician_assessment=tactician_assessment,
+            inspection=inspection,
+        )
+
+    def load_admission_files(
+        self,
+        ticket_id: str,
+        spec_or_path: str,
+        evidence_path: str,
+        tactician_path: str | None = None,
+    ) -> None:
+        """Load bounded JSON inputs off the UI thread and emit one typed session."""
+
+        self.loading.emit()
+
+        def query() -> None:
+            try:
+                spec_path = Path(spec_or_path)
+                spec = (
+                    spec_path.read_text(encoding="utf-8")
+                    if spec_path.exists()
+                    else spec_or_path
+                )
+                evidence = WorkflowAdmissionEvidence.model_validate_json(
+                    Path(evidence_path).read_text(encoding="utf-8")
+                )
+                tactician = (
+                    TacticianAssessment.model_validate_json(
+                        Path(tactician_path).read_text(encoding="utf-8")
+                    )
+                    if tactician_path
+                    else None
+                )
+                session = self.prepare_admission(ticket_id, spec, evidence, tactician)
+            except (ApplicationError, OSError, TypeError, ValueError) as exc:
+                self.action_failed.emit(str(exc))
+                return
+            self.admission_ready.emit(session)
+
+        self.thread_pool.start(query)
+
+    def decide_admission(
+        self,
+        session: DesktopAdmissionSession,
+        disposition: WorkflowAdmissionDisposition,
+        annotation: str | None = None,
+    ) -> WorkflowAdmissionDecisionResult | RunOperationResult:
+        """Apply one authorized choice through the shared application boundary."""
+
+        common = {
+            "assessment": session.assessment,
+            "evidence": session.evidence,
+            "disposition": disposition,
+            "tactician_assessment": session.tactician_assessment,
+            "annotation": annotation,
+        }
+        if disposition in {
+            WorkflowAdmissionDisposition.FULL,
+            WorkflowAdmissionDisposition.COMPACT,
+        }:
+            return create_admitted_run(
+                CreateAdmittedRun(
+                    ticket_id=session.ticket_id,
+                    spec=session.spec,
+                    config=self._config(),
+                    **common,
+                ),
+                state_dir=self.project_root / ".battalion" / "state",
+            )
+        return decide_workflow_admission(
+            DecideWorkflowAdmission(project_root=self.project_root, **common)
+        )
+
+    def submit_admission_decision(
+        self,
+        session: DesktopAdmissionSession,
+        disposition: WorkflowAdmissionDisposition,
+        annotation: str | None = None,
+    ) -> None:
+        """Record a desktop decision without blocking Qt's event loop."""
+
+        def command() -> None:
+            try:
+                result = self.decide_admission(session, disposition, annotation)
+            except (ApplicationError, OSError, TypeError, ValueError) as exc:
+                self.action_failed.emit(str(exc))
+                return
+            if isinstance(result, WorkflowAdmissionDecisionResult):
+                decision = result.decision
+            else:
+                record = result.state.workflow_admission
+                assert record is not None
+                decision = record.decision
+            self.action_completed.emit(
+                f"Workflow admission {decision.disposition.value} authorized"
+            )
+            if decision.disposition in {
+                WorkflowAdmissionDisposition.FULL,
+                WorkflowAdmissionDisposition.COMPACT,
+            }:
+                self.refresh()
+
+        self.thread_pool.start(command)
 
     def resolve_and_resume(self, run_id: str, resolution: str) -> None:
         """Resolve and resume through the same worker/application path as CLI."""

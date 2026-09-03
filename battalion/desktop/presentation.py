@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from decimal import Decimal
 
 from battalion.actors import format_actor_attribution
+from battalion.admission_presentation import render_workflow_admission_history
 from battalion.application import IntelInspection, ProjectRunInspection, RunInspection
 from battalion.intel.models import AcceptedInstinct, CandidateInstinct
 from battalion.state.models import LLMCallCost, NodeExecution, RunStatus
@@ -99,6 +100,8 @@ def render_run(run: ProjectRunInspection, worker: WorkerRecord | None = None) ->
             f"{item.resulting_status.value}/{item.resulting_phase}"
             for item in state.human_action_log
         )
+    if inspection.workflow_admission is not None:
+        lines.extend(("", render_workflow_admission_history(inspection.workflow_admission)))
     return "\n".join(lines)
 
 

@@ -44,6 +44,7 @@ status states whether it is part of the shipped system.
 | [ADR-0036](adr0036.md) | Keep human workflow admission separate from evidence and execution | Accepted | BTN-141 |
 | [ADR-0037](adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion | Accepted | BTN-142 |
 | [ADR-0038](adr0038.md) | Gate Driver on a revision-pinned artifact-target contract | Proposed | BTN-193 architecture; runtime deferred |
+| [ADR-0039](adr0039.md) | Persist exact workflow admission separately from execution history | Accepted | BTN-143 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique
