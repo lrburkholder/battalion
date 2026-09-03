@@ -8,8 +8,11 @@ implementation here does not imply delivery on `main` or a published release.
 BTN-193 accepts a revision-pinned artifact-target handoff that keeps
 `plan.md` explanatory, gates Driver on exact validated target evidence, and
 preserves write scope and human authority. ADR-0038 records the accepted
-architecture; runtime delivery builds on BTN-143 and BTN-144 and still requires
-BTN-129 evidence plus a separately scoped implementation ticket.
+architecture. Runtime delivery is decomposed into typed contracts and Architect
+handoff (BTN-194), persistence/application/graph enforcement (BTN-195), shared
+CLI/desktop presentation (BTN-196), and credential-free enforcement-path
+acceptance (BTN-197). It builds on BTN-143 and BTN-144; BTN-129 retains the live
+CLI evidence.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 
