@@ -77,7 +77,7 @@ Reviewer
 
 Battalion can interrupt this flow when something requires human attention. The Run is saved so it can be inspected and, when safe, resumed.
 
-Not every task needs the full workflow. Battalion also has compact workflow recipes for work that does not justify every role. Workflow admission can use deterministic evidence, Tactician assessment, and human decisions to select the appropriate path. The selected evidence, decision, exact recipe, and later upgrades are durable across restart; CLI/desktop presentation remains BTN-144.
+Not every task needs the full workflow. Battalion also has compact workflow recipes for work that does not justify every role. Workflow admission uses deterministic evidence, optional Tactician assessment, and an explicit human decision to select the appropriate path. The CLI and desktop show governing evidence separately from model advice, expose only valid actions, and retain the selected recipe and later upgrades in Run history.
 
 ## Human Control
 
@@ -194,6 +194,23 @@ Run `battalion <command> --help` for current CLI options. `python -m battalion <
 
 Raw streamed reasoning and token text can be exported with `--trace-output`. This is opt-in, local, and may contain sensitive provider text. Read [raw traces and sharing](docs/data-handling.md#traces) before enabling it.
 
+To inspect workflow admission before creating a Run, supply a validated
+`WorkflowAdmissionEvidence` JSON document:
+
+```powershell
+battalion admit BTN-123 --spec ticket.md --evidence admission-evidence.json
+battalion admit BTN-123 --spec ticket.md --evidence admission-evidence.json --decision full
+battalion admit BTN-123 --spec ticket.md --evidence admission-evidence.json --json
+```
+
+The first command is read-only. `--decision` explicitly records `full`,
+`compact`, `clarification`, or `cancelled`; full remains available whenever
+compact is offered. Use `--tactician-assessment` to display a validated advisory
+assessment and `--annotation` to record human rationale or disagreement. JSON
+mode never prompts or treats omitted input as approval. Full or compact creates
+a durable admitted Run; clarification and cancellation return an authorized
+decision record in command output without creating an executable Run.
+
 ## Desktop Application
 
 Battalion also includes a PySide6 desktop client:
@@ -202,7 +219,7 @@ Battalion also includes a PySide6 desktop client:
 battalion-desktop --project .
 ```
 
-The desktop application provides views for current work, Run history, execution evidence, accepted Intel, Recon candidates, and human interrupts. It can resolve supported interrupts, resume Runs, review Recon candidates, and queue supported corrections or design decisions for a role's next attempt.
+The desktop application provides views for current work, workflow admission, Run history, execution evidence, accepted Intel, Recon candidates, and human interrupts. Its Admission destination accepts the same validated evidence contracts as the CLI, separates deterministic reasons from advisory Tactician evidence, disables invalid compact choices, and provides keyboard-accessible full, compact, clarify, and cancel actions. It can also resolve supported interrupts, resume Runs, review Recon candidates, and queue supported corrections or design decisions for a role's next attempt.
 
 The desktop client and execution worker are packaged separately so the UI does not need to include the full LangGraph/LiteLLM runtime.
 
@@ -268,7 +285,7 @@ Major remaining or future work includes:
 - **Inference policy:** endpoint-aware inference identity and zero-cost policy (BTN-52–55; RFC-0005 / ADR-0024).
 - **Actors:** capability enforcement, assignment/ownership, and authentication (BTN-60–62; RFC-0007 / ADR-0026).
 - **Integrations:** operation policy and health, email/push adapters, and MCP transport (BTN-68–69, BTN-76–78).
-- **Workflow admission:** CLI/desktop presentation (BTN-144), plus separate Review Run and recipe-dispatch work.
+- **Workflow execution:** separate Review Run and recipe-dispatch work following the shipped CLI/desktop admission surface.
 - **Future RFCs:** Specifier (BTN-45), plugin architecture (BTN-46), severity-based review and possible Guardian role (BTN-47), bounded self-modification (BTN-48), and pluggable repository quality gates (BTN-49).
 
 Draft future briefs live under `docs/future/`. They do not change Battalion's current roles or authority until their RFCs are accepted.
@@ -283,6 +300,7 @@ The main implementation areas are:
 |---|---|
 | `battalion.state` | Versioned Run state and local persistence |
 | `battalion.application` | Shared typed boundary used by CLI and desktop clients |
+| `battalion.admission_presentation` | Shared admission and upgrade-history projections for operator clients |
 | `battalion.actors` | Human/system Actor identity and project-local persistence |
 | `battalion.identity` | Run/project identity and catalogs |
 | `battalion.workers` | Detached per-Run execution and reconnect support |

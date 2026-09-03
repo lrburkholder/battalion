@@ -7,6 +7,7 @@ from uuid import UUID
 
 import pytest
 
+from battalion.admission_presentation import render_workflow_admission_history
 from battalion.application import (
     CreateAdmittedRun,
     InspectRunWorkflowAdmission,
@@ -428,6 +429,13 @@ def test_stage_evidence_and_upgrade_history_are_saved_append_only(tmp_path) -> N
     assert execution.upgrade_history[0].evidence_ids == (
         "driver-result:escalated-1",
     )
+    rendered = render_workflow_admission_history(inspection)
+    assert "ORIGINAL ADMISSION" in rendered
+    assert "Selected recipe: compact-implementation-run 1.0" in rendered
+    assert "LATER UPGRADES" in rendered
+    assert "architecture-decision -> full" in rendered
+    assert "The implementation exposed a new ownership boundary." in rendered
+    assert "Continuation recipe: full-implementation-run 1.0" in rendered
     with pytest.raises(WorkflowAdmissionResumeRejected, match="stronger handling"):
         resume_run(
             ResumeRun(

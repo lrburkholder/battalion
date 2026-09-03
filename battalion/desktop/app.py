@@ -28,8 +28,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from battalion.admission_presentation import render_workflow_admission
 from battalion.application import IntelInspection, ProjectInspection, ProjectRunInspection
-from battalion.desktop.controller import DesktopController
+from battalion.desktop.controller import DesktopAdmissionSession, DesktopController
 from battalion.disclosure import DATA_HANDLING_URL
 from battalion.desktop.presentation import (
     intel_empty,
@@ -50,6 +51,7 @@ from battalion.observation import ObservationEvent, ObservationKind
 from battalion.intel.models import CandidateInstinct
 from battalion.intel.review import ReviewAction
 from battalion.state.models import InterventionKind, InterventionTarget, RunStatus
+from battalion.workflow_admission_decisions import WorkflowAdmissionDisposition
 
 
 RUN_DATA = Qt.ItemDataRole.UserRole
@@ -129,7 +131,7 @@ class BattalionWindow(QMainWindow):
         self.navigation = QListWidget()
         self.navigation.setObjectName("primaryNavigation")
         self.navigation.setAccessibleName("Primary navigation")
-        self.navigation.addItems(("Work", "History", "Intel"))
+        self.navigation.addItems(("Work", "Admission", "History", "Intel"))
         self.navigation.setCurrentRow(0)
         self.navigation.setMaximumWidth(160)
         self.pages = QStackedWidget()
@@ -142,8 +144,10 @@ class BattalionWindow(QMainWindow):
         history, self.history_tree, self.history_executions, self.history_inspector = self._run_page(
             "Completed and earlier run history", "history"
         )
+        admission = self._admission_page()
         intel = self._intel_page()
         self.pages.addWidget(work)
+        self.pages.addWidget(admission)
         self.pages.addWidget(history)
         self.pages.addWidget(intel)
         body.addWidget(self.navigation)
@@ -193,6 +197,89 @@ class BattalionWindow(QMainWindow):
             lambda current, _previous: self._select_execution(current, inspector)
         )
         return page, runs, executions, inspector
+
+    def _admission_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        heading = QLabel("Workflow admission")
+        heading.setObjectName("sectionTitle")
+        layout.addWidget(heading)
+
+        inputs = QFrame()
+        inputs.setObjectName("actionPanel")
+        input_layout = QVBoxLayout(inputs)
+        self.admission_ticket = QLineEdit()
+        self.admission_ticket.setAccessibleName("Admission ticket ID")
+        self.admission_ticket.setPlaceholderText("BTN-123")
+        self.admission_spec = QLineEdit()
+        self.admission_spec.setAccessibleName("Admission specification path or text")
+        self.admission_spec.setPlaceholderText("Specification path or literal text")
+        self.admission_evidence = QLineEdit()
+        self.admission_evidence.setAccessibleName("Admission evidence JSON path")
+        self.admission_evidence.setPlaceholderText("WorkflowAdmissionEvidence JSON path")
+        self.admission_tactician = QLineEdit()
+        self.admission_tactician.setAccessibleName("Optional Tactician assessment JSON path")
+        self.admission_tactician.setPlaceholderText("Optional TacticianAssessment JSON path")
+        for label, field in (
+            ("Ticket", self.admission_ticket),
+            ("Specification", self.admission_spec),
+            ("Governing evidence", self.admission_evidence),
+            ("Tactician evidence", self.admission_tactician),
+        ):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addWidget(field, 1)
+            input_layout.addLayout(row)
+        self.load_admission_button = QPushButton("Inspect admission")
+        self.load_admission_button.setAccessibleName(
+            "Inspect deterministic and optional Tactician admission evidence"
+        )
+        self.load_admission_button.setShortcut("Ctrl+Shift+A")
+        self.load_admission_button.clicked.connect(self._load_admission)
+        input_layout.addWidget(self.load_admission_button)
+        layout.addWidget(inputs)
+
+        self.admission_inspector = QPlainTextEdit()
+        self.admission_inspector.setObjectName("admissionInspector")
+        self.admission_inspector.setAccessibleName("Workflow admission evidence and options")
+        self.admission_inspector.setReadOnly(True)
+        self.admission_inspector.setFont(QFont(MONO_FONT_FAMILY, 10))
+        self.admission_inspector.setPlainText(
+            "Supply bounded evidence to inspect available workflow actions."
+        )
+        layout.addWidget(self.admission_inspector, 1)
+
+        actions = QFrame()
+        actions.setObjectName("actionPanel")
+        action_layout = QVBoxLayout(actions)
+        self.admission_annotation = QLineEdit()
+        self.admission_annotation.setAccessibleName(
+            "Human workflow decision rationale or Tactician disagreement"
+        )
+        self.admission_annotation.setPlaceholderText(
+            "Optional rationale; explain disagreement with Tactician"
+        )
+        action_layout.addWidget(self.admission_annotation)
+        buttons = QHBoxLayout()
+        self.admission_buttons: dict[WorkflowAdmissionDisposition, QPushButton] = {}
+        for disposition, label in (
+            (WorkflowAdmissionDisposition.COMPACT, "Use compact"),
+            (WorkflowAdmissionDisposition.FULL, "Use full"),
+            (WorkflowAdmissionDisposition.CLARIFICATION, "Clarify"),
+            (WorkflowAdmissionDisposition.CANCELLED, "Cancel"),
+        ):
+            button = QPushButton(label)
+            button.setAccessibleName(f"Workflow admission action: {label}")
+            button.setEnabled(False)
+            button.clicked.connect(
+                lambda _checked=False, choice=disposition: self._decide_admission(choice)
+            )
+            self.admission_buttons[disposition] = button
+            buttons.addWidget(button)
+        action_layout.addLayout(buttons)
+        layout.addWidget(actions)
+        self.admission_session: DesktopAdmissionSession | None = None
+        return page
 
     def _intel_page(self) -> QWidget:
         page = QWidget()
@@ -334,6 +421,7 @@ class BattalionWindow(QMainWindow):
         self.controller.live_observation.connect(self.apply_observation)
         self.controller.action_completed.connect(self._action_completed)
         self.controller.action_failed.connect(self._action_failed)
+        self.controller.admission_ready.connect(self.render_admission)
 
     def show_loading(self) -> None:
         self.view_state.setText("Loading authoritative project state…")
@@ -375,7 +463,7 @@ class BattalionWindow(QMainWindow):
     def select_showcase_view(self, view: str) -> None:
         """Select stable production widgets for a published showcase capture."""
 
-        destinations = {"work": 0, "history": 1, "intel": 2}
+        destinations = {"work": 0, "history": 2, "intel": 3}
         if view not in destinations:
             raise ValueError(f"Unknown showcase view: {view}")
         self.navigation.setCurrentRow(destinations[view])
@@ -531,6 +619,39 @@ class BattalionWindow(QMainWindow):
         self.intervention_target.addItem("Driver RED", InterventionTarget.DRIVER_RED)
         self.intervention_target.addItem("Driver GREEN", InterventionTarget.DRIVER_GREEN)
         self.intervention_target.addItem("Refactorer", InterventionTarget.REFACTORER)
+
+    def _load_admission(self) -> None:
+        self.admission_session = None
+        for button in self.admission_buttons.values():
+            button.setEnabled(False)
+        self.controller.load_admission_files(
+            self.admission_ticket.text().strip(),
+            self.admission_spec.text(),
+            self.admission_evidence.text().strip(),
+            self.admission_tactician.text().strip() or None,
+        )
+
+    def render_admission(self, session: DesktopAdmissionSession) -> None:
+        self.admission_session = session
+        self.admission_inspector.setPlainText(
+            render_workflow_admission(session.inspection)
+        )
+        available = set(session.inspection.available_dispositions)
+        for disposition, button in self.admission_buttons.items():
+            button.setEnabled(disposition in available)
+        self.view_state.setText(
+            f"Admission ready · {session.ticket_id} · "
+            f"{session.assessment.outcome.value}"
+        )
+        self.view_state.setProperty("state", "ready")
+
+    def _decide_admission(self, disposition: WorkflowAdmissionDisposition) -> None:
+        if self.admission_session is None:
+            return
+        annotation = self.admission_annotation.text().strip() or None
+        self.controller.submit_admission_decision(
+            self.admission_session, disposition, annotation
+        )
 
     def _resume_selected_run(self) -> None:
         if self.selected_run is None or self.selected_run.inspection is None:

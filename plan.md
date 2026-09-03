@@ -70,7 +70,10 @@ existing full Implementation Run is the default/fallback recipe. BTN-142 adds
 the compact recipe and shared execution policy. BTN-143 adds schema `1.1`
 durable assessment/Tactician/decision/execution linkage, application-owned Run
 creation and transition persistence, explicit legacy history, and exact-recipe
-resume validation without re-running Tactician.
+resume validation without re-running Tactician. BTN-144 exposes those same
+application contracts through CLI and desktop decision surfaces, including
+deterministic/model evidence separation, exact recipe semantics, explicit
+human actions, JSON output, and original-admission versus later-upgrade history.
 BTN-139 adds a credential-free, deterministic assessment of
 bounded, revision-pinned admission evidence. The assessment records its policy
 and evidence identities, fails closed for configured hard-risk surfaces, and
@@ -82,7 +85,8 @@ BTN-141's shared application operations let an active human
 Actor inspect current deterministic/Tactician evidence and choose full, compact,
 clarification, or cancellation. It fails closed on changed evidence or policy,
 and keeps human and Tactician records distinct. BTN-143 durably links those
-records to a Run; CLI/desktop presentation remains BTN-144.
+records to a Run; BTN-144 presents and invokes the same operations in CLI and
+desktop clients without moving admission policy into either adapter.
 Accepted RFC-0013 (BTN-133) defines the versioned typed role-result contract
 for Driver and Refactorer attempts, preserving explicit human authority when a
 Driver is blocked or must escalate rather than fabricating a mutation. Its
