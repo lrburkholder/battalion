@@ -5,6 +5,14 @@
 This plan describes the implementation in the checkout. Canonical GitHub
 Issues and the integration PR own ticket status and delivery evidence;
 implementation here does not imply delivery on `main` or a published release.
+BTN-193 accepts a revision-pinned artifact-target handoff that keeps
+`plan.md` explanatory, gates Driver on exact validated target evidence, and
+preserves write scope and human authority. ADR-0038 records the accepted
+architecture. Runtime delivery is decomposed into typed contracts and Architect
+handoff (BTN-194), persistence/application/graph enforcement (BTN-195), shared
+CLI/desktop presentation (BTN-196), and credential-free enforcement-path
+acceptance (BTN-197). It builds on BTN-143 and BTN-144; BTN-129 retains the live
+CLI evidence.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 
@@ -67,8 +75,13 @@ and authentication remain BTN-60 through BTN-62.
 BTN-138 establishes the finite, versioned `WorkflowRecipe`
 policy vocabulary and read-only registry required by accepted RFC-0012. The
 existing full Implementation Run is the default/fallback recipe. BTN-142 adds
-the compact recipe and shared execution policy; durable selected-recipe state
-and resume linkage remain BTN-143 work.
+the compact recipe and shared execution policy. BTN-143 adds schema `1.1`
+durable assessment/Tactician/decision/execution linkage, application-owned Run
+creation and transition persistence, explicit legacy history, and exact-recipe
+resume validation without re-running Tactician. BTN-144 exposes those same
+application contracts through CLI and desktop decision surfaces, including
+deterministic/model evidence separation, exact recipe semantics, explicit
+human actions, JSON output, and original-admission versus later-upgrade history.
 BTN-139 adds a credential-free, deterministic assessment of
 bounded, revision-pinned admission evidence. The assessment records its policy
 and evidence identities, fails closed for configured hard-risk surfaces, and
@@ -79,8 +92,9 @@ provenance and usage evidence; it cannot dispatch a recipe.
 BTN-141's shared application operations let an active human
 Actor inspect current deterministic/Tactician evidence and choose full, compact,
 clarification, or cancellation. It fails closed on changed evidence or policy,
-keeps human and Tactician records distinct, and leaves durable admission/Run
-linkage to BTN-143 and CLI/desktop presentation to BTN-144.
+and keeps human and Tactician records distinct. BTN-143 durably links those
+records to a Run; BTN-144 presents and invokes the same operations in CLI and
+desktop clients without moving admission policy into either adapter.
 Accepted RFC-0013 (BTN-133) defines the versioned typed role-result contract
 for Driver and Refactorer attempts, preserving explicit human authority when a
 Driver is blocked or must escalate rather than fabricating a mutation. Its
@@ -91,9 +105,9 @@ BTN-142 registers the initial compact Implementation Run recipe and an
 application-owned upgrade-only execution
 contract. Compact completion requires independent semantic Review Run evidence
 and authorized human acceptance; the existing checkpoint reviewer remains a
-RejectionAnalyzer rather than a substitute for that review. Durable Run linkage,
-restart/resume, and the independent Review Run implementation remain follow-up
-work under BTN-143 and RFC-0014's implementation decomposition.
+RejectionAnalyzer rather than a substitute for that review. BTN-143 persists
+that exact execution and upgrade state across restart/resume. The independent
+Review Run implementation remains follow-up work under RFC-0014's decomposition.
 BTN-164's Reviewer accepts only classified pytest pass/failure evidence with
 collected tests, bounds execution time, and pauses
 invalid harness outcomes at the same checkpoint through interrupt #5. The
@@ -231,6 +245,8 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0034](docs/adrs/adr0034.md) | Keep Tactician advisory and outside Implementation Runs |
 | [ADR-0036](docs/adrs/adr0036.md) | Keep human workflow admission separate from evidence and execution |
 | [ADR-0037](docs/adrs/adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion |
+| [ADR-0038](docs/adrs/adr0038.md) | Gate Driver on a revision-pinned artifact-target contract |
+| [ADR-0039](docs/adrs/adr0039.md) | Persist exact workflow admission separately from execution history |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human

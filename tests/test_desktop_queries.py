@@ -91,6 +91,8 @@ def test_project_query_represents_empty_and_legacy_history(tmp_path):
     assert history.runs[0].catalog_entry.legacy_id is True
     assert history.runs[0].availability == "available"
     assert history.runs[0].inspection.state == state
+    assert history.runs[0].inspection.workflow_admission is not None
+    assert history.runs[0].inspection.workflow_admission.availability == "legacy"
 
 
 def test_project_query_keeps_malformed_run_visible(tmp_path):
