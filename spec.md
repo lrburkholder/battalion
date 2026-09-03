@@ -138,6 +138,11 @@ Fields per ticket/run (draft — to be refined during Architect phase):
   optional Tactician assessment, Actor-authorized decision, exact selected
   recipe/version, completed stage/completion evidence, and append-only upgrade
   state. Cross-record inconsistencies fail validation; see ADR-0039.)
+- `artifact_target_handoff` (accepted post-v2 contract; runtime delivery
+  pending. A later schema stores a separately versioned sibling record with
+  immutable target contracts, deterministic reconciliation, Actor-attributed
+  corrections, supersession history, and the active contract identity. It
+  cross-validates but never rewrites `workflow_admission`; see ADR-0038.)
 
 New-run construction belongs to the shared application boundary. It generates
 the canonical run UUID and project marker before execution; graph nodes cannot
@@ -145,6 +150,74 @@ replace that identity. `.battalion/runs.json` is a project-scoped, rebuildable
 catalog whose references use canonical run IDs. Moving a repository with its
 `.battalion` directory preserves project identity. Legacy files are discovered
 under their original IDs without rewriting historical provenance (ADR-0020).
+
+## Accepted Post-v2 Artifact-Target Handoff (delivery pending)
+
+Before any Driver attempt begins, Battalion requires one current, validated
+`ArtifactTargetContract`. The contract is application-owned execution evidence,
+not a prompt, project capability, graph definition, or write-scope declaration.
+It may only narrow the role's independently authorized structural write scope.
+Architect output, admission, Tactician advice, and human correction cannot widen
+that authority.
+
+Contract version `1.0` records a stable SHA-256 identity over canonical content,
+the project/work-item/specification/project-source revisions, exact workflow-
+admission decision, Architect execution and `plan.md` digest when applicable,
+superseded contract, evidence references, and a canonical target list. Each
+target has a stable target ID, one exact project-relative file path, evidence
+references, and assignments naming the intended owner role, workflow phase, and
+operation (`create`, `modify`, or `delete`).
+
+Paths use `/` separators. Absolute, drive/UNC, empty, dot-segment, parent-
+traversing, glob, NUL-containing, Battalion-state, VCS-metadata, and project-
+escaping symlink paths are invalid. Normalization precedes identity calculation;
+duplicate target IDs, normalized paths, assignments, and case-only collisions
+under the project path policy fail validation.
+
+For a full recipe, Architect returns a typed candidate with bounded plan
+Markdown, target definitions, and implementation steps that reference target
+IDs instead of restating paths. Validation occurs before the existing scoped
+`plan.md` write. The rendered plan includes the canonical target table but
+remains explanatory; free-form prose and raw model reasoning are never
+authoritative target evidence. For a compact recipe without Architect, exact
+targets must come from authoritative revision-pinned work-item/specification
+evidence. Bounded-scope admission evidence or Tactician advice cannot invent
+them.
+
+Deterministic reconciliation checks revisions, selected recipe and phases,
+path policy, structural write scope, and contradiction/staleness evidence. Its
+result is `ready` or `clarification-required` with stable reasons. Missing,
+ambiguous, duplicate, unsafe, stale, or internally contradictory targets block
+Driver. A consistent contract adds no mandatory Tactician call or human pause.
+When correction is required, an active human Actor must approve an exact new
+contract, return the work to Architect/clarification, or cancel. The new
+identity supersedes rather than rewrites earlier evidence.
+
+A configured manual `driver` checkpoint resolves against the exact current
+contract identity; generic resolution prose cannot authorize changed targets.
+The artifact-target gate is application admission, not a seventh v1 interrupt.
+The graph cannot dispatch Driver without current gate evidence, and
+presentation clients cannot manufacture it.
+
+The handoff persists as a separately versioned `ArtifactTargetHandoffRecord`
+beside BTN-143's immutable `WorkflowAdmissionRunRecord`. Each Driver attempt
+references the contract under which it began. Resume revalidates the persisted
+contract and revisions without silently substituting a newer contract; legacy
+schema `1.1` Runs remain readable but cannot claim target evidence they never
+recorded. Shared application queries and transport-neutral projections expose
+active and superseded identities, targets, assignments, revisions, evidence,
+reconciliation reasons, and human corrections to CLI and desktop without log
+or `plan.md` parsing.
+
+Credential-free acceptance uses the observed greeting case: a deterministic
+Architect fixture maps logical target `greeting-test` to
+`src/test_greeting.py` while an implementation step tries to redefine it as
+`test_greeting.py`. Validation must write no plan, create no Driver attempt, and
+show both conflicting paths. A human correction creates a new contract for
+`src/test_greeting.py`; save/load/resume and human/JSON inspection retain both
+identities and bind the next Driver attempt to the corrected one. BTN-129 owns
+the original live CLI UAT evidence; the fixture does not rewrite that historical
+Run into a pass.
 
 ### Actor identity and local provenance
 

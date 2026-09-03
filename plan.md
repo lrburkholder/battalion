@@ -5,6 +5,11 @@
 This plan describes the implementation in the checkout. Canonical GitHub
 Issues and the integration PR own ticket status and delivery evidence;
 implementation here does not imply delivery on `main` or a published release.
+BTN-193 accepts a revision-pinned artifact-target handoff that keeps
+`plan.md` explanatory, gates Driver on exact validated target evidence, and
+preserves write scope and human authority. ADR-0038 records the accepted
+architecture; runtime delivery builds on BTN-143 and BTN-144 and still requires
+BTN-129 evidence plus a separately scoped implementation ticket.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 
@@ -237,6 +242,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0034](docs/adrs/adr0034.md) | Keep Tactician advisory and outside Implementation Runs |
 | [ADR-0036](docs/adrs/adr0036.md) | Keep human workflow admission separate from evidence and execution |
 | [ADR-0037](docs/adrs/adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion |
+| [ADR-0038](docs/adrs/adr0038.md) | Gate Driver on a revision-pinned artifact-target contract |
 | [ADR-0039](docs/adrs/adr0039.md) | Persist exact workflow admission separately from execution history |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
