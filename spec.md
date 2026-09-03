@@ -217,7 +217,10 @@ show both conflicting paths. A human correction creates a new contract for
 `src/test_greeting.py`; save/load/resume and human/JSON inspection retain both
 identities and bind the next Driver attempt to the corrected one. BTN-129 owns
 the original live CLI UAT evidence; the fixture does not rewrite that historical
-Run into a pass.
+Run into a pass. Runtime delivery proceeds in dependency order through BTN-194
+(contracts and Architect handoff), BTN-195 (persistence and enforcement),
+BTN-196 (CLI/desktop presentation), and BTN-197 (credential-free end-to-end
+acceptance).
 
 ### Actor identity and local provenance
 
