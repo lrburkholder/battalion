@@ -26,7 +26,7 @@ from battalion.scope.tool_binding import (
 )
 from battalion.state.models import RunState
 from battalion.state.persistence import save_state
-from conftest import make_llm_configs, make_run_state
+from support.state import make_llm_configs, make_run_state
 
 
 @pytest.mark.parametrize("entry", [

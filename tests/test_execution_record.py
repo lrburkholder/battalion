@@ -1,4 +1,7 @@
 """BTN-19 durable execution record and provenance acceptance tests."""
+from support.state import make_run_state
+from support.graph import patched_nodes, reviewer_accepting
+
 import subprocess
 from pathlib import Path
 
@@ -17,29 +20,26 @@ from battalion.role_results import (
     submit_role_result,
 )
 from battalion.state.models import (
-    Budget, CheckpointType, CodeProvenance, EvidenceReference, ExecutionRecord,
-    NodeExecution, RunState, RunStatus,
+    CheckpointType,
+    CodeProvenance,
+    EvidenceReference,
+    ExecutionRecord,
+    NodeExecution,
+    RunState,
+    RunStatus,
 )
 from battalion.state.persistence import load_state, save_state
 
 
 def _state() -> RunState:
-    return RunState(
-        schema_version="1.0",
-        run_id="run-BTN-19",
-        ticket_id="BTN-19",
-        spec="Persist bounded execution evidence.",
-        status=RunStatus.NOT_STARTED,
-        phase="architect",
+    return make_run_state(
+        run_id='run-BTN-19',
+        ticket_id='BTN-19',
+        spec='Persist bounded execution evidence.',
         write_scope={
-            "architect": ["plan.md"],
-            "driver_red": ["tests/"],
-            "driver_green": ["battalion/"],
-            "refactorer": ["battalion/"],
-            "reviewer": [],
+            "architect": ["plan.md"], "driver_red": ["tests/"],
+            "driver_green": ["battalion/"], "refactorer": ["battalion/"], "reviewer": [],
         },
-        retry_bound=2,
-        budget=Budget(limit=100),
     )
 
 
@@ -69,19 +69,6 @@ def _driver_stub(state, ticket_text, llm_config, base_dir, mode, prompts_dir=Non
     return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
 
 
-def _reviewer_stub(
-    state, base_dir, llm_config, checkpoint, prompts_dir=None,
-    test_timeout_seconds=300.0,
-):
-    phase = {
-        CheckpointType.RED_CHECK: "driver_green",
-        CheckpointType.GREEN_CHECK: "refactorer",
-        CheckpointType.REFACTOR_CHECK: "done",
-    }[checkpoint]
-    status = RunStatus.DONE if phase == "done" else RunStatus.IN_PROGRESS
-    return state.model_copy(update={"phase": phase, "status": status})
-
-
 def _refactorer_stub(state, refactor_text, llm_config, base_dir, prompts_dir=None):
     Path(base_dir, "battalion", "widget.py").write_text(
         "def widget() -> bool: return True\n", encoding="utf-8"
@@ -90,11 +77,12 @@ def _refactorer_stub(state, refactor_text, llm_config, base_dir, prompts_dir=Non
 
 
 @pytest.fixture
-def stub_graph_nodes(monkeypatch):
-    monkeypatch.setattr("battalion.nodes.architect.run_architect", _architect_stub)
-    monkeypatch.setattr("battalion.nodes.driver.run_driver", _driver_stub)
-    monkeypatch.setattr("battalion.nodes.reviewer.run_reviewer", _reviewer_stub)
-    monkeypatch.setattr("battalion.nodes.refactorer.run_refactorer", _refactorer_stub)
+def stub_graph_nodes():
+    with patched_nodes(
+        architect=_architect_stub, driver=_driver_stub,
+        reviewer=reviewer_accepting(), refactorer=_refactorer_stub,
+    ):
+        yield
 
 
 def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph_nodes):

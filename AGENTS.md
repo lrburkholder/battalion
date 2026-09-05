@@ -89,6 +89,45 @@ dependency already solves the problem.
   and leaves public status rendering to the Pages publication pipeline
   (ADR-0030 as amended by ADR-0031, BTN-152, and BTN-162).
 
+## Test design and maintenance
+
+Follow [the test-maintenance guide](docs/contributing.md#maintaining-tests).
+Optimize for distinct behavioral protection and readable failures, not test
+count. Before adding a test, inspect the owning module and identify the failure
+mode that existing coverage does not catch.
+
+- Extend an existing scenario or parameterized case when it covers the same
+  contract. Use named parameter cases for repeated input/output matrices; avoid
+  separate tests that repeat setup and assertions for each input.
+- Reuse builders from their owning `tests/support` module: `state`, `execution`,
+  `responses`, or `graph`, with CLI/desktop scenarios in `cli` and `desktop`.
+  Do not import helpers from another test module or `conftest.py`. Keep local
+  helpers only when they express a distinct domain scenario; do not copy shared
+  state/configuration defaults or completion-envelope serialization.
+- Keep behavior-relevant inputs and expected outcomes explicit at the call site.
+  Shared builders must isolate mutable inputs, support explicit overrides, and
+  reject misspelled fields. Do not hide semantic handoff data in universal
+  defaults. Construct raw production models when testing their schemas/defaults,
+  and preserve deliberately malformed payloads for negative-path tests.
+- Use fixtures for resource lifetime and teardown, builders for data, and
+  scenario helpers for behavior. Keep modules focused by responsibility; use
+  the existing CLI, desktop, and graph module divisions rather than growing a
+  catch-all test file or fixture framework.
+- Prefer observable outcomes through application/role boundaries and existing
+  injected collaborators. Direct implementation patches need a specific seam
+  under test, such as scope construction or crash injection. Graph scenarios
+  should expose role order, checkpoint decisions, bounds, and terminal outcomes.
+- Assert concrete exceptions and failure evidence. Never swallow arbitrary
+  exceptions or use `pytest.raises(Exception)` to make a scenario pass.
+- Preserve real graph/node, scoped-write, subprocess, and persistence coverage
+  where that integration is the contract. Mocking a save does not prove recovery;
+  duplicating a helper's implementation does not prove product behavior. Test new
+  shared utilities for meaningful isolation/override/failure guarantees.
+- Remove coverage only when another test demonstrably catches the same failure.
+  Keep prompt wording checks insensitive to whitespace unless formatting itself
+  is a contract. Do not add brittle source/prose assertions as a substitute for
+  behavioral tests or delete negative cases merely to reduce the count.
+
 ## Setup and validation
 
 Use Python 3.11 or newer from the repository root:
@@ -106,6 +145,10 @@ python -m pytest tests/test_graph.py -q
 python -m pytest tests/test_cli.py -q
 python -m battalion --help
 ```
+
+These are focused runs, not complete subsystem suites: CLI, desktop, and graph
+coverage spans multiple modules. `python -m pytest tests/ -q` remains the
+authoritative complete-suite command before handoff.
 
 When a full local suite would be slow or contend with local development
 processes, push the branch and run `./scripts/run_ci.ps1` instead. It dispatches

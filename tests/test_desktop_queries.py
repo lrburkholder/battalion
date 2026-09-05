@@ -1,5 +1,7 @@
 """Focused read-model tests for the BTN-42 desktop application boundary."""
 
+from support.state import make_run_state
+
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -24,19 +26,18 @@ from battalion.intel import (
     InstinctEvidenceReference,
     IntelRepository,
 )
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunState, RunStatus
 
 
 def _state(project_id: UUID, run_id: str = "legacy-run") -> RunState:
-    return RunState(
-        schema_version="1.0",
+    return make_run_state(
         run_id=run_id,
         project_id=str(project_id),
-        ticket_id="BTN-42",
+        ticket_id='BTN-42',
         status=RunStatus.DONE,
-        phase="done",
-        retry_bound=2,
-        budget=Budget(limit=10),
+        phase='done',
+        write_scope={},
+        budget_limit=10,
     )
 
 

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
 
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunState, RunStatus
 from battalion.state.persistence import load_state, save_state
 from battalion.workflow_admission import (
     AdmissionEvidenceCondition,
@@ -73,16 +75,15 @@ def _admission_record() -> WorkflowAdmissionRunRecord:
 
 
 def _run_state(*, admission: WorkflowAdmissionRunRecord | None) -> RunState:
-    return RunState(
-        schema_version="1.1" if admission is not None else "1.0",
-        run_id="1e8b9ef0-5bb4-4b6e-853c-5ca6adf7fdb8",
-        run_alias="BTN-143",
-        ticket_id="BTN-143",
+    return make_run_state(
+        schema_version='1.1' if admission is not None else '1.0',
+        run_id='1e8b9ef0-5bb4-4b6e-853c-5ca6adf7fdb8',
+        run_alias='BTN-143',
+        ticket_id='BTN-143',
         status=RunStatus.IN_PROGRESS,
-        phase="driver_red",
-        retry_bound=2,
-        budget=Budget(limit=100),
+        phase='driver_red',
         workflow_admission=admission,
+        write_scope={},
     )
 
 
