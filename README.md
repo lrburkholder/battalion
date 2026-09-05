@@ -307,6 +307,7 @@ The main implementation areas are:
 | `battalion.observation` | Live event ordering, deduplication, and reconnect cursors |
 | `battalion.execution` | Durable execution, artifact, usage, and cost evidence |
 | `battalion.role_results` | Typed role-result validation |
+| `battalion.artifact_targets` | Artifact-target and Architect-candidate domain models; node integration remains pending on the BTN-194 branch |
 | `battalion.context` | Bounded model context assembly |
 | `battalion.scope` | Mechanical write-scope enforcement |
 | `battalion.llm` | Per-role model access through LiteLLM |

@@ -153,6 +153,13 @@ under their original IDs without rewriting historical provenance (ADR-0020).
 
 ## Accepted Post-v2 Artifact-Target Handoff (delivery pending)
 
+Branch implementation note (BTN-194): the domain-only construction layer now
+exists in `battalion.artifact_targets`. Architect output integration remains
+pending; the requirements below describe the accepted destination, not an
+already-active runtime gate. Nested values are frozen under aggregate schema
+version `1.0`, with exact phase names from `WorkflowStage`. Construction does
+not resolve filesystem paths or grant write authority.
+
 Before any Driver attempt begins, Battalion requires one current, validated
 `ArtifactTargetContract`. The contract is application-owned execution evidence,
 not a prompt, project capability, graph definition, or write-scope declaration.
