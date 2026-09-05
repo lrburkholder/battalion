@@ -45,6 +45,7 @@ status states whether it is part of the shipped system.
 | [ADR-0037](adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion | Accepted | BTN-142 |
 | [ADR-0038](adr0038.md) | Gate Driver on a revision-pinned artifact-target contract | Accepted | BTN-193 architecture; runtime deferred |
 | [ADR-0039](adr0039.md) | Persist exact workflow admission separately from execution history | Accepted | BTN-143 |
+| [ADR-0040](adr0040.md) | Keep history search and analytics as rebuildable local projections | Proposed | BTN-44 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique
