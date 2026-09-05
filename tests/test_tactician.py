@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from support.responses import json_response
 
 from battalion.application import AssessTactician, assess_tactician
 from battalion.config import BattalionConfig
@@ -98,7 +99,7 @@ def _response(**overrides: object) -> dict[str, object]:
         "missing_evidence": ["accepted architecture decision"],
     }
     payload.update(overrides)
-    return {"choices": [{"message": {"content": json.dumps(payload)}}]}
+    return json_response(payload)
 
 
 def test_uncertain_work_receives_a_bounded_full_recipe_recommendation() -> None:

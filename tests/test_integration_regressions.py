@@ -1,7 +1,6 @@
 """BTN-173 regressions across role, graph, and persisted-resume boundaries."""
 from dataclasses import replace
 from datetime import datetime, timezone
-import json
 import re
 
 import pytest
@@ -15,17 +14,15 @@ from battalion.state.models import (
     InterruptLogEntry, ProgressStage, RunStatus, TestExecutionClassification as Classification,
 )
 from battalion.state.persistence import load_state, save_state
-from conftest import make_llm_configs, make_run_state, patched_nodes, driver_advancing
+from support.state import make_llm_configs, make_run_state
+from support.graph import patched_nodes, driver_advancing
+from support.responses import json_response as response
 
 
 def config_for(project):
     models = make_llm_configs()
     models["reviewer"] = replace(models["reviewer"], model="independent-review-model")
     return BattalionConfig(base_dir=str(project), models=models)
-
-
-def response(payload):
-    return {"choices": [{"message": {"content": json.dumps(payload)}}]}
 
 
 @pytest.mark.parametrize("mode", ["red", "green"])

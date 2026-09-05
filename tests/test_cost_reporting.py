@@ -1,5 +1,7 @@
 """BTN-16 per-call cost capture and summary acceptance tests."""
-from datetime import datetime, timezone
+from support.state import make_run_state
+
+from support.execution import make_node_execution
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -22,28 +24,21 @@ from battalion.state.persistence import load_state, save_state
 
 
 def _state() -> RunState:
-    return RunState(
-        schema_version="1.0",
-        run_id="run-BTN-16",
-        ticket_id="BTN-16",
+    return make_run_state(
+        run_id='run-BTN-16',
+        ticket_id='BTN-16',
         status=RunStatus.IN_PROGRESS,
-        phase="architect",
-        write_scope={"architect": ["plan.md"]},
-        retry_bound=2,
-        budget=Budget(limit=100, used=7),
+        write_scope={'architect': ['plan.md']},
+        budget_used=7,
     )
 
 
 def _execution(phase: str, role: str, *calls: LLMCallCost) -> NodeExecution:
-    now = datetime.now(timezone.utc)
-    return NodeExecution(
+    return make_node_execution(
         execution_id=f"node-{phase}",
         role=role,
         phase=phase,
         model_identity="configured-model",
-        started_at=now,
-        ended_at=now,
-        outcome="succeeded",
         llm_calls=list(calls),
     )
 

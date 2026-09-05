@@ -34,10 +34,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
+from support.responses import files_response, litellm_response
+from support.state import make_llm_configs as make_configs, make_run_state, persisted_checkpoint
+from support.execution import make_interrupt
+
 from battalion.cli import app as cli_app
-from battalion.graph import NODE_ARCHITECT, build_graph, resume_ticket
+from battalion.graph import build_graph, resume_ticket
 from battalion.interrupts.triggers import (
     TRIGGER_BUDGET_EXCEEDED,
     TRIGGER_INFRA_FAILURE,
@@ -77,41 +82,9 @@ FAILING_TEST = (
 IMPLEMENTATION = "def widget():\n    return 42\n"
 
 
-def make_configs():
-    return {
-        "default": NodeLLMConfig(model="test-model", max_retries=0),
-        "architect": NodeLLMConfig(model="test-model", max_retries=0),
-        "driver": NodeLLMConfig(model="test-model", max_retries=0),
-        "reviewer": NodeLLMConfig(model="test-model", max_retries=0),
-        "refactorer": NodeLLMConfig(model="test-model", max_retries=0),
-    }
-
-
 def make_initial_state(tmp: Path, ticket_id="BTN-AC", **overrides):
     (tmp / "src").mkdir(parents=True, exist_ok=True)
-    defaults = dict(
-        schema_version="1.0",
-        run_id=f"run-{ticket_id}",
-        ticket_id=ticket_id,
-        status=RunStatus.NOT_STARTED,
-        phase=NODE_ARCHITECT,
-        write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-        retry_bound=2,
-        budget=Budget(limit=100, used=0),
-        reviewer_rejection_history=[],
-        interrupt_log=[],
-        manual_checkpoints=[],
-    )
-    defaults.update(overrides)
-    return RunState(**defaults)
-
-
-def litellm_response(content: str) -> dict:
-    return {"choices": [{"message": {"content": content}}]}
-
-
-def files_response(files: dict[str, str]) -> dict:
-    return litellm_response(json.dumps({"files": files}))
+    return make_run_state(ticket_id=ticket_id, **overrides)
 
 
 def wrap(fn, call_llm_fn):
@@ -384,28 +357,21 @@ def _make_paused_state_file(tmp: Path, run_id="run-BTN-AC"):
     """Write a realistic paused state to tmp/.battalion/state/{run_id}.json,
     as `battalion run` would have left it: interrupted mid-run at the
     REFACTOR_CHECK, with the resume target recorded in interrupt context."""
-    state = RunState(
-        schema_version="1.0",
+    state = make_run_state(
         run_id=run_id,
         ticket_id="BTN-AC",
         status=RunStatus.AWAITING_HUMAN,
         phase="awaiting_human",
-        write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-        retry_bound=2,
-        budget=Budget(limit=100, used=60),
-        reviewer_rejection_history=[],
+        budget_used=60,
         interrupt_log=[
-            InterruptLogEntry(
-                trigger=TRIGGER_BUDGET_EXCEEDED,
-                timestamp=datetime.now(timezone.utc),
+            make_interrupt(
+                TRIGGER_BUDGET_EXCEEDED,
                 context={"next_phase": "reviewer_refactor", "used": 60, "limit": 100},
             )
         ],
-        manual_checkpoints=[],
     )
     state_dir = tmp / ".battalion" / "state"
-    state_dir.mkdir(parents=True, exist_ok=True)
-    save_state(state, state_dir / f"{run_id}.json")
+    persisted_checkpoint(state_dir / f"{run_id}.json", state)
     return state
 
 
@@ -522,7 +488,7 @@ class TestAcceptanceCriteria5_Persistence:
         pass (BTN-1 AC, exercised through the versioned schema contract)."""
         bad = tmp_path / "bad.json"
         bad.write_text('{"schema_version": "1.0", "status": "not-a-status"}', encoding="utf-8")
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             load_state(bad)
 
 

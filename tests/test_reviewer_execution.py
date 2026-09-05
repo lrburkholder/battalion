@@ -28,7 +28,7 @@ from battalion.state.models import (
     TestExecutionClassification as Classification,
 )
 from battalion.state.persistence import load_state, save_state
-from conftest import make_llm_configs, make_run_state
+from support.state import make_llm_configs, make_run_state
 
 
 def _junit(path: Path, tests=1, failures=0, errors=0) -> Path:
@@ -258,11 +258,12 @@ def test_non_git_materialization_excludes_generated_content(tmp_path, directory)
 
 
 def _invalid_result(classification: Classification) -> TestRunResult:
-    return TestRunResult(
-        classification=classification, command=("python", "-m", "pytest", "-q"),
-        working_directory="clean-project-root", returncode=None,
+    from support.execution import make_test_result
+
+    return make_test_result(
+        classification, "bounded evidence", None, command=("python", "-m", "pytest", "-q"),
         tests_collected=None, failures=None, errors=None,
-        stdout="bounded evidence", stderr="harness unavailable",
+        stderr="harness unavailable",
         stdout_observed_bytes=16, stderr_observed_bytes=19,
         duration_ms=2, timeout_seconds=5,
         timed_out=classification is Classification.TIMED_OUT,

@@ -11,7 +11,8 @@ from battalion.nodes.architect import (
 from battalion.state.models import RunStatus
 
 
-from conftest import make_run_state
+from support.state import make_run_state
+from support.responses import litellm_response as litellm_style_response
 
 
 def make_state(write_scope=None, **overrides):
@@ -20,11 +21,6 @@ def make_state(write_scope=None, **overrides):
         status=RunStatus.NOT_STARTED, phase="architect",
         write_scope=write_scope, **overrides,
     )
-
-
-def litellm_style_response(text: str) -> dict:
-    """Shape matching a real litellm/OpenAI-style completion response."""
-    return {"choices": [{"message": {"content": text}}]}
 
 
 def test_extract_content_from_litellm_style_response():

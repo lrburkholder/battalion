@@ -13,7 +13,6 @@ from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.nodes.reviewer import (
     EmptyReviewContent,
     SourceTreeMissing,
-    TestRunResult,
     make_clean_copy,
     run_reviewer,
     run_tests_via_subprocess,
@@ -22,7 +21,9 @@ from battalion.state.models import CheckpointType, RejectionRecord, RunStatus
 from battalion.state.models import TestExecutionClassification as ExecutionClassification
 
 
-from conftest import make_run_state
+from support.state import make_run_state
+from support.responses import litellm_response
+from support.execution import make_test_result as _test_result
 
 
 def make_state(write_scope=None, rejection_history=None, **overrides):
@@ -35,36 +36,6 @@ def make_state(write_scope=None, rejection_history=None, **overrides):
     )
     fields.update(overrides)
     return make_run_state(**fields)
-
-
-def litellm_response(text: str) -> dict:
-    return {"choices": [{"message": {"content": text}}]}
-
-
-def _test_result(
-    classification: ExecutionClassification,
-    output: str,
-    returncode: int,
-) -> TestRunResult:
-    collected = 1 if classification in {
-        ExecutionClassification.PASSED,
-        ExecutionClassification.TEST_FAILED,
-    } else None
-    return TestRunResult(
-        classification=classification,
-        command=("python", "-m", "pytest"),
-        working_directory="clean-project-root",
-        returncode=returncode,
-        tests_collected=collected,
-        failures=1 if classification is ExecutionClassification.TEST_FAILED else 0,
-        errors=0,
-        stdout=output,
-        stderr="",
-        stdout_observed_bytes=len(output.encode()),
-        stderr_observed_bytes=0,
-        duration_ms=1,
-        timeout_seconds=300,
-    )
 
 
 def fake_passed(tmp_path, **kw):
