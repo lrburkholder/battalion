@@ -340,6 +340,9 @@ Run the test suite with:
 python -m pytest
 ```
 
+Tests are organized by behavioral responsibility; see the
+[test-maintenance guide](docs/contributing.md#maintaining-tests) for module ownership.
+
 Optional coverage:
 
 ```bash

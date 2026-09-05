@@ -199,6 +199,7 @@ battalion/
 
 benchmarks/desktop/        # shared disposable framework-spike control case
 tests/                    # unit and end-to-end acceptance tests
+  support/                # shared state, execution, response and graph test builders
 ```
 
 Dependencies point toward application policy. The CLI delegates run, resume,

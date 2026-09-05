@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 from datetime import datetime, timezone
 
 import pytest
@@ -29,7 +31,7 @@ from battalion.integrations.runtime import (
     TransportResponse,
 )
 from battalion.integrations.webhook import WebhookRejected
-from battalion.state.models import Budget, InterruptLogEntry, RunState, RunStatus, SideEffectStatus
+from battalion.state.models import InterruptLogEntry, RunState, RunStatus, SideEffectStatus
 
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
@@ -49,18 +51,16 @@ class _FakeDiscordHttp:
 
 
 def _state(status: RunStatus = RunStatus.AWAITING_HUMAN) -> RunState:
-    state = RunState(
-        schema_version="1.0",
-        run_id="run-btn-79",
-        run_alias="BTN-79-discord",
-        project_id="50000000-0000-4000-8000-000000000079",
-        ticket_id="BTN-79",
-        spec="Discord notification test.",
+    state = make_run_state(
+        run_id='run-btn-79',
+        run_alias='BTN-79-discord',
+        project_id='50000000-0000-4000-8000-000000000079',
+        ticket_id='BTN-79',
+        spec='Discord notification test.',
         status=status,
-        phase="review",
+        phase='review',
         write_scope={},
-        retry_bound=2,
-        budget=Budget(limit=10),
+        budget_limit=10,
     )
     if status is RunStatus.AWAITING_HUMAN:
         return state.model_copy(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 from datetime import datetime, timezone
 
 import pytest
@@ -26,7 +28,6 @@ from battalion.execution import ExecutionCapture
 from battalion.intel import CandidateInstinct, ReviewAction
 from battalion.intel.candidates import CandidateRepository
 from battalion.state.models import (
-    Budget,
     HumanActionRecord,
     HumanIntervention,
     InterventionDisposition,
@@ -42,20 +43,19 @@ from battalion.llm.litellm_client import NodeLLMConfig
 
 
 def _state(status: RunStatus = RunStatus.AWAITING_HUMAN) -> RunState:
-    return RunState(
-        schema_version="1.0",
-        run_id="run-BTN-43",
-        ticket_id="BTN-43",
-        spec="Desktop human actions",
+    return make_run_state(
+        run_id='run-BTN-43',
+        ticket_id='BTN-43',
+        spec='Desktop human actions',
         status=status,
-        phase="awaiting_human",
-        retry_bound=2,
-        budget=Budget(limit=10),
+        phase='awaiting_human',
         interrupt_log=[InterruptLogEntry(
             trigger="manual-checkpoint",
             timestamp=datetime(2026, 8, 20, tzinfo=timezone.utc),
             context={"next_phase": "driver_green"},
         )],
+        write_scope={},
+        budget_limit=10,
     )
 
 
