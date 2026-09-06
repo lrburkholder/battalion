@@ -413,6 +413,16 @@ then reuses the shared LiteLLM completion and infrastructure-failure paths.
 FreeLLMAPI supplies no node-specific integration or policy authority; runtime
 route evidence remains BTN-54 and cost-policy enforcement remains BTN-55.
 
+BTN-98 branch implementation introduces the `battalion.cartography` logical
+contract: strict typed map records, Battalion-owned identities, conservative
+reconciliation evidence, immutable revision history, deterministic
+graph-adjacency JSON behind a backend-neutral repository/query port, and a
+generated Markdown projection with independent freshness. The branch preserves
+attributed and governing records through generated refresh assembly and rejects
+unresolved Actor provenance. Full Cartographer extraction, staleness assessment,
+context retrieval, and desktop presentation remain separately scoped RFC-0008
+follow-ons. This branch work is not shipped until merged to `main`.
+
 BTN-65's accepted [ADR-0025](docs/adrs/adr0025.md) places transport-neutral
 Battalion capabilities above provider adapters and transports. Accepted
 [RFC-0006](docs/rfcs/rfc0006.md) defines WorkSource, KnowledgeSource,
