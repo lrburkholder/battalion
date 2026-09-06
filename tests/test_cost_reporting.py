@@ -63,6 +63,11 @@ def test_successful_llm_call_is_attached_to_active_node_and_persists(tmp_path):
     finished = capture.finish(state, state)
     call = finished.execution_record.node_executions[0].llm_calls[0]
     assert call.model == "provider/model-version"
+    assert call.requested_model == "configured-model"
+    assert call.response_model == "provider/model-version"
+    assert call.backend is None
+    assert call.endpoint_url is None
+    assert call.inference_location == "unknown"
     assert call.input_tokens == 120
     assert call.output_tokens == 30
     assert call.cost == Decimal("0.0042")
@@ -122,7 +127,11 @@ def test_streaming_requests_and_records_final_usage_frame(tmp_path):
                 usage=SimpleNamespace(
                     prompt_tokens=11, completion_tokens=3, cost=0.0015,
                 ),
-                _hidden_params={},
+                model="router/resolved-model",
+                _hidden_params={"response_headers": {
+                    "X-Routed-Via": "stream-router",
+                    "X-Routed-Model": "provider/routed-model",
+                }},
             ),
         ])
 
@@ -139,7 +148,11 @@ def test_streaming_requests_and_records_final_usage_frame(tmp_path):
         11, 3, Decimal("0.0015")
     )
     assert call.cost_source == CostSource.PROVIDER_REPORTED
-    assert finished.execution_record.schema_version == "1.7"
+    assert call.requested_model == "model"
+    assert call.response_model == "router/resolved-model"
+    assert call.routed_provider == "stream-router"
+    assert call.routed_model == "provider/routed-model"
+    assert finished.execution_record.schema_version == "1.8"
     execution = finished.execution_record.node_executions[0]
     assert execution.streamed_reasoning_characters == 3
     assert execution.streamed_content_characters == 2
@@ -245,6 +258,68 @@ def test_legacy_cost_usd_remains_readable_as_provider_reported_evidence():
     assert call.cost == Decimal("0.1")
     assert call.cost_currency == "USD"
     assert call.cost_source == CostSource.PROVIDER_REPORTED
+    assert call.requested_model is None
+    assert call.response_model is None
+
+
+def test_endpoint_and_router_identity_are_recorded_only_when_reported(tmp_path, monkeypatch):
+    state = _state()
+    capture = ExecutionCapture.start(state, "architect", "configured-model", tmp_path)
+    monkeypatch.setenv("TEST_KEY", "test-key")
+
+    call_llm(
+        "architect",
+        NodeLLMConfig(
+            model="openai/requested-model", max_retries=0,
+            endpoint_url="http://127.0.0.1:3001/v1", backend="freellmapi",
+            inference_location="remote", api_key_env="TEST_KEY",
+        ),
+        [{"role": "user", "content": "plan"}],
+        completion_fn=lambda **kwargs: {
+            "model": "provider/resolved-model",
+            "choices": [{"message": {"content": "done"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            "headers": {
+                "X-Routed-Via": "free-router",
+                "X-Routed-Model": "provider/routed-model",
+            },
+        },
+    )
+
+    evidence = capture.finish(state, state).execution_record.node_executions[0].llm_calls[0]
+    assert evidence.requested_model == "openai/requested-model"
+    assert evidence.response_model == "provider/resolved-model"
+    assert evidence.backend == "freellmapi"
+    assert evidence.endpoint_url == "http://127.0.0.1:3001/v1"
+    assert evidence.inference_location == "remote"
+    assert evidence.routed_provider == "free-router"
+    assert evidence.routed_model == "provider/routed-model"
+
+
+def test_local_inference_is_durable_typed_evidence_not_a_model_string(tmp_path):
+    state = _state()
+    capture = ExecutionCapture.start(state, "architect", "configured-model", tmp_path)
+
+    call_llm(
+        "architect",
+        NodeLLMConfig(
+            model="openai/qwen3", max_retries=0,
+            endpoint_url="http://127.0.0.1:8000/v1", backend="vllm",
+            inference_location="local", keyless=True,
+        ),
+        [{"role": "user", "content": "plan"}],
+        completion_fn=lambda **kwargs: {
+            "choices": [{"message": {"content": "done"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+    )
+
+    evidence = capture.finish(state, state).execution_record.node_executions[0].llm_calls[0]
+    assert evidence.requested_model == "openai/qwen3"
+    assert evidence.response_model is None
+    assert evidence.backend == "vllm"
+    assert evidence.endpoint_url == "http://127.0.0.1:8000/v1"
+    assert evidence.inference_location == "local"
 
 
 def test_status_costs_queries_saved_run_without_changing_turn_budget(tmp_path, monkeypatch):

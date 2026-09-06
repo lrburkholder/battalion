@@ -124,7 +124,7 @@ def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph
 
 
 def test_execution_record_format_is_versioned_and_validated():
-    assert ExecutionRecord().schema_version == "1.7"
+    assert ExecutionRecord().schema_version == "1.8"
     assert ExecutionRecord(schema_version="1.0").schema_version == "1.0"
     assert ExecutionRecord(schema_version="1.1").schema_version == "1.1"
     assert ExecutionRecord(schema_version="1.2").schema_version == "1.2"
@@ -132,8 +132,29 @@ def test_execution_record_format_is_versioned_and_validated():
     assert ExecutionRecord(schema_version="1.4").schema_version == "1.4"
     assert ExecutionRecord(schema_version="1.5").schema_version == "1.5"
     assert ExecutionRecord(schema_version="1.6").schema_version == "1.6"
+    assert ExecutionRecord(schema_version="1.7").schema_version == "1.7"
     with pytest.raises(ValidationError):
         ExecutionRecord(schema_version="2.0")
+
+
+def test_pre_btn54_execution_record_remains_readable_without_identity_fields():
+    record = ExecutionRecord.model_validate({
+        "schema_version": "1.7",
+        "node_executions": [{
+            "execution_id": "node-legacy", "role": "architect", "phase": "architect",
+            "model_identity": "legacy-model", "started_at": "2026-08-01T00:00:00Z",
+            "ended_at": "2026-08-01T00:00:01Z", "outcome": "succeeded",
+            "llm_calls": [{
+                "call_id": "call-legacy", "model": "legacy-model",
+                "input_tokens": 1, "output_tokens": 1,
+            }],
+        }],
+    })
+
+    call = record.node_executions[0].llm_calls[0]
+    assert call.requested_model is None
+    assert call.response_model is None
+    assert call.routed_provider is None
 
 
 def test_role_result_evidence_must_match_the_capture_inputs(tmp_path):
