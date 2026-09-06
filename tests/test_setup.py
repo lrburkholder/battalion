@@ -16,6 +16,7 @@ from battalion.setup import (
     detect_provider,
     run_setup,
     save_config,
+    validate_openai_compatible_model_catalog,
     validate_connectivity,
 )
 
@@ -296,6 +297,154 @@ def test_api_key_for_provider_env_priority(monkeypatch):
     assert api_key_for_provider("openai") is None
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
     assert api_key_for_provider("openai") == "sk-env"
+
+
+def test_freellmapi_catalog_uses_secret_boundary_and_requires_requested_model(monkeypatch):
+    """BTN-53: router discovery is authenticated but never persists the bearer."""
+    from battalion.llm.configuration import NodeLLMConfig
+
+    bearer = "test-freellmapi-bearer"
+    config = NodeLLMConfig(
+        model="openai/qwen3-coder",
+        endpoint_url="http://127.0.0.1:3001/v1",
+        backend="freellmapi",
+        api_key_env="FREELLMAPI_TOKEN",
+    )
+    monkeypatch.setenv("FREELLMAPI_TOKEN", bearer)
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"data": [{"id": "qwen3-coder"}]}'
+
+    def opener(request, timeout):
+        captured["url"] = request.full_url
+        captured["authorization"] = request.get_header("Authorization")
+        captured["timeout"] = timeout
+        return Response()
+
+    validate_openai_compatible_model_catalog(
+        config, config.request_params()["api_key"], opener=opener
+    )
+
+    assert captured == {
+        "url": "http://127.0.0.1:3001/v1/models",
+        "authorization": f"Bearer {bearer}",
+        "timeout": 10,
+    }
+
+
+def test_freellmapi_catalog_hides_authentication_failure_and_missing_model(monkeypatch):
+    """Catalog errors are a setup failure, not a bearer-bearing provider error."""
+    from io import BytesIO
+    from urllib.error import HTTPError
+
+    from battalion.llm.configuration import NodeLLMConfig
+
+    bearer = "test-freellmapi-bearer"
+    config = NodeLLMConfig(
+        model="openai/qwen3-coder",
+        endpoint_url="http://127.0.0.1:3001/v1",
+        backend="freellmapi",
+        api_key_env="FREELLMAPI_TOKEN",
+    )
+    monkeypatch.setenv("FREELLMAPI_TOKEN", bearer)
+    key = config.request_params()["api_key"]
+
+    def unauthorized(request, timeout):
+        raise HTTPError(request.full_url, 401, f"Bearer {bearer}", {}, BytesIO())
+
+    with pytest.raises(ConnectivityCheckFailed) as auth_error:
+        validate_openai_compatible_model_catalog(config, key, opener=unauthorized)
+    assert bearer not in str(auth_error.value)
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"data": [{"id": "another-model"}]}'
+
+    with pytest.raises(ConnectivityCheckFailed, match="qwen3-coder") as model_error:
+        validate_openai_compatible_model_catalog(config, key, opener=lambda *args, **kwargs: Response())
+    assert bearer not in str(model_error.value)
+
+
+def test_freellmapi_setup_configures_all_roles_without_persisting_bearer(tmp_path, monkeypatch):
+    """All roles use the shared path; only the environment holds the router key."""
+    bearer = "test-freellmapi-bearer"
+    monkeypatch.setenv("FREELLMAPI_TOKEN", bearer)
+    models = {
+        "architect": ("qwen3", "qwen3"),
+        "driver": ("qwen3-coder", "qwen3-coder"),
+        "reviewer": ("llama3", "llama3"),
+        "refactorer": ("mistral-small", "mistral-small"),
+    }
+    targets = {
+        role: {
+            "model": f"openai/{model}",
+            "endpoint_url": "http://127.0.0.1:3001/v1",
+            "backend": "freellmapi",
+            "inference_location": "remote",
+            "canonical_model_family": family,
+            "api_key_env": "FREELLMAPI_TOKEN",
+        }
+        for role, (model, family) in models.items()
+    }
+    catalog_checks = []
+    completion_calls = []
+    monkeypatch.setattr(
+        "battalion.setup.validate_openai_compatible_model_catalog",
+        lambda config, key: catalog_checks.append((config.model, key)),
+    )
+    path = tmp_path / "config.yaml"
+
+    written = run_setup(
+        config_path=path,
+        node_overrides=targets,
+        completion_fn=lambda **kwargs: completion_calls.append(kwargs),
+    )
+
+    assert catalog_checks == [(f"openai/{model}", bearer) for model, _ in models.values()]
+    assert [call["model"] for call in completion_calls] == [
+        f"openai/{model}" for model, _ in models.values()
+    ]
+    assert {role: target["canonical_model_family"] for role, target in written.items()} == {
+        role: family for role, (_, family) in models.items()
+    }
+    assert bearer not in path.read_text(encoding="utf-8")
+
+
+def test_freellmapi_catalog_rejection_aborts_setup_without_saving(tmp_path, monkeypatch):
+    """Unavailable capacity/model surfaces at setup without leaking its bearer."""
+    monkeypatch.setenv("FREELLMAPI_TOKEN", "test-freellmapi-bearer")
+    path = tmp_path / "config.yaml"
+    monkeypatch.setattr(
+        "battalion.setup.validate_openai_compatible_model_catalog",
+        lambda *args: (_ for _ in ()).throw(ConnectivityCheckFailed("catalog unavailable")),
+    )
+
+    with pytest.raises(ConnectivityCheckFailed, match="catalog unavailable"):
+        run_setup(
+            config_path=path,
+            node_overrides={"architect": {
+                "model": "openai/qwen3-coder",
+                "endpoint_url": "http://127.0.0.1:3001/v1",
+                "backend": "freellmapi",
+                "api_key_env": "FREELLMAPI_TOKEN",
+            }},
+            completion_fn=lambda **kwargs: pytest.fail("completion must not run after catalog failure"),
+        )
+    assert not path.exists()
 
 
 def test_setup_cli_writes_config(tmp_path, monkeypatch):

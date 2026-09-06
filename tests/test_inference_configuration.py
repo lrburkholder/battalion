@@ -88,6 +88,33 @@ def test_endpoint_failures_remain_bounded_and_do_not_expose_provider_secrets(mon
     assert "test-secret" not in str(error.value.last_error)
 
 
+def test_freellmapi_capacity_exhaustion_uses_existing_infra_failure_boundary(monkeypatch):
+    """A routed 429 pauses through the same bounded provider-failure path."""
+    monkeypatch.setenv("FREELLMAPI_TOKEN", "test-freellmapi-bearer")
+    config = NodeLLMConfig(
+        model="openai/qwen3-coder",
+        endpoint_url="http://127.0.0.1:3001/v1",
+        backend="freellmapi",
+        inference_location="remote",
+        api_key_env="FREELLMAPI_TOKEN",
+        max_retries=1,
+    )
+    attempts = []
+
+    def exhausted(**kwargs):
+        attempts.append(kwargs)
+        raise RuntimeError("429 routed provider capacity exhausted: Bearer test-freellmapi-bearer")
+
+    with pytest.raises(InfraFailure) as error:
+        call_llm("driver", config, [], completion_fn=exhausted)
+
+    assert error.value.node_name == "driver"
+    assert error.value.attempts == 2
+    assert len(attempts) == 2
+    assert all(call["api_base"] == config.endpoint_url for call in attempts)
+    assert "test-freellmapi-bearer" not in str(error.value)
+
+
 def test_missing_explicit_credential_never_calls_provider(monkeypatch):
     monkeypatch.delenv("MISSING_SERVER_TOKEN", raising=False)
     config = NodeLLMConfig(model="openai/qwen3", api_key_env="MISSING_SERVER_TOKEN", max_retries=0)
