@@ -46,7 +46,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "plan.md",
             "spec.md",
             "docs/adrs/index.md",
-            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 40)},
+            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 41)},
             "docs/rfcs/rfc0004.md",
             "docs/operator/workflow.md",
             "docs/operator/screens.md",
@@ -163,6 +163,7 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "adr0036.html" in adr_index
         assert "adr0038.html" in adr_index
         assert "adr0039.html" in adr_index
+        assert "adr0040.html" in adr_index
         status_page = (output / "docs" / "status.md").read_text(encoding="utf-8")
         assert "BEGIN GENERATED:backlog-delivery" in status_page
         assert "### Milestone overview" in status_page

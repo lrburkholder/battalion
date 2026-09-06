@@ -619,6 +619,54 @@ def setup(
         typer.echo(f"  {node}: {written[node]['model']}")
 
 
+@app.command("history")
+def history_command(
+    text: str = typer.Argument("", help="Case-insensitive literal substring to find in saved evidence."),
+    project: Path = typer.Option(Path("."), "--project", help="Initialized Battalion project."),
+    filters: list[str] = typer.Option([], "--filter", help="Exact field=value filter; repeat for AND. Use field=null for unknown."),
+    limit: int = typer.Option(100, min=1, max=1000),
+    offset: int = typer.Option(0, min=0),
+    dimension: str | None = typer.Option(None, "--analytics", help="Aggregate all matches by role and this inference-identity field."),
+    rebuild: bool = typer.Option(False, "--rebuild", help="Explicitly authorize replacing modified/corrupt derived projection data."),
+    date_from: str | None = typer.Option(None, help="Inclusive attempt start bound, ISO 8601 with timezone."),
+    date_to: str | None = typer.Option(None, help="Inclusive attempt start bound, ISO 8601 with timezone."),
+    cost_min: str | None = typer.Option(None, help="Minimum observed attempt subtotal for the selected currency/source."),
+    cost_max: str | None = typer.Option(None, help="Maximum observed attempt subtotal for the selected currency/source."),
+    cost_currency: str | None = typer.Option(None, help="Three-letter uppercase currency; requires --cost-source."),
+    cost_source: str | None = typer.Option(None, help="provider-reported or estimated; requires --cost-currency."),
+) -> None:
+    """Search Run history or compare descriptive model-role evidence as JSON."""
+    from battalion.application import query_history
+    from battalion.history import HistoryQuery
+    from datetime import datetime
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        parsed = {}
+        for item in filters:
+            name, separator, value = item.partition("=")
+            if not separator or name in parsed:
+                raise ValueError("Filters must be unique field=value pairs")
+            parsed[name] = None if value == "null" else value
+        query = HistoryQuery(
+            text, parsed, limit, offset,
+            date_from=datetime.fromisoformat(date_from) if date_from is not None else None,
+            date_to=datetime.fromisoformat(date_to) if date_to is not None else None,
+            cost_min=Decimal(cost_min) if cost_min is not None else None,
+            cost_max=Decimal(cost_max) if cost_max is not None else None,
+            cost_currency=cost_currency, cost_source=cost_source,
+        )
+        result = query_history(project, query,
+                               dimension=dimension, rebuild=rebuild)
+    except InvalidOperation as exc:
+        typer.echo("Error: Cost bounds must be decimal numbers", err=True)
+        raise typer.Exit(1) from exc
+    except (ApplicationError, ValueError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 def main() -> None:
     """Entry point for the CLI."""
     app()
