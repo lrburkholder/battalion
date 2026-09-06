@@ -169,7 +169,8 @@ def test_role_result_evidence_must_match_the_capture_inputs(tmp_path):
     capture.finish(state, state)
 
 
-def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(tmp_path):
+@pytest.mark.parametrize("configuration_kind", ["legacy-raw", "environment-reference"])
+def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(tmp_path, monkeypatch, configuration_kind):
     legacy = NodeExecution.model_validate({
         "execution_id": "node-legacy",
         "role": "architect",
@@ -185,11 +186,16 @@ def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(
     assert legacy.code_provenance is None
 
     state = _state().model_copy(update={"spec": "x" * 1_100_000})
-    config = NodeLLMConfig(
-        model="architect-model", extra_params={"api_key": "must-not-be-retained"}
-    )
+    if configuration_kind == "legacy-raw":
+        # Retain the historical negative case at the evidence boundary even
+        # though new NodeLLMConfig instances now reject inline secrets.
+        config = {"model": "architect-model", "extra_params": {"api_key": "must-not-be-retained"}}
+    else:
+        monkeypatch.setenv("ARCHITECT_TOKEN", "must-not-be-retained")
+        config = NodeLLMConfig(model="architect-model", api_key_env="ARCHITECT_TOKEN")
+        assert config.request_params()["api_key"] == "must-not-be-retained"
     capture = ExecutionCapture.start(
-        state, "architect", config.model, tmp_path, model_configuration=config
+        state, "architect", "architect-model", tmp_path, model_configuration=config
     )
     completed = capture.finish(
         state,

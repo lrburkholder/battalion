@@ -55,6 +55,8 @@ from battalion.recovery import assess_recovery
 from battalion.config import load_config, DEFAULT_CONFIG_PATH
 from battalion.llm.litellm_client import ModelDiversityError
 from battalion.setup import (
+    InferenceConfigurationError,
+    parse_role_options,
     ConnectivityCheckFailed,
     MissingApiKey,
     ProviderNotDetected,
@@ -568,6 +570,12 @@ def setup(
     model_reviewer: str | None = typer.Option(None, "--model-reviewer"),
     model_refactorer: str | None = typer.Option(None, "--model-refactorer"),
     validate: bool = typer.Option(True, "--validate/--no-validate", help=f"Run live connectivity checks before saving. Data handling: {DATA_HANDLING_URL}"),
+    endpoint: list[str] = typer.Option([], "--endpoint", help="ROLE=URL base endpoint; repeat per role."),
+    inference_location: list[str] = typer.Option([], "--inference-location", help="ROLE=local|remote|unknown; operator classification, not verified locality."),
+    canonical_model_family: list[str] = typer.Option([], "--canonical-model-family", help="ROLE=FAMILY; required for endpoint-configured Driver and Reviewer."),
+    api_key_env: list[str] = typer.Option([], "--api-key-env", help="ROLE=ENV_VAR; credential variable name, never its value."),
+    keyless: list[str] = typer.Option([], "--keyless", help="ROLE=true|false|auto; authentication setting independent of inference location."),
+    backend: list[str] = typer.Option([], "--backend", help="ROLE=NAME; non-secret server identifier."),
 ):
     """Configure LLM providers and validate connectivity, writing battalion.config.yaml."""
     overrides = {
@@ -579,6 +587,14 @@ def setup(
     interactive = sys.stdin.isatty()
     try:
         written = run_setup(
+            node_overrides=parse_role_options({
+                "endpoint_url": endpoint,
+                "inference_location": inference_location,
+                "canonical_model_family": canonical_model_family,
+                "api_key_env": api_key_env,
+                "keyless": keyless,
+                "backend": backend,
+            }),
             config_path=config or DEFAULT_CONFIG_PATH,
             model_overrides=overrides,
             validate=validate,
@@ -594,7 +610,7 @@ def setup(
     except ConnectivityCheckFailed as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
-    except ModelDiversityError as exc:
+    except (ModelDiversityError, InferenceConfigurationError) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
 

@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any, Callable
 from uuid import uuid4
 
 from battalion.execution import record_llm_call, record_stream_observation
+from battalion.llm.configuration import (
+    ModelDiversityError, NodeLLMConfig, validate_model_diversity,
+)
 from battalion.state.models import CostSource, LLMCallCost
 
 
@@ -36,29 +38,6 @@ class InfraFailure(Exception):
         )
 
 
-@dataclass
-class NodeLLMConfig:
-    model: str
-    max_retries: int = 2
-    temperature: float = 0.0
-    extra_params: dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if self.max_retries < 0:
-            raise ValueError(
-                f"max_retries must be >= 0, got {self.max_retries}"
-            )
-
-
-class ModelDiversityError(Exception):
-    """Raised when Reviewer and Driver are configured with the same model.
-    
-    This enforces BTN-14: Model-diversity constraint between Driver and Reviewer
-    to prevent code from being written and reviewed by the same model.
-    """
-    pass
-
-
 def build_node_configs(raw: dict[str, dict]) -> dict[str, NodeLLMConfig]:
     """Build per-node LLM configs from plain config data (e.g. loaded from
     a config file). Nodes never hardcode their own model.
@@ -68,21 +47,7 @@ def build_node_configs(raw: dict[str, dict]) -> dict[str, NodeLLMConfig]:
     """
     configs = {node: NodeLLMConfig(**cfg) for node, cfg in raw.items()}
     
-    # BTN-14: Enforce model diversity between Driver and Reviewer
-    # Only enforce when both are explicitly configured (not just falling back to default)
-    # This prevents blocking valid configs where both use a sensible default
-    driver_explicit = "driver" in raw
-    reviewer_explicit = "reviewer" in raw
-    
-    if driver_explicit and reviewer_explicit:
-        driver_config = configs["driver"]
-        reviewer_config = configs["reviewer"]
-        if driver_config.model == reviewer_config.model:
-            raise ModelDiversityError(
-                f"Driver and Reviewer cannot use the same model. "
-                f"Both are configured with model '{driver_config.model}'. "
-                f"Please configure different models for driver and reviewer nodes."
-            )
+    validate_model_diversity(configs)
     
     return configs
 
@@ -231,7 +196,7 @@ def _completion_streaming(
     If a streamed chunk carries no content/reasoning delta (usage frames,
     finish-reason frames), it is skipped silently.
     """
-    params = dict(config.extra_params)
+    params = config.request_params()
     params["stream"] = True
     params.setdefault("stream_options", {"include_usage": True})
     pieces: list[str] = []
@@ -307,14 +272,18 @@ def call_llm(
                     model=config.model,
                     messages=messages,
                     temperature=config.temperature,
-                    **config.extra_params,
+                    **config.request_params(),
                 )
             _record_response_cost(response, config.model)
             return response
         except Exception as exc:  # noqa: BLE001 - deliberately broad: any
             # failure here (network, provider error, timeout) should count
             # toward the retry budget rather than crash the node outright.
-            last_error = exc
+            # Provider errors can contain the request's bearer token or headers.
+            last_error = (
+                RuntimeError(f"{type(exc).__name__}: configured inference target failed")
+                if config.endpoint_url or config.api_key_env else exc
+            )
             if attempt < max_attempts:
                 sleep_fn(backoff_seconds)
 

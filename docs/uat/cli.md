@@ -63,8 +63,9 @@ Do not silently repair the environment and count the original pass as success.
 
 Retain wheel import location, CLI help, and packaged prompt smoke output. Verify
 setup writes secret-free configuration, checks connectivity, and keeps Driver
-and Reviewer distinct. Validation is one model per provider, not a claim that
-every role model has passed. The guide's manual checkpoint, printed UUID,
+and Reviewer distinct. Validation checks each distinct effective target for
+connectivity, including different endpoints or credentials for the same model;
+role suitability still needs UAT. The guide's manual checkpoint, printed UUID,
 human-readable inspection, durable resolution, and final `done`/pytest evidence
 are mandatory. `$Python`, `$Project`, and `$RunId` below are the variables
 established by that guide; replace `$RunId` after **each** new Run.
