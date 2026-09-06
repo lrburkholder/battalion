@@ -103,6 +103,26 @@ workflow, graph, prompt, cost, or routing policy to FreeLLMAPI. Resolved route
 evidence and runtime identity contradiction detection remain BTN-54 delivery;
 cost-policy enforcement remains BTN-55.
 
+### BTN-54 resolved inference identity and diversity provenance (branch implementation)
+
+Each newly completed LLM call writes execution-record schema `1.8` evidence
+that separates Battalion's `requested_model` from an explicitly reported
+`response_model`, plus configured `backend`, non-secret `endpoint_url`, and
+`inference_location`. Router evidence is retained only when emitted by the
+response or stream, including `X-Routed-Via` and `X-Routed-Model`; missing
+response and router metadata remains unavailable. Historical execution records
+through schema `1.7` stay readable, with these new fields absent rather than
+retrofitted from display strings.
+
+For Driver and Reviewer, an exact collision between independently reported
+effective response/router model identities is durable contradiction evidence.
+Battalion invalidates the current output or verdict and pauses through existing
+infrastructure interrupt condition 5. It does not attempt to infer a provider,
+endpoint, or canonical family from a model display string. A configured local
+location is recorded with its loopback endpoint and backend, but remains a
+configuration classification—not proof that a proxy's upstream inference is
+same-host. BTN-55 owns verified locality and zero-cost policy admission.
+
 ### Identity and policy delivery contract
 
 The accepted identity separates the Battalion-requested model, resolved or

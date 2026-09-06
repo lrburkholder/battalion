@@ -18,6 +18,7 @@ from battalion.graph import (
 )
 from battalion.state.models import Budget, CheckpointType, RunStatus
 from support.state import make_llm_configs, make_run_state
+from support.execution import make_node_execution
 from support.graph import (
     architect_advancing,
     driver_advancing,
@@ -27,6 +28,9 @@ from support.graph import (
     reviewer_rejecting,
     reviewer_with_phases,
 )
+from battalion.execution import ExecutionCapture
+from battalion.llm.litellm_client import InferenceIdentityContradiction, NodeLLMConfig
+from battalion.state.models import LLMCallCost
 
 
 EXPECTED_NODES = [
@@ -56,6 +60,45 @@ class TestGraphStructure:
         assert NODE_PAUSE == "awaiting_human"
         assert NODE_DONE == "done"
         assert NODE_BLOCKED == "blocked"
+
+
+def test_proven_runtime_driver_reviewer_identity_collision_is_infra_failure(tmp_path):
+    """A response identity collision is evidence, not an alias-name heuristic."""
+    from battalion.graph import _handle_node_error, _runtime_diversity_contradiction
+
+    reviewer_call = LLMCallCost(
+        call_id="reviewer-call", model="router/shared", requested_model="reviewer-request",
+        response_model="router/shared", input_tokens=1, output_tokens=1,
+    )
+    state = make_run_state().model_copy(update={
+        "execution_record": make_run_state().execution_record.model_copy(update={
+            "node_executions": [
+                make_node_execution(
+                    role="reviewer", phase="reviewer_green", llm_calls=[reviewer_call],
+                )
+            ]
+        })
+    })
+    capture = ExecutionCapture.start(state, "driver_green", "driver-request", tmp_path)
+    capture.llm_calls.append(LLMCallCost(
+        call_id="driver-call", model="router/shared", requested_model="driver-request",
+        response_model="router/shared", input_tokens=1, output_tokens=1,
+    ))
+
+    error = _runtime_diversity_contradiction(
+        state, "driver_green", capture, NodeLLMConfig(model="driver-request")
+    )
+
+    assert isinstance(error, InferenceIdentityContradiction)
+    assert "router/shared" in str(error)
+    assert capture.llm_calls[0].identity_contradiction in str(error)
+    paused = _handle_node_error(
+        state, error, next_phase="reviewer", resume_node="driver", node_name="driver_green"
+    )
+    finished = capture.finish(state, paused)
+    assert finished.status is RunStatus.AWAITING_HUMAN
+    assert finished.interrupt_log[-1].trigger == "infra-failure"
+    assert finished.execution_record.node_executions[-1].llm_calls[0].identity_contradiction
 
 
 class TestInterruptsActuallyHaltExecution:
