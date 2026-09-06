@@ -53,8 +53,40 @@ run automatically.
 [ADR-0024](docs/adrs/adr0024.md) accept an endpoint-aware inference identity
 and cost policy without changing the shipped v1 runtime. BTN-52 through BTN-55
 deliver the contract; until those tickets complete, the existing LiteLLM
-model-string configuration, BTN-14 string comparison, and BTN-35 call evidence
-remain the implemented behavior.
+model-string configuration and BTN-35 call evidence remain the shipped baseline.
+BTN-52 branch implementation adds endpoint-aware configuration and preflight
+identity checks described below; it does not implement BTN-54 runtime evidence
+or BTN-55 policy enforcement.
+
+### BTN-52 configuration and setup (branch implementation)
+
+`NodeLLMConfig` retains `model`, `temperature`, `max_retries`, and non-secret
+`extra_params`, and adds `endpoint_url`, `backend`, `inference_location`
+(`local`, `remote`, `unknown`), `canonical_model_family`, `api_key_env`, and
+optional `keyless`. LiteLLM remains the transport boundary; endpoint fields are
+forwarded identically for setup, streaming, and non-streaming calls. Legacy
+`extra_params.api_base` migrates to `endpoint_url`. A model-only override retains
+transport settings but clears a changed model's prior family assertion.
+
+Setup preserves complete configurations, including additional configured roles,
+and validates each distinct model/endpoint/credential-reference/request-settings
+combination before saving. No failed check overwrites the existing file.
+`--no-validate` omits live checks, not configuration or credential checks.
+Bearer tokens remain in environment variables and are resolved at the call
+boundary. Keyless targets do not receive ambient cloud credentials. Authenticated
+custom endpoints require explicit credential references. Persisted endpoint URLs
+must be HTTP(S) without user info, queries, or fragments; inline secrets and
+target-changing fallback/provider overrides in extra parameters are rejected.
+
+Endpoint-configured Driver and Reviewer must declare distinct concrete canonical
+families. Equal families or equal requested identities are rejected regardless
+of provider or endpoint differences; opaque auto/profile/smart/fusion requests
+are rejected. Plain model configurations retain requested-identity compatibility
+with the provider prefix removed. Family and location declarations are operator
+assertions, not runtime evidence; setup connectivity does not prove same-host
+inference or zero cost. Runtime contradiction detection remains BTN-54 delivery.
+
+### Identity and policy delivery contract
 
 The accepted identity separates the Battalion-requested model, resolved or
 response model, provider, backend and non-secret endpoint, inference location,

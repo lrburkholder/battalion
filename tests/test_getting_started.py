@@ -134,7 +134,7 @@ def test_guide_project_setup_run_uuid_inspect_and_resume(tmp_path, monkeypatch, 
     runner = CliRunner()
     setup = runner.invoke(app, cli_arguments(BLOCKS["setup"], models)[0])
     assert setup.exit_code == 0, setup.output
-    assert checks == ["ollama/doc-architect"]  # one connectivity check per provider
+    assert checks == ["ollama/doc-architect", "ollama/doc-driver", "ollama/doc-reviewer"]
     assert (project / "src/greeting.py").is_file()
 
     import battalion.nodes.architect as architect

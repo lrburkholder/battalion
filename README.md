@@ -170,7 +170,7 @@ There is no public GitHub Release as of 2026-08-30. Until one exists, use only a
 
 Battalion can use local or remote inference through LiteLLM. Credentials are supplied through environment variables, not project configuration.
 
-Driver and Reviewer must use different model identifiers. Setup validates one selected model per provider; passing that check does not guarantee that every model offered by the provider is compatible.
+Driver and Reviewer must use different model identities. BTN-52 branch support adds endpoint URLs, inference-location declarations, canonical model families, and environment-variable credential references. Setup preserves complete role configurations and checks each distinct effective target. Passing connectivity checks does not guarantee that a model can successfully perform its Battalion role. See [local and custom inference setup](docs/getting-started.md#local-and-custom-inference-endpoints) for configuration and compatibility details.
 
 The [Getting Started model setup](docs/getting-started.md#4-choose-models-and-validate-configuration-live-provider-step) walks through configuration. The [data-handling guide](docs/data-handling.md#model-context) explains what each role may send to its model.
 
