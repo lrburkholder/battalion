@@ -16,8 +16,9 @@ owns that acceptance after BTN-173's main-based candidate and BTN-129's CLI gate
 0a on 2026-08-30 in the BTN-172 task. This approves the script, not final live
 acceptance. Use the commit containing this approval as the reviewed revision
 and record its hash, reviewer/date, and approval scope with the UAT evidence.
-The operator also deferred BTN-54 to post-UAT; its current inference-provenance
-limitations remain disclosed and do not block this guide or script delivery.
+BTN-54 was later completed. Its requested/resolved inference identity and
+contradiction evidence should now be validated as part of the candidate rather
+than treated as deferred work.
 
 Verify the production PySide6 desktop client as an operator-facing
 presentation over Battalion's durable application state. This plan checks
