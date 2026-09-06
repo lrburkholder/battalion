@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from battalion.role_results import RoleExecutionResult
 from battalion.work import WorkItem
+from battalion.llm.cost_policy import CostPolicy
 
 if TYPE_CHECKING:
     from battalion.workflow_admission_state import WorkflowAdmissionRunRecord
@@ -400,6 +401,7 @@ class LLMCallCost(BaseModel):
     routed_provider: str | None = Field(default=None, min_length=1, max_length=500)
     routed_model: str | None = Field(default=None, min_length=1, max_length=500)
     identity_contradiction: str | None = Field(default=None, min_length=1, max_length=2000)
+    cost_policy: CostPolicy = CostPolicy.PAID_CAPABLE
 
     @model_validator(mode="before")
     @classmethod
@@ -658,6 +660,7 @@ class RunState(BaseModel):
     reviewer_rejection_history: list[RejectionRecord] = Field(default_factory=list)
     retry_bound: int
     budget: Budget
+    cost_policy: CostPolicy = CostPolicy.PAID_CAPABLE
     interrupt_log: list[InterruptLogEntry] = Field(default_factory=list)
     manual_checkpoints: list[str] = Field(default_factory=list)
     resume_target: str | None = None

@@ -5,6 +5,7 @@ import os
 import re
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from ipaddress import ip_address
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -89,6 +90,10 @@ class NodeLLMConfig:
     canonical_model_family: str | None = None
     api_key_env: str | None = None
     keyless: bool | None = None
+    cost_classification: Literal["local", "verified-free", "paid", "unknown"] = "unknown"
+    classification_source: str | None = None
+    classification_observed_at: datetime | None = None
+    classification_expires_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.model, str) or not self.model.strip():
@@ -100,6 +105,8 @@ class NodeLLMConfig:
             raise InferenceConfigurationError("max_retries must be >= 0")
         if self.inference_location not in {"local", "remote", "unknown"}:
             raise InferenceConfigurationError("inference_location must be local, remote, or unknown")
+        if self.cost_classification not in {"local", "verified-free", "paid", "unknown"}:
+            raise InferenceConfigurationError("cost_classification must be local, verified-free, paid, or unknown")
         if self.keyless is not None and not isinstance(self.keyless, bool):
             raise InferenceConfigurationError("keyless must be a boolean")
         if not isinstance(self.extra_params, dict):
@@ -138,6 +145,22 @@ class NodeLLMConfig:
                 setattr(self, name, value.strip())
         if self.canonical_model_family:
             self.canonical_model_family = self.canonical_model_family.casefold()
+        if self.classification_source is not None:
+            if not isinstance(self.classification_source, str) or not self.classification_source.strip():
+                raise InferenceConfigurationError("classification_source must be nonempty when supplied")
+            self.classification_source = self.classification_source.strip()
+        for name in ("classification_observed_at", "classification_expires_at"):
+            value = getattr(self, name)
+            if isinstance(value, str):
+                try:
+                    value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    raise InferenceConfigurationError(f"{name} must be an ISO 8601 timestamp") from None
+                setattr(self, name, value)
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+                raise InferenceConfigurationError(f"{name} must include a timezone")
+        if self.classification_expires_at and self.classification_observed_at and self.classification_expires_at <= self.classification_observed_at:
+            raise InferenceConfigurationError("classification_expires_at must be after classification_observed_at")
 
     @property
     def provider(self) -> str:
@@ -173,9 +196,14 @@ class NodeLLMConfig:
         return params
 
     def with_model(self, model: str) -> NodeLLMConfig:
-        """A changed request must not inherit a stale canonical-family assertion."""
-        family = self.canonical_model_family if model == self.model else None
-        return replace(self, model=model, canonical_model_family=family)
+        """A changed request cannot inherit identity or cost-admission evidence."""
+        if model == self.model:
+            return replace(self, model=model)
+        return replace(
+            self, model=model, canonical_model_family=None,
+            cost_classification="unknown", classification_source=None,
+            classification_observed_at=None, classification_expires_at=None,
+        )
 
     def validation_identity(self) -> tuple[Any, ...]:
         """Effective request settings, without credentials or display metadata."""
