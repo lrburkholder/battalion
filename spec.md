@@ -683,6 +683,33 @@ Snapshot writes remain Battalion-owned temporary IO, not Reviewer project write
 authority or an OS sandbox. BTN-123 may replace the workspace mechanism but
 must preserve this evidence and checkpoint-validity contract.
 
+## History projections (BTN-44 branch implementation)
+
+The shared application boundary exposes read-only history search and descriptive
+analytics through a disposable project-local SQLite index (ADR-0040). Canonical
+Run and Intel evidence remains authoritative. Search results preserve Run IDs,
+execution IDs, source paths, and explicit unavailable-source limitations.
+Projection schema changes reconstruct recognized indexes; externally modified,
+unrecognized, or corrupt projections require explicit operator replacement.
+Deleting an index cannot delete canonical evidence.
+
+Identity dimensions remain independent: historical compatibility model names
+never populate missing requested, response, routed, backend, endpoint, provider,
+or location evidence. Analytics counts each matching attempt once, retains mixed
+identities, exposes sample sizes and unknown evidence, and separates monetary
+totals by currency and cost source. Ticket snapshots provide available context;
+no difficulty score, effectiveness ranking, or automatic routing is introduced.
+Exact filters cover checkpoint, review cause, artifact digest, and Intel tags.
+Inclusive date bounds select timezone-aware attempt starts in UTC. Cost bounds
+select observed attempt subtotals for an explicitly selected currency and source,
+without float conversion or treating missing calls as zero-cost evidence.
+Comparisons separate phase, checkpoint, prompt template hash and contract version,
+Battalion revision, project ID, and available ticket label sets, and expose time
+ranges and missing timestamps. Separate context-policy and project-domain fields
+are not currently recorded; projections disclose them as unknown rather than
+inferring them from the current installation or labeling a ticket's difficulty.
+The first presentation is `battalion history`; desktop integration is future work.
+
 ## Retry / Loop Bounds
 Configurable per ticket rather than a fixed global constant — set as part of
 the ticket's state at creation, adjustable by the human at any interrupt.

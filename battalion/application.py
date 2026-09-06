@@ -37,6 +37,7 @@ from battalion.actors import (
 from battalion.config import BattalionConfig
 from battalion.scope.tool_binding import WriteScopeMisconfigured, validate_write_scope
 from battalion.execution import summarize_costs
+from battalion.history import HistoryQuery
 from battalion.identity import (
     IdentityError,
     ProjectIdentity,
@@ -1249,6 +1250,62 @@ def inspect_project(query: InspectProject) -> ProjectInspection:
     entries = _discover_desktop_runs(root, catalog)
     runs = tuple(_inspect_catalog_entry(root, entry, identity) for entry in entries)
     return ProjectInspection(project_root=root, identity=identity, runs=runs)
+
+
+def query_history(
+    project_root: str | Path,
+    query: HistoryQuery | None = None,
+    *,
+    dimension: str | None = None,
+    rebuild: bool = False,
+) -> dict:
+    """Search/aggregate canonical project evidence through a disposable index.
+
+    Rebuild is explicit authorization to replace unrecognized projection bytes.
+    Malformed and inaccessible canonical sources remain visible as limitations.
+    """
+    from hashlib import sha256
+    import json
+    import sqlite3
+
+    from battalion.history import IDENTITY_FIELDS, aggregate_attempts, link_intel, project_run
+    from battalion.history_store import HistoryStore
+
+    query = query or HistoryQuery()
+    if dimension is not None and dimension not in IDENTITY_FIELDS:
+        raise ApplicationError(f"Dimension must be one of: {', '.join(IDENTITY_FIELDS)}")
+    project = inspect_project(InspectProject(project_root=project_root))
+    rows = []
+    limitations = []
+    for run in project.runs:
+        if run.inspection is None:
+            limitations.append({"run_id": run.catalog_entry.run_id,
+                                "availability": run.availability, "detail": run.limitation})
+        else:
+            rows.extend(project_run(run.inspection.state, str(run.inspection.state_path)))
+    try:
+        intel = inspect_intel(InspectIntel(project_root=project_root))
+    except IntelReadFailed as exc:
+        limitations.append({"availability": "intel-unavailable", "detail": str(exc)})
+    else:
+        link_intel(rows, (*intel.accepted, *intel.candidates))
+    rows.sort(key=lambda row: (row["ticket_id"], row["run_id"]))
+    fingerprint = sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
+    store = HistoryStore(project.project_root / ".battalion" / "projections" / "history.sqlite")
+    if any(not path.resolve().is_relative_to(project.project_root)
+           for path in (store.path, store.receipt)):
+        raise ApplicationError("History projection paths must remain inside the project")
+    try:
+        with store.locked():
+            store.refresh(rows, fingerprint, replace=rebuild)
+            total, matches = store.search(query, paginate=dimension is None)
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        raise ApplicationError(f"History projection: {exc}") from exc
+    result = aggregate_attempts(matches, dimension) if dimension else {
+        "total": total, "limit": query.limit, "offset": query.offset, "results": matches,
+    }
+    return {**result, "selection": query.selection(),
+            "limitations": limitations, "projection_path": str(store.path)}
 
 
 def establish_local_actor(command: BootstrapLocalActor) -> ActorInspection:

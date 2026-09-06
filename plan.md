@@ -43,7 +43,14 @@ the shared provider-free benchmark, three disposable framework spikes, and the
 accepted PySide6 desktop presentation decision in ADR-0022. BTN-42 implements
 the production read-only desktop console. BTN-43 completes the accepted durable
 human-action and next-attempt intervention contract in ADR-0023, including split
-desktop/worker packaging; analytics remain BTN-44 work.
+desktop/worker packaging. BTN-44 branch work adds shared application history
+queries and CLI search/analytics over disposable SQLite projections (ADR-0040).
+The initial implementation scans canonical snapshots for freshness, exposes
+malformed-source limitations, and separates identity dimensions and cost sources;
+exact evidence filters, UTC start ranges, sourced decimal cost ranges, and
+prompt/checkpoint/revision/ticket-label segmentation cover RFC-0004's descriptive
+comparison contract. Missing context-policy and project-domain evidence stays unknown;
+desktop presentation integration remains future work.
 BTN-56 applies the supplied desktop visual tokens and bundled brand assets
 without changing application authority or workflow behavior.
 BTN-57 adds a Pages product introduction, reviewed production-client captures from deterministic
@@ -172,6 +179,8 @@ battalion/
   graph.py                # graph construction, routing, pause, and resume
   recovery.py             # pure classification of durable recovery evidence
   progress.py             # CLI progress projection
+  history.py              # Pure history evidence and descriptive analytics products
+  history_store.py        # Rebuildable SQLite projection adapter (ADR-0040)
   intel/
     models.py             # candidate and accepted Instinct contracts
     repository.py         # immutable accepted-Instinct storage
@@ -248,6 +257,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0037](docs/adrs/adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion |
 | [ADR-0038](docs/adrs/adr0038.md) | Gate Driver on a revision-pinned artifact-target contract |
 | [ADR-0039](docs/adrs/adr0039.md) | Persist exact workflow admission separately from execution history |
+| [ADR-0040](docs/adrs/adr0040.md) | Keep history search and analytics as rebuildable local projections |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human

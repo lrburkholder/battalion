@@ -277,11 +277,78 @@ They are create-only. Human review can promote, edit-and-promote, or reject a ca
 
 Accepted Instincts can later be selected deterministically and injected into bounded role context.
 
+## History search and analytics (BTN-44 branch)
+
+For an initialized Battalion project, search persisted evidence as JSON:
+
+```bash
+battalion history "parser" --project . --filter role=reviewer
+battalion history --filter ticket_id=BTN-44 --filter review=accepted
+battalion history --analytics response_model --filter role=reviewer
+battalion history --analytics requested_model --filter requested_model=null
+battalion history --filter checkpoint=green-check --filter intel_tag=parser
+battalion history --date-from 2026-08-01T00:00:00Z --date-to 2026-08-31T23:59:59Z
+battalion history --cost-min 0.01 --cost-max 1.00 --cost-currency USD --cost-source provider-reported
+```
+
+Search returns separate Run and attempt rows with canonical source paths and
+execution IDs, ordered by ticket and Run with attempts in recorded order.
+Text is a case-insensitive literal substring over ticket text
+(the first 50,000 specification characters), operator summaries, and execution
+evidence. Exact filters are ANDed on the same row: `run_id`, `ticket_id`, `role`,
+`phase`, `outcome` (attempt outcome), `run_status`, `review`, `interrupt`,
+`verification` (mechanical test classification), `artifact`, `reference`, `intel`
+(Instinct ID), `intel_tag`, `artifact_digest` (SHA-256), `checkpoint`, `review_cause`,
+`label`, `project_id`, `prompt_template_hash`, `prompt_contract_version`,
+`battalion_revision`, `context_policy`, `project_domain`, and each identity field
+below. Multiple identity filters
+may match different calls within the same attempt. Use `--limit` and `--offset`
+to page search results; analytics always covers all matching attempts.
+
+Analytics dimensions are `model` (legacy compatibility evidence),
+`requested_model`, `response_model`, `routed_model`, `routed_provider`, `backend`,
+`endpoint_url`, `inference_location`, and `identity_contradiction`. Missing
+identity stays JSON `null`; `--filter field=null` selects missing evidence.
+Groups retain every observed identity value for a mixed attempt and count that
+attempt once. Tokens cover observed calls only. Missing call/duration evidence
+has explicit counts; cost totals remain separate by currency and evidence source.
+Ticket snapshots and sample counts accompany comparisons, which are descriptive
+observations rather than effectiveness conclusions or model recommendations.
+
+Every analytics group also separates phase, recorded checkpoint, prompt template
+hash and contract version, Battalion revision, project identity, and ticket label
+sets. Context-policy version and project-domain classification have no separate
+canonical fields today: both remain explicitly unknown, alongside any missing
+historical prompt/revision evidence. Grouping unknown values does not make their
+contexts comparable. `unknown_segments`, time ranges, and missing timestamp counts
+make those limitations inspectable without guessing from the running installation.
+
+Date bounds are inclusive and apply to attempt start times, normalized to UTC.
+Timezone-less historical starts remain unknown and are excluded by date bounds;
+their original timestamps remain in the result. Cost ranges apply to the observed
+attempt subtotal in the explicitly selected currency and cost source, using exact
+decimal arithmetic. Missing costs are not zero; the subtotal can be partial and
+analytics retains unknown-cost counts. Filters select whole attempts, so analytics
+still reports their other cost buckets separately. Every result includes the query
+selection and the date/cost interpretation used.
+
+The disposable SQLite index lives in `.battalion/projections/history.sqlite`.
+Queries validate canonical Run and Intel snapshots and refresh changed evidence;
+this initial implementation still scans canonical records to establish freshness.
+Malformed or unavailable sources appear in `limitations`. Intel links identify
+explicit evidence references, not proof of retrieval or use by a role.
+Deleting the index loses no canonical evidence. Recognized old index versions
+rebuild automatically. Externally modified or corrupt indexes require explicit
+replacement with `battalion history --rebuild` after inspecting/backing up any
+local changes. Close external SQLite writers before rebuilding. After a crashed
+query, remove `history.lock` only once no history operation is active.
+
 ## Roadmap
 
 Major remaining or future work includes:
 
-- **Desktop v2:** history search and model-by-role analytics (BTN-44).
+- **BTN-44 branch work:** shared history search and descriptive model-role analytics
+  are available through `battalion history`; desktop presentation integration remains future work.
 - **Inference policy:** endpoint-aware inference identity and zero-cost policy (BTN-52–55; RFC-0005 / ADR-0024).
 - **Actors:** capability enforcement, assignment/ownership, and authentication (BTN-60–62; RFC-0007 / ADR-0026).
 - **Integrations:** operation policy and health, email/push adapters, and MCP transport (BTN-68–69, BTN-76–78).
@@ -306,6 +373,7 @@ The main implementation areas are:
 | `battalion.workers` | Detached per-Run execution and reconnect support |
 | `battalion.observation` | Live event ordering, deduplication, and reconnect cursors |
 | `battalion.execution` | Durable execution, artifact, usage, and cost evidence |
+| `battalion.history` / `battalion.history_store` | History evidence, descriptive analytics, and disposable SQLite indexes |
 | `battalion.role_results` | Typed role-result validation |
 | `battalion.context` | Bounded model context assembly |
 | `battalion.scope` | Mechanical write-scope enforcement |
