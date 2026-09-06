@@ -19,11 +19,12 @@ BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 BTN-172 adds [operator data-handling guidance](docs/data-handling.md), public
 navigation, setup/trace notices, and CLI/desktop disclosure UAT scenarios.
 It documents current boundaries without changing role authority,
-context admission, or retention. Endpoint-aware inference identity remains
-BTN-54 work, explicitly deferred by the operator to post-UAT on 2026-08-30.
-The operator approved the BTN-172 CLI/desktop disclosure scenarios on that date;
-live acceptance remains separate from script approval, and Pages availability
-requires a verified main deployment.
+context admission, or retention. The inference-target sequence BTN-52 through
+BTN-55 is now complete: endpoint-aware configuration, optional FreeLLMAPI,
+resolved runtime identity/diversity evidence, and zero-cost enforcement have
+all landed. The operator approved the BTN-172 CLI/desktop disclosure scenarios
+on 2026-08-30; live acceptance remains separate from script approval, and Pages
+availability requires a verified main deployment.
 
 BTN-166's scoped-tool factory validates every directory and single-file authority
 declaration against the resolved project boundary. Application start/resume and worker launch reject invalid
@@ -43,7 +44,14 @@ the shared provider-free benchmark, three disposable framework spikes, and the
 accepted PySide6 desktop presentation decision in ADR-0022. BTN-42 implements
 the production read-only desktop console. BTN-43 completes the accepted durable
 human-action and next-attempt intervention contract in ADR-0023, including split
-desktop/worker packaging; analytics remain BTN-44 work.
+desktop/worker packaging. BTN-44 now completes shared application history
+queries and CLI search/analytics over disposable SQLite projections (ADR-0040).
+The initial implementation scans canonical snapshots for freshness, exposes
+malformed-source limitations, and separates identity dimensions and cost sources;
+exact evidence filters, UTC start ranges, sourced decimal cost ranges, and
+prompt/checkpoint/revision/ticket-label segmentation cover RFC-0004's descriptive
+comparison contract. Missing context-policy and project-domain evidence stays unknown;
+desktop presentation integration remains future work.
 BTN-56 applies the supplied desktop visual tokens and bundled brand assets
 without changing application authority or workflow behavior.
 BTN-57 adds a Pages product introduction, reviewed production-client captures from deterministic
@@ -168,10 +176,12 @@ battalion/
   context.py              # bounded role, Instinct, and human-action assembly
   execution.py            # durable node evidence, provenance, and cost views
   reviewer_testing.py     # admitted test inputs and bounded pytest process lifecycle
-  setup.py                # provider discovery and endpoint-aware setup (BTN-15, BTN-52 branch)
+  setup.py                # provider discovery and endpoint-aware setup
   graph.py                # graph construction, routing, pause, and resume
   recovery.py             # pure classification of durable recovery evidence
   progress.py             # CLI progress projection
+  history.py              # pure history evidence and descriptive analytics products
+  history_store.py        # rebuildable SQLite projection adapter (ADR-0040)
   intel/
     models.py             # candidate and accepted Instinct contracts
     repository.py         # immutable accepted-Instinct storage
@@ -248,6 +258,7 @@ The architecture decisions and active proposals referenced by this plan are:
 | [ADR-0037](docs/adrs/adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion |
 | [ADR-0038](docs/adrs/adr0038.md) | Gate Driver on a revision-pinned artifact-target contract |
 | [ADR-0039](docs/adrs/adr0039.md) | Persist exact workflow admission separately from execution history |
+| [ADR-0040](docs/adrs/adr0040.md) | Keep history search and analytics as rebuildable local projections |
 
 Knowledge-system records are indexed separately in the same directory. BTN-24
 adds accepted Instinct retrieval to role context without adding Recon or human
@@ -347,18 +358,35 @@ run, resume, persistence, or review paths.
 
 ## Future architecture planning
 
-BTN-45 through BTN-49 turn the README's post-v2 directions into bounded
-architecture work for a possible Specifier role, a permissioned plugin model,
-severity-based review and a possible Guardian role, and carefully constrained
-self-modification research. BTN-49 adds a follow-on decision and disposable
-evaluation for language-neutral repository quality gates after BTN-46 defines
-the plugin boundary. The existing planning briefs live under `docs/future/`.
+The original BTN-45 through BTN-49 planning lane is no longer uniformly future
+work. BTN-45 is complete with accepted RFC-0020 for the Specification workflow,
+and BTN-49 is complete with accepted RFC-0010 for language-neutral Quality Gates.
+Their accepted runtime work is tracked in the implementation tickets decomposed
+from those RFCs. The remaining tickets in that original range retain their own
+canonical Issue status rather than being implied open by this plan.
 
-These tickets produce decision-ready RFCs and follow-up decomposition only.
-They do not authorize new roles, graph transitions, interrupt behavior,
-permissions, integrations, or self-editing. Any accepted change to those
-surfaces must reconcile `spec.md`, record durable decisions in ADRs, preserve
-human approval boundaries, and receive separate implementation tickets.
+BTN-97 is complete with accepted RFC-0021. Repository instructions are treated
+as declared project authority with deterministic discovery/scope resolution,
+typed conflicts, bounded role-specific context, separate semantic compliance
+evidence, and a proposal/human-materialization boundary. Implementation is split
+across BTN-237 through BTN-243.
+
+BTN-105 is complete with accepted RFC-0022. `SignalSource` is a transport-neutral
+capability for operational evidence, distinct from `WorkSource`. Immutable Signals
+feed Battalion-owned correlation and explicit human-confirmed work proposal paths;
+implementation is split across BTN-244 through BTN-247.
+
+BTN-110 is complete with accepted RFC-0023. Provenance, effective authority, and
+Actor authorization are mechanically distinct. Stable provenance and source
+receipts are implemented separately from lazy operation-specific authority
+evaluation; implementation begins with BTN-248 and BTN-249 and reuses canonical
+artifact and application authorization boundaries.
+
+These architecture tickets produce decision-ready RFCs and follow-up decomposition.
+They do not themselves authorize implementation outside the accepted contracts.
+Any accepted change to roles, graph transitions, interrupt behavior, permissions,
+integrations, or self-editing must still preserve human approval boundaries and
+land through its implementation tickets.
 
 BTN-50 is independent rollout work for truthful repository status badges and a
 credential-independent test workflow. It must not advertise packages,
@@ -370,37 +398,29 @@ and BTN-56. It adds canonical icons and deterministic, credential-free
 screenshots of shipped desktop workflows. It coordinates layout with BTN-50 but
 does not absorb badge or repository-health claims.
 
-BTN-51 through BTN-55 define an architecture-first inference-target and cost
-policy, then sequence endpoint-aware local setup, optional FreeLLMAPI support,
-resolved identity evidence, and zero-cost enforcement. FreeLLMAPI remains a
-replaceable OpenAI-compatible infrastructure option: its routing must not own
+BTN-51 through BTN-55 define and now deliver the architecture-first inference-target
+and cost policy: endpoint-aware local setup, optional FreeLLMAPI support, resolved
+identity/diversity provenance, and zero-cost enforcement. FreeLLMAPI remains a
+replaceable OpenAI-compatible infrastructure option: its routing does not own
 Battalion's role, diversity, cost, graph, or failure policy, and an external
 free-tier claim is not itself durable zero-cost evidence.
 
 BTN-51 accepted [RFC-0005](docs/rfcs/rfc0005.md) and
-[ADR-0024](docs/adrs/adr0024.md). They separate requested and resolved identity,
-endpoint and inference location, canonical model family, and cost policy. They
-require fail-closed local-only and free-only modes while retaining LiteLLM and
-BTN-35 unknown-cost semantics. Runtime delivery remains BTN-52 through BTN-55.
+[ADR-0024](docs/adrs/adr0024.md). BTN-52 through BTN-55 are complete. Together
+they preserve endpoint-aware requested identity, resolved runtime identity,
+local/remote inference classification, Driver/Reviewer diversity checks, explicit
+unknown-cost semantics, and fail-closed local-only/free-only policy without
+moving those decisions into provider adapters or model prompts.
 
-BTN-52 branch implementation adds a shared `llm/configuration.py` target contract
-used by setup, configuration loading, and streaming/non-streaming LiteLLM calls.
-It preserves endpoint URLs, inference-location assertions, backend names,
-canonical family declarations, environment credential references, and request
-settings. Setup checks distinct effective targets before saving, including
-additional configured roles, and never forwards ambient cloud keys to keyless
-endpoints. Preflight diversity requires concrete family declarations for
-endpoint-configured Driver/Reviewer targets and rejects equal families and
-opaque routes. Plain model configurations retain a compatibility path. This
-does not claim runtime identity verification (BTN-54), verified locality, or
-zero-cost policy enforcement (BTN-55), and is not shipped until merged.
-
-BTN-53 branch implementation recognizes `backend: freellmapi` only at setup's
-OpenAI-compatible catalog preflight. It authenticates `/v1/models` with an
-environment-backed bearer reference, verifies each requested concrete model,
-then reuses the shared LiteLLM completion and infrastructure-failure paths.
-FreeLLMAPI supplies no node-specific integration or policy authority; runtime
-route evidence remains BTN-54 and cost-policy enforcement remains BTN-55.
+BTN-98 branch implementation introduces the `battalion.cartography` logical
+contract: strict typed map records, Battalion-owned identities, conservative
+reconciliation evidence, immutable revision history, deterministic
+graph-adjacency JSON behind a backend-neutral repository/query port, and a
+generated Markdown projection with independent freshness. The branch preserves
+attributed and governing records through generated refresh assembly and rejects
+unresolved Actor provenance. Full Cartographer extraction, staleness assessment,
+context retrieval, and desktop presentation remain separately scoped RFC-0008
+follow-ons. This branch work is not shipped until merged to `main`.
 
 BTN-65's accepted [ADR-0025](docs/adrs/adr0025.md) places transport-neutral
 Battalion capabilities above provider adapters and transports. Accepted
