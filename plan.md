@@ -168,7 +168,7 @@ battalion/
   context.py              # bounded role, Instinct, and human-action assembly
   execution.py            # durable node evidence, provenance, and cost views
   reviewer_testing.py     # admitted test inputs and bounded pytest process lifecycle
-  setup.py                # provider discovery and connectivity setup (BTN-15)
+  setup.py                # provider discovery and endpoint-aware setup (BTN-15, BTN-52 branch)
   graph.py                # graph construction, routing, pause, and resume
   recovery.py             # pure classification of durable recovery evidence
   progress.py             # CLI progress projection
@@ -382,6 +382,25 @@ BTN-51 accepted [RFC-0005](docs/rfcs/rfc0005.md) and
 endpoint and inference location, canonical model family, and cost policy. They
 require fail-closed local-only and free-only modes while retaining LiteLLM and
 BTN-35 unknown-cost semantics. Runtime delivery remains BTN-52 through BTN-55.
+
+BTN-52 branch implementation adds a shared `llm/configuration.py` target contract
+used by setup, configuration loading, and streaming/non-streaming LiteLLM calls.
+It preserves endpoint URLs, inference-location assertions, backend names,
+canonical family declarations, environment credential references, and request
+settings. Setup checks distinct effective targets before saving, including
+additional configured roles, and never forwards ambient cloud keys to keyless
+endpoints. Preflight diversity requires concrete family declarations for
+endpoint-configured Driver/Reviewer targets and rejects equal families and
+opaque routes. Plain model configurations retain a compatibility path. This
+does not claim runtime identity verification (BTN-54), verified locality, or
+zero-cost policy enforcement (BTN-55), and is not shipped until merged.
+
+BTN-53 branch implementation recognizes `backend: freellmapi` only at setup's
+OpenAI-compatible catalog preflight. It authenticates `/v1/models` with an
+environment-backed bearer reference, verifies each requested concrete model,
+then reuses the shared LiteLLM completion and infrastructure-failure paths.
+FreeLLMAPI supplies no node-specific integration or policy authority; runtime
+route evidence remains BTN-54 and cost-policy enforcement remains BTN-55.
 
 BTN-65's accepted [ADR-0025](docs/adrs/adr0025.md) places transport-neutral
 Battalion capabilities above provider adapters and transports. Accepted

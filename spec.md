@@ -53,8 +53,77 @@ run automatically.
 [ADR-0024](docs/adrs/adr0024.md) accept an endpoint-aware inference identity
 and cost policy without changing the shipped v1 runtime. BTN-52 through BTN-55
 deliver the contract; until those tickets complete, the existing LiteLLM
-model-string configuration, BTN-14 string comparison, and BTN-35 call evidence
-remain the implemented behavior.
+model-string configuration and BTN-35 call evidence remain the shipped baseline.
+BTN-52 branch implementation adds endpoint-aware configuration and preflight
+identity checks described below; it does not implement BTN-54 runtime evidence
+or BTN-55 policy enforcement.
+
+### BTN-52 configuration and setup (branch implementation)
+
+`NodeLLMConfig` retains `model`, `temperature`, `max_retries`, and non-secret
+`extra_params`, and adds `endpoint_url`, `backend`, `inference_location`
+(`local`, `remote`, `unknown`), `canonical_model_family`, `api_key_env`, and
+optional `keyless`. LiteLLM remains the transport boundary; endpoint fields are
+forwarded identically for setup, streaming, and non-streaming calls. Legacy
+`extra_params.api_base` migrates to `endpoint_url`. A model-only override retains
+transport settings but clears a changed model's prior family assertion.
+
+Setup preserves complete configurations, including additional configured roles,
+and validates each distinct model/endpoint/credential-reference/request-settings
+combination before saving. No failed check overwrites the existing file.
+`--no-validate` omits live checks, not configuration or credential checks.
+Bearer tokens remain in environment variables and are resolved at the call
+boundary. Keyless targets do not receive ambient cloud credentials. Authenticated
+custom endpoints require explicit credential references. Persisted endpoint URLs
+must be HTTP(S) without user info, queries, or fragments; inline secrets and
+target-changing fallback/provider overrides in extra parameters are rejected.
+
+Endpoint-configured Driver and Reviewer must declare distinct concrete canonical
+families. Equal families or equal requested identities are rejected regardless
+of provider or endpoint differences; opaque auto/profile/smart/fusion requests
+are rejected. Plain model configurations retain requested-identity compatibility
+with the provider prefix removed. Family and location declarations are operator
+assertions, not runtime evidence; setup connectivity does not prove same-host
+inference or zero cost. Runtime contradiction detection remains BTN-54 delivery.
+
+### BTN-53 optional FreeLLMAPI backend (branch implementation)
+
+FreeLLMAPI is configured as an optional `backend: freellmapi` target through
+the same OpenAI-compatible LiteLLM path as other custom endpoints. Its bearer
+credential is an `api_key_env` reference. During validated setup, Battalion
+checks the authenticated `/v1/models` catalog for each distinct FreeLLMAPI
+target before its normal minimal completion; discovery, authentication,
+unavailable models, and unavailable capacity fail before saving or through the
+existing infrastructure-failure boundary. The bearer is not persisted.
+
+All role selections remain data-driven. Driver and Reviewer require distinct
+concrete canonical families and cannot use auto, profile, fusion, smart, or
+equivalent virtual routes. Battalion neither imports nor delegates role,
+workflow, graph, prompt, cost, or routing policy to FreeLLMAPI. Resolved route
+evidence and runtime identity contradiction detection remain BTN-54 delivery;
+cost-policy enforcement remains BTN-55.
+
+### BTN-54 resolved inference identity and diversity provenance (branch implementation)
+
+Each newly completed LLM call writes execution-record schema `1.8` evidence
+that separates Battalion's `requested_model` from an explicitly reported
+`response_model`, plus configured `backend`, non-secret `endpoint_url`, and
+`inference_location`. Router evidence is retained only when emitted by the
+response or stream, including `X-Routed-Via` and `X-Routed-Model`; missing
+response and router metadata remains unavailable. Historical execution records
+through schema `1.7` stay readable, with these new fields absent rather than
+retrofitted from display strings.
+
+For Driver and Reviewer, an exact collision between independently reported
+effective response/router model identities is durable contradiction evidence.
+Battalion invalidates the current output or verdict and pauses through existing
+infrastructure interrupt condition 5. It does not attempt to infer a provider,
+endpoint, or canonical family from a model display string. A configured local
+location is recorded with its loopback endpoint and backend, but remains a
+configuration classification—not proof that a proxy's upstream inference is
+same-host. BTN-55 owns verified locality and zero-cost policy admission.
+
+### Identity and policy delivery contract
 
 The accepted identity separates the Battalion-requested model, resolved or
 response model, provider, backend and non-secret endpoint, inference location,

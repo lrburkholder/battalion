@@ -194,17 +194,135 @@ $RefactorerModel = Read-Host 'Refactorer provider/model'
 & $Python -m battalion setup --model-architect $ArchitectModel --model-driver $DriverModel --model-reviewer $ReviewerModel --model-refactorer $RefactorerModel --validate
 ```
 
-Setup should create `battalion.config.yaml` containing the four model identifiers
+Setup should create `battalion.config.yaml` containing the four model configurations
 and **no API keys**. Review the selected models rather than accepting unexpected
 defaults.
 
-Validation performs a real provider request. It checks connectivity for one
-selected model per provider; it does not prove that every selected model can
+Validation performs a real provider request for each distinct effective target
+(model, endpoint, credential reference, and request settings).
+It checks connectivity; it does not prove that every selected model can
 successfully perform its Battalion role. `--no-validate` skips the connectivity
 request, but it does not make later Runs offline or prove that setup is ready.
 
 Setup is currently performed through the CLI even when you plan to use the
 desktop application.
+
+### Local and custom inference endpoints
+
+BTN-52 adds the following setup support on its implementation branch; use a
+candidate containing that change to exercise these options. Existing plain
+`provider/model` configurations still work. All inference continues through
+LiteLLM; Battalion does not install or start model servers.
+
+Each role can also specify `endpoint_url`, `backend` (an optional server name),
+`inference_location` (`local`, `remote`, or `unknown`),
+`canonical_model_family`, `api_key_env`, and `keyless`. Existing temperature,
+retry, and non-secret `extra_params` settings survive setup. Older
+`extra_params.api_base` values migrate to `endpoint_url` when setup saves.
+
+| Server | LiteLLM model prefix | Example base URL |
+| --- | --- | --- |
+| Ollama chat | `ollama_chat/` | `http://localhost:11434` |
+| LM Studio | `lm_studio/` or `openai/` | `http://localhost:1234/v1` |
+| vLLM HTTP server | `hosted_vllm/` or `openai/` | `http://localhost:8000/v1` |
+| Other OpenAI-compatible HTTP server | `openai/` | Your server's base URL, usually ending in `/v1` |
+
+Use the exact model identifier served by your endpoint after the prefix. The
+`vllm/` adapter is distinct from the HTTP-serving `hosted_vllm/` adapter. These
+formats follow the LiteLLM documentation for [Ollama](https://docs.litellm.ai/docs/providers/ollama),
+[LM Studio](https://docs.litellm.ai/docs/providers/lm_studio),
+[vLLM](https://docs.litellm.ai/docs/providers/vllm), and
+[OpenAI-compatible endpoints](https://docs.litellm.ai/docs/providers/openai_compatible).
+
+For example, to change Driver to an already-running local server while retaining
+the other configured roles, replace `qwen3` with its served identifier and family:
+
+```powershell
+& $Python -m battalion setup --model-driver openai/qwen3 `
+    --endpoint driver=http://localhost:8000/v1 `
+    --inference-location driver=local `
+    --canonical-model-family driver=qwen3 `
+    --backend driver=workstation
+```
+
+Each endpoint option accepts `ROLE=VALUE` and may be repeated for another role.
+Interactive setup also prompts for the endpoint, inference location, credential
+variable name, and Driver/Reviewer family. YAML can express the same fields:
+
+```yaml
+models:
+  driver:
+    model: openai/qwen3
+    endpoint_url: http://localhost:8000/v1
+    backend: workstation
+    inference_location: local
+    canonical_model_family: qwen3
+    temperature: 0.0
+    max_retries: 2
+    extra_params:
+      timeout: 30
+  reviewer:
+    model: ollama_chat/llama3.3
+    endpoint_url: http://localhost:11434
+    inference_location: local
+    canonical_model_family: llama3.3
+```
+
+Keep the other roles in your configuration too. Setup preserves additional
+configured roles, including Tactician, and checks their targets. A live check
+uses the selected endpoint and request settings with a one-token ping; a failed
+check leaves the existing file unchanged. `--no-validate` skips network calls
+but still checks configuration, diversity, and required credential references.
+
+Loopback endpoints and supported keyless adapters do not require cloud-provider
+credentials. Battalion sends a non-secret placeholder where the client requires
+a key value, so ambient cloud credentials are not forwarded to keyless servers.
+For a server requiring a bearer token, put the token in your environment and use
+`--api-key-env driver=LOCAL_INFERENCE_TOKEN`; save only that variable name.
+An authenticated custom remote endpoint also requires an explicit variable
+reference. Use `--keyless driver=true` for an explicitly unauthenticated remote
+server; `false` disables automatic keyless detection and `auto` restores it.
+URLs cannot contain user info, query strings, or fragments. Inline API keys and
+authentication headers in `extra_params` are rejected.
+
+### FreeLLMAPI
+
+FreeLLMAPI is an optional OpenAI-compatible router. Configure its `/v1`
+endpoint with `backend: freellmapi`, mark it `remote` even when the router runs
+on loopback, and put its unified bearer credential in an environment variable.
+Choose one concrete model identifier and canonical family for each role; do not
+configure `auto`, profiles, fusion, or other virtual routes for Driver or
+Reviewer. During validated setup, Battalion checks the authenticated `/v1/models`
+catalog for each distinct configured target before its existing one-token
+completion check. The token is never saved in the configuration.
+
+```powershell
+$env:FREELLMAPI_TOKEN = 'set-this-in-your-user-environment'
+& $Python -m battalion setup --model-driver openai/qwen3-coder `
+    --endpoint driver=http://127.0.0.1:3001/v1 `
+    --backend driver=freellmapi `
+    --inference-location driver=remote `
+    --canonical-model-family driver=qwen3-coder `
+    --api-key-env driver=FREELLMAPI_TOKEN
+```
+
+Repeat the endpoint, backend, location, and credential reference for the other
+roles; give Reviewer a different concrete model family. The router may fail
+over between providers only within the configured model family and existing
+policy envelope.
+
+Location is an operator assertion. A loopback proxy may still run inference
+remotely, so choose `remote` for that case; connectivity does not verify local
+execution or zero cost. LAN and public endpoints cannot be classified `local`.
+Endpoint-configured Driver and Reviewer require distinct
+concrete `canonical_model_family` declarations. Use the same family identifier
+across providers, aliases, and quantizations of the same model. `auto`, profile,
+smart, and fusion routes cannot prove diversity and are rejected. Plain existing
+model configurations retain compatibility using their requested identity with
+the provider prefix removed. Changing a role's model clears its old family
+declaration; supply the new family when changing an endpoint-configured Driver
+or Reviewer. Runtime resolution evidence remains BTN-54 work, and cost-policy
+enforcement remains BTN-55 work.
 
 ## 5. Run Battalion and review the human checkpoint
 

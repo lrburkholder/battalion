@@ -10,7 +10,7 @@ battalion.config.yaml:
      own provider detection, so "gpt-4o-mini" becomes "openai/gpt-4o-mini".
   4. Enforces BTN-14 model diversity (Driver != Reviewer) automatically.
   5. Verifies an API key is available for every provider that needs one.
-  6. Validates live connectivity to each configured provider with a minimal
+  6. Validates live connectivity to each configured model with a minimal
      completion, and refuses to save until every check passes.
 
 Nothing here is wired to a specific terminal UI: prompting is injectable so
@@ -19,13 +19,21 @@ thin adapter.
 """
 from __future__ import annotations
 
+import json
 import os
+from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from battalion.config import DEFAULT_CONFIG_PATH, save_config
 from battalion.disclosure import DATA_HANDLING_URL
 from battalion.llm.litellm_client import ModelDiversityError, _silence_litellm_output
+from battalion.llm.configuration import (
+    InferenceConfigurationError, NodeLLMConfig, validate_model_diversity,
+)
 
 
 class ProviderNotDetected(Exception):
@@ -38,6 +46,47 @@ class MissingApiKey(Exception):
 
 class ConnectivityCheckFailed(Exception):
     """A minimal completion against a configured model did not succeed."""
+
+
+def validate_openai_compatible_model_catalog(
+    config: NodeLLMConfig,
+    api_key: str | None,
+    *,
+    opener: Callable[..., Any] = urlopen,
+) -> None:
+    """Confirm an OpenAI-compatible router advertises the requested model.
+
+    This is deliberately a setup concern, rather than a role or graph concern:
+    a router is just an endpoint. The bearer credential is resolved by
+    ``NodeLLMConfig`` and used only for this request; errors do not echo it.
+    """
+    if not config.endpoint_url:
+        raise InferenceConfigurationError("An OpenAI-compatible catalog check requires endpoint_url")
+    requested_model = config.model.split("/", 1)[-1]
+    request = Request(
+        f"{config.endpoint_url.rstrip('/')}/models",
+        headers={
+            "Accept": "application/json",
+            **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
+        },
+    )
+    try:
+        with opener(request, timeout=10) as response:
+            payload = json.load(response)
+        entries = payload.get("data") if isinstance(payload, dict) else None
+        model_ids = {
+            entry.get("id") for entry in entries or []
+            if isinstance(entry, dict) and isinstance(entry.get("id"), str)
+        }
+    except (OSError, URLError, ValueError, TypeError, json.JSONDecodeError):
+        raise ConnectivityCheckFailed(
+            "Model catalog check failed for configured inference target. "
+            "Check endpoint availability and credentials."
+        ) from None
+    if requested_model not in model_ids:
+        raise ConnectivityCheckFailed(
+            f"Configured model {requested_model!r} is not available from the endpoint catalog."
+        )
 
 
 # Sensible defaults for a first-run config with no existing file. All four
@@ -61,9 +110,6 @@ _REVIEWER_FALLBACKS = (
 )
 
 NODE_ORDER = ["architect", "driver", "reviewer", "refactorer"]
-
-# Providers that work without an API key (local inference, self-hosted).
-_KEYLESS_PROVIDERS = {"ollama", "vllm", "lm_studio", "lmstudio", "local"}
 
 # provider -> candidate env var names, in priority order. Fallback for
 # unlisted providers: f"{PROVIDER.upper()}_API_KEY".
@@ -126,6 +172,7 @@ def validate_connectivity(
     model: str,
     api_key: str | None = None,
     completion_fn: Callable[..., Any] | None = None,
+    config: NodeLLMConfig | None = None,
 ) -> None:
     """Confirm a model is reachable with a working key.
 
@@ -137,19 +184,26 @@ def validate_connectivity(
 
     _silence_litellm_output()
     fn = completion_fn or litellm.completion
+    target = config or NodeLLMConfig(model=model)
     kwargs: dict[str, Any] = {
+        **target.request_params(),
         "model": model,
+        "temperature": target.temperature,
         "messages": [{"role": "user", "content": "ping"}],
         "max_tokens": 1,
+        "caching": False,
     }
-    if api_key:
+    if "max_completion_tokens" in kwargs:
+        kwargs["max_completion_tokens"] = 1
+    if api_key and "api_key" not in kwargs:
         kwargs["api_key"] = api_key
     try:
         fn(**kwargs)
     except Exception as exc:  # noqa: BLE001 - any provider/auth error is a failure
         raise ConnectivityCheckFailed(
-            f"Connectivity check failed for {model}: {exc}"
-        ) from exc
+            f"Connectivity check failed for {model} ({type(exc).__name__}). "
+            "Check endpoint availability, model availability, and credentials."
+        ) from None
 
 
 def _normalized_model_string(model: str, provider: str) -> str:
@@ -172,6 +226,24 @@ def _pick_reviewer_fallback(driver_model: str) -> str:
     )
 
 
+def parse_role_options(options: dict[str, list[str]]) -> dict[str, dict[str, Any]]:
+    """Parse repeatable CLI ROLE=VALUE options at the setup boundary."""
+    result: dict[str, dict[str, Any]] = {}
+    for field, entries in options.items():
+        for entry in entries:
+            role, separator, value = entry.partition("=")
+            if not separator or role not in NODE_ORDER:
+                raise InferenceConfigurationError("Target options require ROLE=VALUE for architect, driver, reviewer, or refactorer")
+            if field == "keyless":
+                if value not in {"true", "false", "auto"}:
+                    raise InferenceConfigurationError("keyless must be true, false, or auto")
+                value = {"true": True, "false": False, "auto": None}[value]
+            else:
+                value = value or None
+            result.setdefault(role, {})[field] = value
+    return result
+
+
 def run_setup(
     config_path: str | Path = DEFAULT_CONFIG_PATH,
     model_overrides: dict[str, str] | None = None,
@@ -180,25 +252,14 @@ def run_setup(
     prompt: Callable[[str, str], str] | None = None,
     echo: Callable[[str], None] = print,
     existing_yaml: dict[str, Any] | None = None,
-) -> dict[str, dict[str, str]]:
-    """Resolve, check, validate, and persist a setup config.
+    node_overrides: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Preserve, resolve, and validate complete per-role inference targets.
 
-    Args:
-        config_path: YAML file to (read and) write.
-        model_overrides: Per-node model strings from CLI flags.
-        validate: Whether to run live connectivity checks before saving.
-        completion_fn: Injectable completion for connectivity validation.
-        prompt: Interactive prompt(message, default) -> str; None disables
-                prompting (missing values fall back to defaults).
-        echo: Output sink for progress/notes.
-        existing_yaml: Raw existing config to preserve (defaults to the file).
-
-    Returns:
-        The models dict that was written, {"node": {"model": ...}}.
-
-    Raises:
-        ProviderNotDetected, MissingApiKey, ConnectivityCheckFailed,
-        ModelDiversityError — nothing is saved until all checks pass.
+    Model flags override node_overrides, which override existing configuration.
+    Secret values are resolved only for requests and never added to saved data.
+    No configuration is written until every preflight and requested live check
+    succeeds. Extra configured roles are preserved and validated too.
     """
     echo(
         "Data handling: setup validation sends a live provider request; runs may "
@@ -207,88 +268,98 @@ def run_setup(
     path = Path(config_path)
     if existing_yaml is None and path.exists():
         import yaml
-
-        existing_yaml = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    existing_yaml = existing_yaml or {}
-
-    existing_models: dict[str, str] = {}
-    for node, data in (existing_yaml.get("models") or {}).items():
-        if isinstance(data, dict) and isinstance(data.get("model"), str):
-            existing_models[node] = data["model"]
-
+        try:
+            existing_yaml = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError:
+            raise InferenceConfigurationError("Configuration must be valid YAML") from None
+    existing_yaml = deepcopy(existing_yaml) if existing_yaml is not None else {}
+    if not isinstance(existing_yaml, dict) or not isinstance(existing_yaml.get("models", {}), dict):
+        raise InferenceConfigurationError("Configuration and models must be mappings")
+    existing_models = existing_yaml.get("models", {})
     overrides = {k: v for k, v in (model_overrides or {}).items() if v}
+    node_overrides = node_overrides or {}
+    if (set(overrides) | set(node_overrides)) - set(NODE_ORDER):
+        raise InferenceConfigurationError("Unknown setup role override")
+    roles = list(dict.fromkeys([*NODE_ORDER, *existing_models]))
+    configs: dict[str, NodeLLMConfig] = {}
+    for node in roles:
+        data = deepcopy(existing_models.get(node, existing_models.get("default", {})))
+        if not isinstance(data, dict):
+            raise InferenceConfigurationError("Each model configuration must be a mapping")
+        changes = deepcopy(node_overrides.get(node, {}))
+        if not isinstance(changes, dict):
+            raise InferenceConfigurationError("Each role override must be a mapping")
+        requested = overrides.get(node) or changes.get("model") or data.get("model")
+        if not requested:
+            default = DEFAULT_MODELS.get(node)
+            if default is None:
+                raise InferenceConfigurationError(f"Missing model for {node}")
+            requested = prompt(f"Model for {node} (e.g. gpt-4o-mini)", default) if prompt else default
+            requested = requested or default
+        requested = NodeLLMConfig(model=requested).model
+        name, provider = detect_provider(requested)
+        normalized = _normalized_model_string(name, provider)
+        if "model" in data:
+            old_name, old_provider = detect_provider(data["model"])
+            if normalized != _normalized_model_string(old_name, old_provider):
+                data.pop("canonical_model_family", None)
+        if "endpoint_url" in changes and isinstance(data.get("extra_params"), dict):
+            data["extra_params"].pop("api_base", None)
+        data.update(changes)
+        data["model"] = normalized
+        if prompt is not None and node not in node_overrides:
+            endpoint = prompt(f"Endpoint base URL for {node} (blank uses provider default)", data.get("endpoint_url") or data.get("extra_params", {}).get("api_base", ""))
+            if endpoint:
+                data["endpoint_url"] = endpoint
+                data["inference_location"] = prompt(f"Inference location for {node}: local, remote, unknown (an operator assertion)", data.get("inference_location", "unknown"))
+                data["api_key_env"] = prompt(f"Credential environment variable for {node} (name only; blank for automatic/keyless)", data.get("api_key_env") or "") or None
+                if node in {"driver", "reviewer"}:
+                    data["canonical_model_family"] = prompt(f"Concrete canonical model family for {node} (same across providers and quantizations)", data.get("canonical_model_family") or "") or None
+        try:
+            configs[node] = NodeLLMConfig(**data)
+        except TypeError:
+            raise InferenceConfigurationError(f"Unsupported configuration fields for {node}") from None
 
-    # 1. Resolve a model string per node.
-    resolved: dict[str, str] = {}
-    for node in NODE_ORDER:
-        if node in overrides:
-            resolved[node] = overrides[node]
-        elif node in existing_models:
-            resolved[node] = existing_models[node]
-        elif prompt is not None:
-            resolved[node] = prompt(
-                f"Model for {node} (e.g. gpt-4o-mini)", DEFAULT_MODELS[node]
-            ) or DEFAULT_MODELS[node]
-        else:
-            resolved[node] = DEFAULT_MODELS[node]
+    reviewer_explicit = (
+        "reviewer" in overrides or "reviewer" in existing_models
+        or "reviewer" in node_overrides or "default" in existing_models
+    )
+    if configs["driver"].model == configs["reviewer"].model and not reviewer_explicit:
+        # Preserve the legacy first-run default correction only. Never move an
+        # endpoint-configured role to a remote default to repair diversity.
+        if not configs["driver"].endpoint_url and not configs["driver"].canonical_model_family:
+            fallback = _pick_reviewer_fallback(configs["driver"].model)
+            configs["reviewer"] = NodeLLMConfig(model=fallback)
+            echo(f"Reviewer would use the same model as Driver; set to {fallback} to satisfy model diversity.")
+    validate_model_diversity(configs)
 
-    # 2. Normalize to explicit provider/model strings.
-    normalized: dict[str, str] = {}
-    for node in NODE_ORDER:
-        model_name, provider = detect_provider(resolved[node])
-        normalized[node] = _normalized_model_string(model_name, provider)
+    keys: dict[str, str | None] = {}
+    for node, target in configs.items():
+        params = target.request_params()
+        key = params.get("api_key")
+        if key is None:
+            key = api_key_for_provider(target.provider)
+            if key is None:
+                hint = " or ".join(provider_env_vars(target.provider))
+                raise MissingApiKey(f"Provider '{target.provider}' requires an API key. Set {hint} in the environment and rerun setup.")
+        keys[node] = key
 
-    # 3. BTN-14 model diversity: Driver must differ from Reviewer.
-    if normalized["driver"] == normalized["reviewer"]:
-        reviewer_explicit = "reviewer" in overrides or "reviewer" in existing_models
-        if not reviewer_explicit:
-            fallback = _pick_reviewer_fallback(normalized["driver"])
-            normalized["reviewer"] = fallback
-            echo(
-                f"Reviewer would use the same model as Driver; set to "
-                f"{fallback} to satisfy model diversity."
-            )
-        else:
-            raise ModelDiversityError(
-                "Driver and Reviewer cannot use the same model. "
-                f"Both are configured with model '{normalized['driver']}'. "
-                "Choose a different model for reviewer (e.g. openai/gpt-4o "
-                "with an openai/gpt-4o-mini driver)."
-            )
-
-    # 4. API-key availability per provider (after diversity auto-fix may
-    #    have swapped in a Reviewer from another provider).
-    providers = {m.split("/", 1)[0] for m in normalized.values()}
-    for provider in sorted(providers):
-        if provider in _KEYLESS_PROVIDERS:
-            continue
-        env_vars = provider_env_vars(provider)
-        if api_key_for_provider(provider) is None:
-            hint = " or ".join(env_vars) if env_vars else f"{provider.upper()}_API_KEY"
-            raise MissingApiKey(
-                f"Provider '{provider}' requires an API key, but none of "
-                f"{hint} is set in the environment. Export the key (or set "
-                "it in a .env file loaded before running battalion) and rerun "
-                "setup."
-            )
-
-    # 5. Live connectivity validation per provider.
     if validate:
-        validated = set()
-        for node in NODE_ORDER:
-            provider = normalized[node].split("/", 1)[0]
-            if provider in validated:
+        validated: list[tuple[Any, ...]] = []
+        for node, target in configs.items():
+            # Equality includes model, endpoint, auth reference, and all request
+            # settings. Secrets themselves are never used as persisted identity.
+            identity = target.validation_identity()
+            if identity in validated:
                 continue
-            validated.add(provider)
-            echo(f"Validating connectivity: {normalized[node]} ...")
-            validate_connectivity(
-                normalized[node],
-                api_key=api_key_for_provider(provider),
-                completion_fn=completion_fn,
-            )
-            echo(f"  ok: {normalized[node]}")
+            endpoint = target.endpoint_url or "provider default"
+            echo(f"Validating connectivity: {target.model} at {endpoint} (inference: {target.inference_location}) ...")
+            if (target.backend or "").casefold() == "freellmapi":
+                validate_openai_compatible_model_catalog(target, keys[node])
+            validate_connectivity(target.model, api_key=keys[node], completion_fn=completion_fn, config=target)
+            validated.append(identity)
+            echo(f"  ok: {target.model}")
 
-    # 6. Persist, preserving everything else in the existing file.
-    models = {node: {"model": normalized[node]} for node in NODE_ORDER}
+    models = {node: asdict(target) for node, target in configs.items()}
     save_config(models, config_path=path, existing=existing_yaml)
     return models
