@@ -209,16 +209,22 @@ desktop application.
 
 ### Local and custom inference endpoints
 
-BTN-52 adds the following setup support on its implementation branch; use a
-candidate containing that change to exercise these options. Existing plain
-`provider/model` configurations still work. All inference continues through
-LiteLLM; Battalion does not install or start model servers.
+Existing plain `provider/model` configurations still work. All inference
+continues through LiteLLM; Battalion does not install or start model servers.
 
 Each role can also specify `endpoint_url`, `backend` (an optional server name),
 `inference_location` (`local`, `remote`, or `unknown`),
 `canonical_model_family`, `api_key_env`, and `keyless`. Existing temperature,
 retry, and non-secret `extra_params` settings survive setup. Older
 `extra_params.api_base` values migrate to `endpoint_url` when setup saves.
+
+Runs default to `paid-capable`, which permits only the explicitly configured
+targets. To prohibit paid inference, set `cost_policy` to `local-only` or
+`free-only`. Both fail closed before graph execution: every role must have
+current, non-secret classification evidence. `local-only` requires a verified
+same-host local target; `free-only` also admits a current `verified-free`
+target. Missing, stale, or unknown evidence is not treated as free. A
+provider-reported non-zero cost pauses the Run after its evidence is recorded.
 
 | Server | LiteLLM model prefix | Example base URL |
 | --- | --- | --- |
@@ -256,6 +262,9 @@ models:
     endpoint_url: http://localhost:8000/v1
     backend: workstation
     inference_location: local
+    cost_classification: local
+    classification_source: same-host operator verification
+    classification_observed_at: 2026-09-06T00:00:00+00:00
     canonical_model_family: qwen3
     temperature: 0.0
     max_retries: 2
@@ -265,8 +274,27 @@ models:
     model: ollama_chat/llama3.3
     endpoint_url: http://localhost:11434
     inference_location: local
+    cost_classification: local
+    classification_source: same-host operator verification
+    classification_observed_at: 2026-09-06T00:00:00+00:00
     canonical_model_family: llama3.3
 ```
+
+Set the policy at the top level, or supply the equivalent setup options:
+
+```yaml
+cost_policy: local-only
+```
+
+```powershell
+& $Python -m battalion setup --cost-policy local-only `
+    --cost-classification architect=local `
+    --classification-source architect=same-host-verification `
+    --classification-observed-at architect=2026-09-06T00:00:00+00:00
+```
+
+Repeat the classification options for every role. `battalion status --human`
+shows the durable policy selected for a Run.
 
 Keep the other roles in your configuration too. Setup preserves additional
 configured roles, including Tactician, and checks their targets. A live check

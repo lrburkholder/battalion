@@ -391,7 +391,8 @@ BTN-51 accepted [RFC-0005](docs/rfcs/rfc0005.md) and
 [ADR-0024](docs/adrs/adr0024.md). They separate requested and resolved identity,
 endpoint and inference location, canonical model family, and cost policy. They
 require fail-closed local-only and free-only modes while retaining LiteLLM and
-BTN-35 unknown-cost semantics. Runtime delivery remains BTN-52 through BTN-55.
+BTN-35 unknown-cost semantics. BTN-52 through BTN-55 deliver the runtime in
+sequence; their feature-branch work is not shipped until merged to `main`.
 
 BTN-52 branch implementation adds a shared `llm/configuration.py` target contract
 used by setup, configuration loading, and streaming/non-streaming LiteLLM calls.

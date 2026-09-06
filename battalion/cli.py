@@ -136,6 +136,7 @@ def _print_status(
         typer.echo(f"Status:      {state.status.value}")
         typer.echo(f"Phase:       {state.phase}")
         typer.echo(f"Budget:      {state.budget.used} / {state.budget.limit}")
+        typer.echo(f"Cost policy: {state.cost_policy.value}")
         recovery = assess_recovery(state)
         if recovery is not None:
             typer.echo(f"Recovery:    {recovery.disposition}")
@@ -576,6 +577,11 @@ def setup(
     api_key_env: list[str] = typer.Option([], "--api-key-env", help="ROLE=ENV_VAR; credential variable name, never its value."),
     keyless: list[str] = typer.Option([], "--keyless", help="ROLE=true|false|auto; authentication setting independent of inference location."),
     backend: list[str] = typer.Option([], "--backend", help="ROLE=NAME; non-secret server identifier."),
+    cost_policy: str | None = typer.Option(None, "--cost-policy", help="local-only, free-only, or paid-capable (default)."),
+    cost_classification: list[str] = typer.Option([], "--cost-classification", help="ROLE=local|verified-free|paid|unknown."),
+    classification_source: list[str] = typer.Option([], "--classification-source", help="ROLE=SOURCE; bounded non-secret verification source."),
+    classification_observed_at: list[str] = typer.Option([], "--classification-observed-at", help="ROLE=ISO-8601 timestamp with timezone."),
+    classification_expires_at: list[str] = typer.Option([], "--classification-expires-at", help="ROLE=ISO-8601 timestamp with timezone."),
 ):
     """Configure LLM providers and validate connectivity, writing battalion.config.yaml."""
     overrides = {
@@ -594,12 +600,17 @@ def setup(
                 "api_key_env": api_key_env,
                 "keyless": keyless,
                 "backend": backend,
+                "cost_classification": cost_classification,
+                "classification_source": classification_source,
+                "classification_observed_at": classification_observed_at,
+                "classification_expires_at": classification_expires_at,
             }),
             config_path=config or DEFAULT_CONFIG_PATH,
             model_overrides=overrides,
             validate=validate,
             prompt=_prompt_value if interactive else None,
             echo=typer.echo,
+            cost_policy=cost_policy,
         )
     except ProviderNotDetected as exc:
         typer.echo(f"Error: {exc}", err=True)

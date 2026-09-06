@@ -47,18 +47,16 @@ run automatically.
   model-produced node lists; recipe-specific dispatch remains separately
   scoped under RFC-0012.
 
-## Accepted Post-v1 Inference Contract (delivery pending)
+## Accepted Post-v1 Inference Contract (branch delivery)
 
 [RFC-0005](docs/rfcs/rfc0005.md) and
 [ADR-0024](docs/adrs/adr0024.md) accept an endpoint-aware inference identity
-and cost policy without changing the shipped v1 runtime. BTN-52 through BTN-55
-deliver the contract; until those tickets complete, the existing LiteLLM
-model-string configuration and BTN-35 call evidence remain the shipped baseline.
-BTN-52 branch implementation adds endpoint-aware configuration and preflight
-identity checks described below; it does not implement BTN-54 runtime evidence
-or BTN-55 policy enforcement.
+and cost policy without changing the original v1 runtime contract. BTN-52
+through BTN-55 deliver the implementation on feature branches. Until these
+changes merge, the existing LiteLLM model-string configuration and BTN-35 call
+evidence remain the shipped baseline.
 
-### BTN-52 configuration and setup (branch implementation)
+### BTN-52 configuration and setup
 
 `NodeLLMConfig` retains `model`, `temperature`, `max_retries`, and non-secret
 `extra_params`, and adds `endpoint_url`, `backend`, `inference_location`
@@ -84,9 +82,10 @@ of provider or endpoint differences; opaque auto/profile/smart/fusion requests
 are rejected. Plain model configurations retain requested-identity compatibility
 with the provider prefix removed. Family and location declarations are operator
 assertions, not runtime evidence; setup connectivity does not prove same-host
-inference or zero cost. Runtime contradiction detection remains BTN-54 delivery.
+inference or zero cost. BTN-54 records runtime identity contradictions, and
+BTN-55 admits zero-cost policies from explicit current classification evidence.
 
-### BTN-53 optional FreeLLMAPI backend (branch implementation)
+### BTN-53 optional FreeLLMAPI backend
 
 FreeLLMAPI is configured as an optional `backend: freellmapi` target through
 the same OpenAI-compatible LiteLLM path as other custom endpoints. Its bearer
@@ -100,10 +99,10 @@ All role selections remain data-driven. Driver and Reviewer require distinct
 concrete canonical families and cannot use auto, profile, fusion, smart, or
 equivalent virtual routes. Battalion neither imports nor delegates role,
 workflow, graph, prompt, cost, or routing policy to FreeLLMAPI. Resolved route
-evidence and runtime identity contradiction detection remain BTN-54 delivery;
-cost-policy enforcement remains BTN-55.
+evidence and runtime identity contradiction detection are recorded by BTN-54;
+BTN-55 applies the same cost-policy boundary to this optional backend.
 
-### BTN-54 resolved inference identity and diversity provenance (branch implementation)
+### BTN-54 resolved inference identity and diversity provenance
 
 Each newly completed LLM call writes execution-record schema `1.8` evidence
 that separates Battalion's `requested_model` from an explicitly reported
@@ -122,6 +121,22 @@ endpoint, or canonical family from a model display string. A configured local
 location is recorded with its loopback endpoint and backend, but remains a
 configuration classification—not proof that a proxy's upstream inference is
 same-host. BTN-55 owns verified locality and zero-cost policy admission.
+
+### BTN-55 zero-cost policy enforcement (branch implementation)
+
+`cost_policy` is durable Run configuration and is selectable as `local-only`,
+`free-only`, or the backwards-compatible `paid-capable` default. Before any
+graph execution, every configured inference target—including optional roles—is
+admitted against current non-secret classification evidence. `local-only`
+requires a sourced current local classification and `free-only` additionally
+permits sourced current `verified-free` classifications; paid, unknown, and
+expired evidence fail closed.
+
+Each LLM call retains the active policy with its BTN-35 cost evidence. A
+provider-reported non-zero cost under either zero-cost policy is recorded, then
+raises the existing typed infrastructure-failure path and pauses the Run. It is
+not retried. Configuration rejects target-changing LiteLLM fallback settings,
+and resuming a Run cannot substitute a different durable cost policy.
 
 ### Identity and policy delivery contract
 

@@ -35,6 +35,7 @@ from battalion.actors import (
     unlink_external_identity as _unlink_external_identity,
 )
 from battalion.config import BattalionConfig
+from battalion.llm.cost_policy import InferencePolicyError, cost_policy_context, validate_cost_policy
 from battalion.scope.tool_binding import WriteScopeMisconfigured, validate_write_scope
 from battalion.execution import summarize_costs
 from battalion.history import HistoryQuery
@@ -171,6 +172,10 @@ class ApplicationError(Exception):
 
 class InvalidWriteScope(ApplicationError):
     """The project-relative authority declarations cannot safely be bound."""
+
+
+class InvalidInferencePolicy(ApplicationError):
+    """The configured targets cannot be admitted under the selected policy."""
 
 
 def _validate_write_scope(write_scope: dict[str, list[str]], base_dir: str | Path) -> None:
@@ -801,6 +806,10 @@ def create_initial_state(
     """Create one canonical new-run state through the application boundary."""
     _validate_write_scope(config.write_scope, config.base_dir)
     try:
+        validate_cost_policy(config.models, config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
+    try:
         project = load_project_identity(config.base_dir, create=True)
         _resolve_human_actor(config.base_dir, None)
     except (IdentityError, OSError) as exc:
@@ -819,6 +828,7 @@ def create_initial_state(
         write_scope=config.write_scope,
         retry_bound=2,
         budget=Budget(limit=config.budget_limit, used=0),
+        cost_policy=config.cost_policy,
         reviewer_rejection_history=[],
         interrupt_log=[],
         manual_checkpoints=config.manual_checkpoints,
@@ -963,6 +973,12 @@ def start_run(
 ) -> RunOperationResult:
     """Execute a new run through the graph and persist its resulting state."""
     initial_state = command.initial_state
+    if initial_state.cost_policy is not command.config.cost_policy:
+        raise InvalidInferencePolicy("Initial state cost policy does not match the active configuration")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
     _validate_write_scope(initial_state.write_scope, command.config.base_dir)
     path = state_path(initial_state.run_id, state_dir)
     if path.exists() and not command.overwrite:
@@ -993,17 +1009,18 @@ def start_run(
         if publisher is not None:
             publisher.handle_checkpoint(validated)
 
-    final_state = _execute_graph(
-        execute, run_id=initial_state.run_id, path=path,
-        initial_state=initial_state,
-        llm_configs=command.config.models,
-        base_dir=command.config.base_dir,
-        prompts_dir=command.config.prompts_dir,
-        reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
-        on_node_event=node_callback,
-        on_token=token_callback,
-        on_state_checkpoint=checkpoint,
-    )
+    with cost_policy_context(command.config.cost_policy):
+        final_state = _execute_graph(
+            execute, run_id=initial_state.run_id, path=path,
+            initial_state=initial_state,
+            llm_configs=command.config.models,
+            base_dir=command.config.base_dir,
+            prompts_dir=command.config.prompts_dir,
+            reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
+            on_node_event=node_callback,
+            on_token=token_callback,
+            on_state_checkpoint=checkpoint,
+        )
     if final_state.run_id != initial_state.run_id:
         raise RunIdentityChanged(
             f"Run identity changed from {initial_state.run_id} to {final_state.run_id}."
@@ -1033,6 +1050,12 @@ def resume_run(
 ) -> RunOperationResult:
     """Load, resume through the canonical graph behavior, and save one run."""
     state = _load_run(command.run_id, state_dir)
+    if state.cost_policy is not command.config.cost_policy:
+        raise InvalidInferencePolicy("Resume configuration cannot change a run's durable cost policy")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
     if state.workflow_admission is not None:
         _validate_admitted_resume(
             state.workflow_admission,
@@ -1071,17 +1094,18 @@ def resume_run(
         if publisher is not None:
             publisher.handle_checkpoint(validated)
 
-    final_state = _execute_graph(
-        execute, run_id=state.run_id, path=path,
-        state=state,
-        llm_configs=command.config.models,
-        base_dir=command.config.base_dir,
-        prompts_dir=command.config.prompts_dir,
-        reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
-        on_node_event=node_callback,
-        on_token=token_callback,
-        on_state_checkpoint=checkpoint,
-    )
+    with cost_policy_context(command.config.cost_policy):
+        final_state = _execute_graph(
+            execute, run_id=state.run_id, path=path,
+            state=state,
+            llm_configs=command.config.models,
+            base_dir=command.config.base_dir,
+            prompts_dir=command.config.prompts_dir,
+            reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
+            on_node_event=node_callback,
+            on_token=token_callback,
+            on_state_checkpoint=checkpoint,
+        )
     if final_state.run_id != state.run_id:
         raise RunIdentityChanged(
             f"Run identity changed from {state.run_id} to {final_state.run_id}."
@@ -1631,10 +1655,15 @@ def assess_tactician(
     )
     if llm_config is None:
         raise ApplicationError("No Tactician or default model is configured")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
     kwargs: dict[str, Any] = {"registry": registry}
     if call_llm_fn is not None:
         kwargs["call_llm_fn"] = call_llm_fn
-    return _run_tactician(command.assessment_input, llm_config, **kwargs)
+    with cost_policy_context(command.config.cost_policy):
+        return _run_tactician(command.assessment_input, llm_config, **kwargs)
 
 
 def inspect_workflow_admission_policy(

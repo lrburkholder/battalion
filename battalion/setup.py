@@ -34,6 +34,7 @@ from battalion.llm.litellm_client import ModelDiversityError, _silence_litellm_o
 from battalion.llm.configuration import (
     InferenceConfigurationError, NodeLLMConfig, validate_model_diversity,
 )
+from battalion.llm.cost_policy import CostPolicy, InferencePolicyError, validate_cost_policy
 
 
 class ProviderNotDetected(Exception):
@@ -253,6 +254,7 @@ def run_setup(
     echo: Callable[[str], None] = print,
     existing_yaml: dict[str, Any] | None = None,
     node_overrides: dict[str, dict[str, Any]] | None = None,
+    cost_policy: CostPolicy | str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Preserve, resolve, and validate complete per-role inference targets.
 
@@ -276,6 +278,14 @@ def run_setup(
     if not isinstance(existing_yaml, dict) or not isinstance(existing_yaml.get("models", {}), dict):
         raise InferenceConfigurationError("Configuration and models must be mappings")
     existing_models = existing_yaml.get("models", {})
+    try:
+        effective_cost_policy = CostPolicy(
+            cost_policy or existing_yaml.get("cost_policy", CostPolicy.PAID_CAPABLE)
+        )
+    except ValueError:
+        raise InferenceConfigurationError(
+            "cost_policy must be local-only, free-only, or paid-capable"
+        ) from None
     overrides = {k: v for k, v in (model_overrides or {}).items() if v}
     node_overrides = node_overrides or {}
     if (set(overrides) | set(node_overrides)) - set(NODE_ORDER):
@@ -332,6 +342,10 @@ def run_setup(
             configs["reviewer"] = NodeLLMConfig(model=fallback)
             echo(f"Reviewer would use the same model as Driver; set to {fallback} to satisfy model diversity.")
     validate_model_diversity(configs)
+    try:
+        validate_cost_policy(configs, effective_cost_policy)
+    except InferencePolicyError as exc:
+        raise InferenceConfigurationError(str(exc)) from exc
 
     keys: dict[str, str | None] = {}
     for node, target in configs.items():
@@ -361,5 +375,8 @@ def run_setup(
             echo(f"  ok: {target.model}")
 
     models = {node: asdict(target) for node, target in configs.items()}
-    save_config(models, config_path=path, existing=existing_yaml)
+    save_config(
+        models, config_path=path, existing=existing_yaml,
+        cost_policy=effective_cost_policy,
+    )
     return models

@@ -19,6 +19,7 @@ from battalion.execution import record_llm_call, record_stream_observation
 from battalion.llm.configuration import (
     ModelDiversityError, NodeLLMConfig, validate_model_diversity,
 )
+from battalion.llm.cost_policy import active_cost_policy, nonzero_cost_violation
 from battalion.state.models import CostSource, LLMCallCost
 
 
@@ -40,6 +41,10 @@ class InfraFailure(Exception):
 
 class InferenceIdentityContradiction(InfraFailure):
     """Provider evidence disproves an admitted Driver/Reviewer distinction."""
+
+
+class CostPolicyViolation(InfraFailure):
+    """A provider reported paid inference inside a zero-cost run."""
 
 
 def build_node_configs(raw: dict[str, dict]) -> dict[str, NodeLLMConfig]:
@@ -199,7 +204,7 @@ def _response_metadata(response: Any) -> dict[str, Any]:
     }
 
 
-def _record_response_cost(response: Any, config: NodeLLMConfig) -> None:
+def _record_response_cost(response: Any, config: NodeLLMConfig) -> str | None:
     usage = _value(response, "usage") or {}
     hidden = _value(response, "_hidden_params") or {}
     input_tokens = _value(usage, "prompt_tokens", _value(usage, "input_tokens", 0))
@@ -227,6 +232,12 @@ def _record_response_cost(response: Any, config: NodeLLMConfig) -> None:
     )
     metadata = _response_metadata(response)
     response_model = metadata["response_model"]
+    policy = active_cost_policy()
+    violation = nonzero_cost_violation(
+        policy,
+        provider_reported=source is CostSource.PROVIDER_REPORTED,
+        cost_is_nonzero=cost is not None and float(cost) > 0,
+    )
     record_llm_call(
         LLMCallCost(
             call_id=f"llm-{uuid4()}",
@@ -243,8 +254,11 @@ def _record_response_cost(response: Any, config: NodeLLMConfig) -> None:
             inference_location=config.inference_location,
             routed_provider=metadata["routed_provider"],
             routed_model=metadata["routed_model"],
+            identity_contradiction=violation,
+            cost_policy=policy,
         )
     )
+    return violation
 
 
 def _completion_streaming(
@@ -356,8 +370,12 @@ def call_llm(
                     temperature=config.temperature,
                     **config.request_params(),
                 )
-            _record_response_cost(response, config)
+            violation = _record_response_cost(response, config)
+            if violation:
+                raise CostPolicyViolation(node_name, config.model, attempt, RuntimeError(violation))
             return response
+        except CostPolicyViolation:
+            raise
         except Exception as exc:  # noqa: BLE001 - deliberately broad: any
             # failure here (network, provider error, timeout) should count
             # toward the retry budget rather than crash the node outright.
