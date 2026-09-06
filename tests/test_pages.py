@@ -57,6 +57,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "docs/rfcs/rfc0012.md",
             "docs/rfcs/rfc0013.md",
             "docs/rfcs/rfc0014.md",
+            "docs/rfcs/rfc0022.md",
             "benchmarks/desktop/index.md",
             "benchmarks/desktop/tauri/findings.md",
             "benchmarks/desktop/pyside6/findings.md",
