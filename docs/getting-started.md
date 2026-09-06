@@ -285,6 +285,32 @@ server; `false` disables automatic keyless detection and `auto` restores it.
 URLs cannot contain user info, query strings, or fragments. Inline API keys and
 authentication headers in `extra_params` are rejected.
 
+### FreeLLMAPI
+
+FreeLLMAPI is an optional OpenAI-compatible router. Configure its `/v1`
+endpoint with `backend: freellmapi`, mark it `remote` even when the router runs
+on loopback, and put its unified bearer credential in an environment variable.
+Choose one concrete model identifier and canonical family for each role; do not
+configure `auto`, profiles, fusion, or other virtual routes for Driver or
+Reviewer. During validated setup, Battalion checks the authenticated `/v1/models`
+catalog for each distinct configured target before its existing one-token
+completion check. The token is never saved in the configuration.
+
+```powershell
+$env:FREELLMAPI_TOKEN = 'set-this-in-your-user-environment'
+& $Python -m battalion setup --model-driver openai/qwen3-coder `
+    --endpoint driver=http://127.0.0.1:3001/v1 `
+    --backend driver=freellmapi `
+    --inference-location driver=remote `
+    --canonical-model-family driver=qwen3-coder `
+    --api-key-env driver=FREELLMAPI_TOKEN
+```
+
+Repeat the endpoint, backend, location, and credential reference for the other
+roles; give Reviewer a different concrete model family. The router may fail
+over between providers only within the configured model family and existing
+policy envelope.
+
 Location is an operator assertion. A loopback proxy may still run inference
 remotely, so choose `remote` for that case; connectivity does not verify local
 execution or zero cost. LAN and public endpoints cannot be classified `local`.

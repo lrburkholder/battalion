@@ -395,6 +395,13 @@ opaque routes. Plain model configurations retain a compatibility path. This
 does not claim runtime identity verification (BTN-54), verified locality, or
 zero-cost policy enforcement (BTN-55), and is not shipped until merged.
 
+BTN-53 branch implementation recognizes `backend: freellmapi` only at setup's
+OpenAI-compatible catalog preflight. It authenticates `/v1/models` with an
+environment-backed bearer reference, verifies each requested concrete model,
+then reuses the shared LiteLLM completion and infrastructure-failure paths.
+FreeLLMAPI supplies no node-specific integration or policy authority; runtime
+route evidence remains BTN-54 and cost-policy enforcement remains BTN-55.
+
 BTN-65's accepted [ADR-0025](docs/adrs/adr0025.md) places transport-neutral
 Battalion capabilities above provider adapters and transports. Accepted
 [RFC-0006](docs/rfcs/rfc0006.md) defines WorkSource, KnowledgeSource,

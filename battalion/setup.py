@@ -19,11 +19,14 @@ thin adapter.
 """
 from __future__ import annotations
 
+import json
 import os
 from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from battalion.config import DEFAULT_CONFIG_PATH, save_config
 from battalion.disclosure import DATA_HANDLING_URL
@@ -43,6 +46,47 @@ class MissingApiKey(Exception):
 
 class ConnectivityCheckFailed(Exception):
     """A minimal completion against a configured model did not succeed."""
+
+
+def validate_openai_compatible_model_catalog(
+    config: NodeLLMConfig,
+    api_key: str | None,
+    *,
+    opener: Callable[..., Any] = urlopen,
+) -> None:
+    """Confirm an OpenAI-compatible router advertises the requested model.
+
+    This is deliberately a setup concern, rather than a role or graph concern:
+    a router is just an endpoint. The bearer credential is resolved by
+    ``NodeLLMConfig`` and used only for this request; errors do not echo it.
+    """
+    if not config.endpoint_url:
+        raise InferenceConfigurationError("An OpenAI-compatible catalog check requires endpoint_url")
+    requested_model = config.model.split("/", 1)[-1]
+    request = Request(
+        f"{config.endpoint_url.rstrip('/')}/models",
+        headers={
+            "Accept": "application/json",
+            **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
+        },
+    )
+    try:
+        with opener(request, timeout=10) as response:
+            payload = json.load(response)
+        entries = payload.get("data") if isinstance(payload, dict) else None
+        model_ids = {
+            entry.get("id") for entry in entries or []
+            if isinstance(entry, dict) and isinstance(entry.get("id"), str)
+        }
+    except (OSError, URLError, ValueError, TypeError, json.JSONDecodeError):
+        raise ConnectivityCheckFailed(
+            "Model catalog check failed for configured inference target. "
+            "Check endpoint availability and credentials."
+        ) from None
+    if requested_model not in model_ids:
+        raise ConnectivityCheckFailed(
+            f"Configured model {requested_model!r} is not available from the endpoint catalog."
+        )
 
 
 # Sensible defaults for a first-run config with no existing file. All four
@@ -310,6 +354,8 @@ def run_setup(
                 continue
             endpoint = target.endpoint_url or "provider default"
             echo(f"Validating connectivity: {target.model} at {endpoint} (inference: {target.inference_location}) ...")
+            if (target.backend or "").casefold() == "freellmapi":
+                validate_openai_compatible_model_catalog(target, keys[node])
             validate_connectivity(target.model, api_key=keys[node], completion_fn=completion_fn, config=target)
             validated.append(identity)
             echo(f"  ok: {target.model}")

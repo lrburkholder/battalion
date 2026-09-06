@@ -86,6 +86,23 @@ with the provider prefix removed. Family and location declarations are operator
 assertions, not runtime evidence; setup connectivity does not prove same-host
 inference or zero cost. Runtime contradiction detection remains BTN-54 delivery.
 
+### BTN-53 optional FreeLLMAPI backend (branch implementation)
+
+FreeLLMAPI is configured as an optional `backend: freellmapi` target through
+the same OpenAI-compatible LiteLLM path as other custom endpoints. Its bearer
+credential is an `api_key_env` reference. During validated setup, Battalion
+checks the authenticated `/v1/models` catalog for each distinct FreeLLMAPI
+target before its normal minimal completion; discovery, authentication,
+unavailable models, and unavailable capacity fail before saving or through the
+existing infrastructure-failure boundary. The bearer is not persisted.
+
+All role selections remain data-driven. Driver and Reviewer require distinct
+concrete canonical families and cannot use auto, profile, fusion, smart, or
+equivalent virtual routes. Battalion neither imports nor delegates role,
+workflow, graph, prompt, cost, or routing policy to FreeLLMAPI. Resolved route
+evidence and runtime identity contradiction detection remain BTN-54 delivery;
+cost-policy enforcement remains BTN-55.
+
 ### Identity and policy delivery contract
 
 The accepted identity separates the Battalion-requested model, resolved or
