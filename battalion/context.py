@@ -167,8 +167,13 @@ def architect_context(
     *,
     instincts: Sequence[AcceptedInstinct] = (),
     node_execution_id: str | None = None,
+    automatic_correction: str | None = None,
 ) -> str:
     sections = _base_sections(state, instincts)
+    if automatic_correction is not None:
+        # Correction must precede potentially long specification/Instinct
+        # material so the global context bound cannot silently discard it.
+        sections.insert(1, ("Battalion automatic correction", automatic_correction))
     intervention = _human_intervention_context(
         state, "architect", node_execution_id
     )

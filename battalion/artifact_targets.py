@@ -34,6 +34,10 @@ Revision = Annotated[
 ]
 Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 _PROTECTED_COMPONENTS = frozenset({".battalion", ".git", ".hg", ".svn", ".bzr"})
+_GENERATED_PLAN_MARKERS = (
+    "<!-- BEGIN GENERATED:artifact-targets -->",
+    "<!-- END GENERATED:artifact-targets -->",
+)
 
 
 def normalize_target_path(value: str) -> str:
@@ -229,6 +233,8 @@ class ArchitectImplementationStep(_FrozenModel):
     def reject_blank_description(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("implementation step description cannot be blank")
+        if any(marker in value for marker in _GENERATED_PLAN_MARKERS):
+            raise ValueError("implementation step cannot impersonate generated target content")
         return value
 
     @field_validator("target_ids")
@@ -253,6 +259,8 @@ class ArchitectHandoffCandidate(_TargetCollection):
     def reject_blank_plan(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("plan Markdown cannot be blank")
+        if any(marker in value for marker in _GENERATED_PLAN_MARKERS):
+            raise ValueError("plan Markdown cannot impersonate generated target content")
         return value
 
     @model_validator(mode="after")

@@ -15,9 +15,11 @@ acceptance (BTN-197). It builds on BTN-143 and BTN-144; BTN-129 retains the live
 CLI evidence.
 The BTN-194 branch begins with `battalion.artifact_targets`: frozen candidate
 and contract models, lexical path validation, explicit case-collision policy,
-target-ID step references, and deterministic content identities. Architect
-pre-write integration and prompt changes are still pending; this foundation
-does not persist handoffs, change Run state, or enforce the future Driver gate.
+target-ID step references, and deterministic content identities. Architect now
+parses that typed response before its existing scoped write, renders a marked
+target projection into `plan.md`, and uses the bounded role-contract correction
+path for invalid candidates. This branch does not persist handoffs, change Run
+state, or enforce the future Driver gate.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 

@@ -241,6 +241,17 @@ def test_evidence_is_bounded_revision_pinned_and_unambiguous():
     {"implementation_steps": [{"description": "Do it", "target_ids": [
         {"target_id": "greeting-test", "project_relative_path": "test_greeting.py"},
     ]}]},
+    pytest.param(
+        {"plan_markdown": "<!-- BEGIN GENERATED:artifact-targets -->"},
+        id="plan-impersonates-generated-targets",
+    ),
+    pytest.param(
+        {"implementation_steps": [{
+            "description": "<!-- END GENERATED:artifact-targets -->",
+            "target_ids": ["greeting-test"],
+        }]},
+        id="step-impersonates-generated-targets",
+    ),
     {"contract_id": "a" * 64}, {"write_scope": {"architect": ["src/"]}},
 ])
 def test_invalid_candidate_or_step_path_redefinition_is_rejected(updates):

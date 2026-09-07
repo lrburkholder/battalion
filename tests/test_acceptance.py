@@ -73,7 +73,36 @@ runner = CliRunner()
 # Fixtures / helpers
 # =============================================================================
 
-ARCHITECT_PLAN = "# Plan\n\nImplement the widget."
+ARCHITECT_HANDOFF = {
+    "handoff_version": "1.0",
+    "plan_markdown": "# Plan\n\nImplement the widget.",
+    "targets": [
+        {
+            "target_id": "widget-test",
+            "project_relative_path": "src/test_widget.py",
+            "assignments": [{
+                "owner_role": "driver",
+                "workflow_phase": "driver-red",
+                "intended_operation": "create",
+            }],
+            "evidence_references": [],
+        },
+        {
+            "target_id": "widget-source",
+            "project_relative_path": "src/widget.py",
+            "assignments": [{
+                "owner_role": "driver",
+                "workflow_phase": "driver-green",
+                "intended_operation": "create",
+            }],
+            "evidence_references": [],
+        },
+    ],
+    "implementation_steps": [{
+        "description": "Add the failing test, then implement the widget.",
+        "target_ids": ["widget-test", "widget-source"],
+    }],
+}
 FAILING_TEST = (
     "def test_widget():\n"
     "    from widget import widget\n"
@@ -145,7 +174,7 @@ class TestAcceptanceCriteria1_FullFlow:
         calls = {"driver": 0}
 
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             calls["driver"] += 1
@@ -190,7 +219,7 @@ class TestAcceptanceCriteria2_InterruptTriggers:
         Reviewer rejects it with the same root cause twice, which must fire
         trigger #1 and pause."""
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             # A passing test is a RED-check violation (feature already exists).
@@ -238,7 +267,7 @@ class TestAcceptanceCriteria2_InterruptTriggers:
 
         # (b) graph-level routing: the error surfaces as trigger #2 + pause.
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             # A test-named path outside src/: passes RED's test-ness check,
@@ -260,7 +289,7 @@ class TestAcceptanceCriteria2_InterruptTriggers:
     def test_trigger3_budget_exceeded(self, tmp_path):
         """Budget is tracked per graph run; exceeding it mid-run pauses."""
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             raise AssertionError("Driver must not run once budget is exhausted")
@@ -328,7 +357,7 @@ class TestAcceptanceCriteria2_InterruptTriggers:
         """A user-declared checkpoint pauses unconditionally at the declared
         phase, before the next node runs."""
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             raise AssertionError("Manual checkpoint before Driver must pause first")
@@ -506,7 +535,7 @@ class TestProgressEvents:
         events = []
 
         def arch_llm(node, cfg, messages, **kw):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         calls = {"driver": 0}
 
@@ -559,7 +588,7 @@ class TestProgressEvents:
                 on_stream({"type": "reasoning", "content": "thinking…"})
                 on_stream({"type": "token", "content": "plan "})
                 on_stream({"type": "token", "content": "text"})
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         calls = {"driver": 0}
 
