@@ -1,310 +1,334 @@
-# Data Handling and Trust Boundaries
+# CLI UAT plan
 
-Battalion works with your source code, specifications, model providers, and
-saved Run evidence. Some of that information stays on your machine. Some may be
-sent to services you configure.
+**Status:** Approved as the BTN-170/BTN-171 preparation baseline for downstream
+UAT. The repository operator authorized commit, push, and PR handoff in the
+BTN-171 task on 2026-08-30, with further documentation feedback expected during
+UAT. This approves script preparation, not final live acceptance or release
+readiness. Use the commit containing this approval as the reviewed revision;
+record its exact hash with each candidate's UAT evidence.
 
-**Only use project information that you are allowed to send to those services.**
+Before formal execution, record script revision, reviewer, review date, and
+approval decision in the UAT evidence. Final live/documentation-only acceptance
+belongs to [BTN-129](https://github.com/lrburkholder/battalion/issues/203) on the
+main-based candidate handed off by [BTN-173](https://github.com/lrburkholder/battalion/issues/271).
+Script preparation/review does not wait for that final acceptance. Record
+documentation corrections and required reruns as UAT findings; this baseline
+does not freeze the guide or waive fixture safety/approval requirements.
 
-This guide explains what Battalion may send, what it stores locally, where
-credentials belong, and what to consider before sharing logs or traces. It is
-not a privacy policy for model providers and does not claim regulatory
-compliance.
+## Purpose
 
-If you are installing Battalion for the first time, start with
-[Getting Started](getting-started.md).
+**BTN-172 amendment:** the repository operator approved disclosure scenario
+1a on 2026-08-30 in the BTN-172 task. This approves the script, not final live
+acceptance. Use the commit containing this approval as the reviewed revision
+and record its hash, reviewer/date, and approval scope with the UAT evidence.
+BTN-54 was later completed. Its requested/resolved inference identity,
+contradiction, and diversity evidence should now be validated as part of the
+candidate rather than treated as deferred work.
 
-## The short version
+Exercise Battalion as an installed command-line application against a
+disposable local project. This plan is intentionally separate from unit tests:
+it verifies packaging, durable state, real provider interaction, human
+interrupt handling, and the observable command-line experience.
 
-Before using Battalion with sensitive work, know these five things:
+## Preconditions and artifact record
 
-1. **Model providers can receive project content.** The exact content depends on
-   the role, but it can include specifications, plans, source code, tests,
-   accepted Intel, human interventions, and test diagnostics.
-2. **Battalion saves evidence locally.** Run state, human decisions, execution
-   history, model/token/cost evidence, diagnostics, and generated artifacts can
-   contain sensitive information.
-3. **Credentials do not belong in project files.** Use environment variables or
-   another approved secret-management mechanism.
-4. **Trace output is especially sensitive.** `--trace-output` can save raw model
-   stream content and has no automatic redaction or expiry.
-5. **Local does not automatically mean private.** A local-looking model name or
-   endpoint does not prove that requests stay on your machine or are not logged.
+Use Windows PowerShell and the exact candidate **wheel**, never an editable
+checkout. Follow [Getting Started](../getting-started.md) for prerequisites,
+download/handoff selection, SHA-256 verification, a new Python 3.11+ environment,
+pytest installation, disposable Git project, and provider/model configuration.
+No Battalion source directory may be on `sys.path` or `PYTHONPATH`.
 
-## Where your information can go
+Retain this record before any provider call:
 
-| Destination | What may go there |
+| Evidence | Value to record |
 | --- | --- |
-| Your local machine | Configuration, specifications, model results, Run state, generated files, test results, Intel, and other execution evidence. Battalion's JSON and Markdown files are not encrypted storage. |
-| Your configured model provider or runtime | Role prompts plus the project context needed for that role. Setup validation also sends a small test completion. Retries can send similar information more than once. |
-| Configured integrations | Selected events or capability requests when that integration is actually enabled and invoked. Credentials are resolved at the transport boundary rather than being included in portable configuration. |
-| Terminal or desktop UI | Run status and evidence. Terminal scrollback, redirected output, screenshots, and screen sharing can create additional copies. |
-| A trace file you request | Raw streamed model observations written to the path supplied with `--trace-output`. This file can live outside the project. |
+| Candidate identity | Build/run URL; main source commit; subsequent remediation baseline if any |
+| Wheel | Exact artifact filename, expected and actual SHA-256 |
+| Provenance | Metadata filename, package version, source revision, tag only if actually tagged |
+| Documentation | Published guide URL and guide/script commit; script review decision |
+| Environment | OS, PowerShell/Python versions, installed package location, dependency versions |
+| Operator | Reviewer/operator identity, date, provider/model choices without secrets |
 
-Battalion does not make a blanket claim that every dependency, provider, proxy,
-operating system, or user-configured service is free of telemetry or logging.
-Review the services and deployment you actually use.
+## 1. Clean-environment, documentation-only onboarding
 
-<a id="model-context"></a>
-## What Battalion can send to a model
+A new operator follows Getting Started sections 1–5 using only the published
+instructions and named artifact handoff, without reading source code or asking
+maintainers for missing steps. Do not reuse a developer environment. If there
+is no candidate or published artifact, record **blocked**, not passed.
 
-Battalion gives each role the context it needs for its job. That means different
-roles can see different parts of the project.
+Record every undocumented required step, failed command, unclear prerequisite,
+or incorrect expected result as a defect, with guide section, expected/actual
+behavior, sanitized transcript, and candidate identity. If assistance is needed,
+record the original failure and restart the clean pass after guidance is fixed.
+Do not silently repair the environment and count the original pass as success.
 
-| Role | Typical model context |
-| --- | --- |
-| Architect | Ticket ID, specification, accepted Instincts, and a delivered Design decision when one applies. The normal Architect context does not enumerate repository files. |
-| Driver RED | Specification, accepted Instincts, approved plan, eligible existing implementation files, delivered Corrections, and bounded correction diagnostics when Battalion catches a role-contract violation. |
-| Driver GREEN | Specification, accepted Instincts, approved plan, eligible RED test files, delivered Corrections, and bounded correction diagnostics when applicable. |
-| Reviewer | Battalion runs mechanical tests first. When model review is needed, Reviewer can receive bounded test output and, when applicable, specification and accepted Instinct context. Test output may itself contain paths, source excerpts, or private diagnostics. |
-| Refactorer | Specification, accepted Instincts, approved plan, eligible test and implementation context, accepted GREEN artifact paths, and delivered Corrections. |
-| Recon | When explicitly invoked, Recon can receive the completed execution record and accepted Instincts used for comparison. That record may include diagnostics, human actions, role results, and provenance. Recon is not automatically invoked by ordinary `run` or `resume`. |
-| Tactician | When used for an uncertain admission decision, Tactician receives the bounded assessment evidence supplied for that decision. Its recommendation is advisory; it does not grant authority. |
+Retain wheel import location, CLI help, and packaged prompt smoke output. Verify
+setup writes secret-free configuration, checks connectivity, and keeps Driver
+and Reviewer distinct. Validation checks each distinct effective target for
+connectivity, including different endpoints or credentials for the same model;
+role suitability still needs UAT. The guide's manual checkpoint, printed UUID,
+human-readable inspection, durable resolution, and final `done`/pytest evidence
+are mandatory. `$Python`, `$Project`, and `$RunId` below are the variables
+established by that guide; replace `$RunId` after **each** new Run.
 
-Battalion limits how much context it assembles, but **size limits are not secret
-filters**. Eligible files are not scanned for secrets before being included.
-`.gitignore` is also not a confidentiality boundary for model context.
+<a id="data-handling"></a>
+## 1a. Data handling before setup and trace export (BTN-172)
 
-Keep secrets and other information that should never reach a model outside the
-configured roots Battalion is allowed to read.
+Use only the named candidate, published documentation, and disposable content.
+Before setup or execution, follow the prominent README, Getting Started, and
+Pages navigation links to [Data handling and trust boundaries](../data-handling.md).
+Record the URL, guide revision, and what the operator understood about model
+context, local evidence, endpoint uncertainty, credential placement, and retention.
+Before main deployment, review the staged/repository guide; do not mark public
+availability passed. BTN-173 owns deployment verification.
 
-Reviewer tests are different from model context. They run against a temporary
-project snapshot. Tests execute with the Battalion process's operating-system
-permissions and may be able to use inherited credentials or network access.
-The snapshot is **not an OS security sandbox**.
+1. Inspect `setup --help`, `run --help`, and `resume --help`. Confirm setup and
+   trace options identify the disclosure. In Getting Started's setup step,
+   confirm the URL appears **before** connectivity validation and no credential
+   value is displayed. `--no-validate` must not be described as private/offline
+   execution. A missing key error is not a completed live validation.
+2. After reviewing the disclosure, use a fresh disposable project and the normal
+   four-role configuration. Only if approved for this fixture, enable a trace
+   on its manually paused Run:
 
-Human intervention text is stored as evidence. A queued intervention is sent to
-the model only when it is delivered to its intended attempt, but human text may
-also appear later in execution evidence used by features such as Recon.
+   ```powershell
+   $TracePath = Join-Path $Project 'uat-stream.jsonl'
+   & $Python -m battalion run BTN-UAT-DATA --spec ticket.md --checkpoint driver --trace-output $TracePath
+   $RunId = Read-Host 'Paste the printed Run UUID'
+   & $Python -m battalion status $RunId --human
+   ```
 
-## Local and remote models
+3. Confirm the sensitive-export warning and URL precede trace-path reporting
+   and generation. Inspect the private file for Run/node/time/kind/raw-content
+   fields. Reasoning need not be emitted by every provider. Compare with Run
+   JSON: specification, human decisions, test/role evidence are sensitive too,
+   while raw stream events are not persisted there as a transcript.
+4. Review the plan and authorize continuation using the same private trace:
 
-A remote provider receives Battalion requests outside the local Battalion
-process.
+   ```powershell
+   & $Python -m battalion resume $RunId --resolution 'Reviewed disposable plan; continue within approved scope' --trace-output $TracePath
+   ```
 
-A model server running on your machine can keep inference local, but do not infer
-that from its name alone. A provider string containing `localhost`, `ollama`, or
-another local-looking value does not prove that requests stay local, remain
-offline, cost nothing, or are never logged. Proxies and local runtimes can also
-forward or retain requests.
+   Confirm the resume warning appears before generation, existing trace lines
+   survive, and later observations append. Do not treat sequence numbers as
+   global or raw model reasoning as acceptance evidence. Inspect final state
+   and required review outcomes separately.
+5. Prepare a **separate sanitized excerpt** for a finding; preserve original
+   evidence privately. The operator must be able to locate state, worker/Intel
+   evidence where present, workspace artifacts, and the explicit trace using
+   the guide alone, and explain that uninstall/local deletion does not retract
+   remote copies. Do not perform purge/restore, credential disclosure, or broad
+   filesystem deletion as part of this scenario.
 
-Verify the actual endpoint and routing you configured.
+Pass only when links/notices precede sensitive use and the guide matches the
+candidate. Record missing notices, broken links, undocumented steps, or false
+privacy/retention expectations as defects. This script review is separate from
+final BTN-129 live acceptance after BTN-173; no live result is asserted here.
 
-Battalion records requested inference identity and the identity reported by the
-provider or router for each call when that evidence is available. It records
-contradictions instead of silently replacing the requested identity. It also
-retains model/token/cost evidence and the configured endpoint classification.
-This evidence improves routing provenance, but it cannot prove facts that the
-provider does not expose. In particular, a local-looking endpoint or reported
-model name alone does not prove same-host execution, no forwarding, or no
-provider-side logging.
+## 2. Full happy path
 
-Driver and Reviewer diversity is checked against the configured concrete model
-families for endpoint-configured targets. Runtime identity evidence can expose a
-contradiction with those declarations. Different identifiers or family claims
-still do not prove that two requests ultimately reached independent physical
-backends.
-
-`setup --no-validate` only skips the setup connectivity request. It does not
-make later Battalion Runs offline.
-
-<a id="credentials"></a>
-## Where credentials belong
-
-Do **not** put API keys or other secrets in:
-
-- tickets or specifications,
-- `plan.md`, source code, or tests,
-- role prompts or human intervention text,
-- `battalion.config.yaml`,
-- screenshots or logs,
-- Git history, or
-- model identifiers and ordinary configuration values.
-
-For model providers, use the environment variable expected by the configured
-runtime or your organization's approved secret-management process. Battalion
-does not automatically load a `.env` file merely because one exists.
-
-For example, in PowerShell 7:
+Start another fresh disposable project using guide sections 3–4; keep its
+importable greeting stub and specification. Run without a manual checkpoint:
 
 ```powershell
-$env:OPENAI_API_KEY = Read-Host 'Provider API key for this session' -MaskInput
-# Run Battalion from this session without printing the variable.
-# After all intended child processes have exited:
-Remove-Item Env:OPENAI_API_KEY
+& $Python -m battalion run BTN-UAT-1 --spec ticket.md --budget 20
+$RunId = Read-Host 'Paste the printed Run UUID'
 ```
 
-An environment variable is still plaintext process data. Child processes can
-inherit it. Removing it from the parent shell does not revoke the credential or
-remove copies already inherited elsewhere. Rotate or revoke an exposed key at
-the provider.
+Record the printed run UUID. The expected successful progression is:
 
-### Integration credentials
-
-Portable integration configuration stores **references to credentials**, not the
-credential values themselves. For example:
-
-```yaml
-credential_references:
-  authorization:
-    reference: env://AUTOMATION_WEBHOOK_AUTHORIZATION
+```text
+Architect
+Driver (RED)
+Reviewer (RED)
+Driver (GREEN)
+Reviewer (GREEN)
+Refactorer
+Reviewer (refactor)
 ```
 
-The actual value should be supplied privately to the process that performs the
-request.
+Verify the outcome:
 
-Battalion validates recognized credential fields and reference formats, but it
-cannot prove that arbitrary free text contains no secrets. Review configuration
-before committing or sharing it.
+```powershell
+& $Python -m battalion status $RunId --human --costs
+& $Python -m battalion status $RunId
+& $Python -m pytest -q
+```
 
-<a id="local-evidence"></a>
-## What Battalion stores locally
+Pass criteria:
 
-By default, Battalion keeps its operational state under `.battalion/` in the
-project. Generated project files, such as `plan.md`, source changes, and tests,
-remain in the workspace itself.
+- The status is `done` and no interrupt is recorded.
+- `plan.md`, `src/greeting.py`, and `src/test_greeting.py` exist.
+- Tests pass in the project and the execution record shows all seven phases.
+- The status output shows stored model, token, cost, and artifact evidence;
+  missing cost is presented as `unknown`, never as zero.
+- `battalion status <RUN_UUID> --human --costs` identifies each node's model,
+  provider token usage, and bounded streamed reasoning/content character counts
+  without embedding raw trace text in `RunState`.
+- Where the provider/router reports a resolved model identity, execution
+  evidence retains it separately from the requested target and records any
+  contradiction instead of silently replacing either identity.
+- The terminal retains available node-associated progress. Raw reasoning/token
+  text is provider-dependent, not guaranteed evidence for every model.
 
-| Location | What it contains |
+Optional trace check: only after reviewing the sensitivity warning in Getting
+Started, repeat on another disposable project with
+`--trace-output .battalion\traces\BTN-UAT-1.jsonl`. Record whether the provider
+emits node-associated `reasoning`/`token` observations. Do not require a trace
+for acceptance or share raw provider text as routine evidence.
+
+### Prompt-efficiency observation
+
+For this deliberately small ticket, the generated `plan.md` should be 250
+words or fewer and the Driver and Refactorer final responses should be direct
+JSON rather than commentary. Compare the per-node reasoning/content character
+counts and provider tokens in `status --costs` across configured models. Inspect
+the optional trace for repeated debate about RED's intentionally missing
+implementation or JSON serialization; record that as a UAT finding if it
+recurs. Raw provider reasoning remains observable but is provider-controlled,
+so its character count is diagnostic evidence—not a deterministic pass/fail
+contract.
+
+For Refactorer, an already-clear implementation may validly return
+`{"outcome":"no-change","files":{},"reason":"..."}`. That result writes no
+files, records `refactorer:no-change` in execution evidence, and still proceeds
+to the independent Refactor review.
+
+## 3. Manual checkpoint and resume
+
+Use another fresh project from Getting Started sections 3–4, so the completed
+implementation from scenario 2 cannot turn RED into an already-passing test.
+Read `plan.md` after inspection and before the resume command below.
+
+```powershell
+& $Python -m battalion run BTN-UAT-2 --spec ticket.md --checkpoint driver
+$RunId = Read-Host 'Paste the printed Run UUID'
+& $Python -m battalion status $RunId --human
+& $Python -m battalion resume $RunId --resolution 'Architecture reviewed and approved'
+& $Python -m battalion status $RunId --human
+```
+
+The current implementation treats `driver` as a pause before Driver begins,
+which is after Architect completes. Confirm that the initial command records
+`awaiting-human`, the resolution becomes durable, and resume continues through
+the canonical graph path.
+
+## 4. Provider-failure recovery
+
+Use [Troubleshooting: execution failure](../troubleshooting.md#infra-failure)
+and its diagnostic/resume procedure for this scenario. Do not infer recovery
+solely from the `infra-failure` label or an old CLI message mentioning the LLM.
+
+Configure an unavailable local model or disconnect the selected provider, then
+start a new run. Verify all of the following:
+
+- A handled provider failure pauses at `awaiting-human` with an `infra-failure`
+  interrupt; it does not print a Python traceback. Record the actual status
+  and recovery disposition rather than equating the trigger name with status.
+- Inspect both human-readable and JSON status for the saved error and resume
+  target; record insufficient human-readable diagnostics as a defect.
+- After correcting the configuration, `battalion resume` records the supplied
+  resolution and retries from the saved target.
+
+## 4a. Documentation-only troubleshooting paths
+
+After the normal onboarding pass, a new operator uses only the published
+[troubleshooting guide](../troubleshooting.md) and identified artifact/fixture
+handoff. Record guide/script revision, reviewer, date, and approval before
+formal execution, using the preparation approval above. Final acceptance
+remains BTN-129 after BTN-173; these scenarios do not claim live results.
+
+For each row, retain artifact identity, project path, Run UUID (or no Run),
+symptom/guide anchor, expected/actual outcome, sanitized bounded evidence,
+whether retry was attempted, and the final disposition. Every required
+undocumented action is a defect, not an informal maintainer workaround.
+
+| Scenario | Operator path and pass evidence |
 | --- | --- |
-| `.battalion/state/<RUN_UUID>.json` | The canonical saved Run: specification/work-item information, scopes, budget, status, interrupts, human decisions, recovery state, and execution history. |
-| Execution records inside Run state | Role attempts/results, model identity, token/cost evidence, artifact references and hashes, tool activity, review/test results, summaries, and provenance. This is not normally a raw prompt/response transcript, but it can still contain sensitive content. |
-| Reviewer test evidence | Test command, outcome, counts, duration, timeout/cancellation information, and bounded stdout/stderr. Diagnostics may contain private project information. |
-| Side-effect evidence | IDs and status used to track integration operations, retries, provider references, failures, and reconciliation. It is evidence, not a complete archive of every external request and response. |
-| `.battalion/project.json`, `runs.json`, `actors.json` | Project identity, Run catalog information, Actor identities, and related mappings. |
-| `.battalion/workers/` | Worker/process supervision information and bounded errors. |
-| `.battalion/recon/` and `.battalion/intel/` | Recon candidates, human review decisions, and accepted Instinct records. Rejected candidates are retained rather than silently erased. |
-| A path supplied to `--trace-output` | Raw trace JSONL. This can be outside the project and is managed separately from normal Run state. |
+| Untrusted or mismatched artifact | Supply a separate disposable artifact copy with a deliberately mismatched checksum. Follow [startup](../troubleshooting.md#installation-startup). Operator stops before installation/execution, records the mismatch, and obtains a verified replacement; original artifacts remain untouched. |
+| Missing credential or invalid model | In a fresh disposable shell/project, omit a required credential or provide a deliberately invalid model ID. Follow [setup](../troubleshooting.md#setup-provider). Record the distinct error, absence of a new Run, and secret-safe correction; do not accept `--no-validate` as successful validation. Do not expose or revoke real credentials for this test. |
+| Manual checkpoint and narrow backup | Use scenario 3's fresh paused Run. Follow [checkpoints](../troubleshooting.md#human-checkpoints), confirm all project writers stopped, then use [backup](../troubleshooting.md#state-backup). Verify only the named Run/worker/identity files were copied, original bytes remain unchanged, and ordinary resume records the reviewed decision. |
+| Reviewer collection error / no tests | Use separately supplied, approved disposable fixtures that produce each outcome at a Reviewer checkpoint. Follow [Reviewer tests](../troubleshooting.md#reviewer-tests). Both must retain classification and bounded output as infrastructure failures, never valid RED. Repair the actual import/discovery issue, then resume the same Reviewer checkpoint. |
+| Reviewer timeout | Use a supplied trusted hanging-test fixture and a reviewed finite timeout. Guide-only diagnosis must find duration, classification and cleanup evidence. Do not retry until cleanup is established; no timeout outcome can pass RED. |
+| Interrupted resume before generation | Use an approved fault-injection candidate/fixture, identified separately from an ordinary release artifact. Follow [resume recovery](../troubleshooting.md#resume-recovery). A BTN-165 candidate reuses the original Actor/resolution/action ID without duplicating the decision/intervention and follows the saved successor. |
+| Started attempt with no saved outcome | Use a separately supplied fault-injection fixture. The operator must stop on terminal/ambiguous recovery, preserve evidence and inspect the workspace; no forced replay or JSON repair is allowed. |
 
-The CLI normally stores state relative to the project from which it is run. The
-desktop uses its selected project. If you use custom application paths or trace
-paths, data may be elsewhere.
+Controlled Reviewer/crash fixtures must include their source/artifact identity,
+expected checkpoint/classification, safety constraints, and approval in the
+handoff. If unavailable, mark the row blocked; do not patch an installed wheel,
+fabricate persisted state, or improvise a live process kill. Automation tests
+are supporting evidence, not substitutes for this operator-only pass.
 
-Reviewer creates temporary snapshots and attempts to remove them after testing.
-Cleanup is best effort, not secure deletion. A crash or operating-system failure
-can leave temporary files behind.
+## 5. Role-contract correction: simple Hello World
 
-Filesystem permissions, disk encryption, backups, cloud synchronization, and
-other local storage controls remain the operator's responsibility.
+This is a separately prepared controlled-provider scenario, not part of the
+documentation-only pass. Record the fixture/service identity, scripted responses,
+and reviewer approval. If no bounded fixture is supplied, mark it blocked; do
+not improvise by patching the installed wheel or saved Run state.
 
-<a id="traces"></a>
-## Trace output and sharing diagnostics
+Use a disposable Hello World ticket and a controlled Driver response that first
+returns a test file during GREEN, then returns the required implementation on
+its next response. The first candidate must be valid Driver JSON; it is the
+artifact category, not JSON validity, that is intentionally wrong.
 
-Normal Battalion Run state does not store a complete raw prompt/response or raw
-reasoning transcript. It can still contain specifications, human decisions,
-model-produced role results, review causes, summaries, and test/error output.
+```powershell
+& $Python -m battalion run BTN-UAT-5 `
+  --spec "Create src/hello.py with hello() returning Hello World, plus a RED test." `
+  --budget 12
+```
 
-`--trace-output PATH` is different. It writes raw streamed observations received
-from the provider to a file you choose.
+Pass criteria:
 
-Trace files:
+- The CLI says Battalion caught a role-contract violation, confirms the
+  prohibited test output was not written, and announces correction/retry of
+  Driver GREEN.
+- The final Run is `done` after the corrected GREEN attempt, rather than being
+  reported as a successful first attempt or an immediate human interrupt.
+- The saved execution record contains the rejected GREEN attempt with reason
+  code, offending test path, correction attempt number, model identity,
+  `mutation_applied: false`, and `resulting_disposition: retry`; the following
+  GREEN attempt is accepted and retains its normal token/cost evidence.
 
-- can contain sensitive model output or reasoning,
-- can be written outside the project,
-- are appended to if you reuse the same path,
-- are not automatically redacted,
-- are not automatically encrypted,
-- are not automatically rotated or deleted, and
-- are not authoritative acceptance evidence for a Run.
+Repeat the controlled invalid response once more. The second violation must
+stop at the existing human-interrupt path rather than loop indefinitely. A
+real scope violation remains an immediate authority interrupt and receives no
+automatic correction retry.
 
-Not using `--trace-output` avoids that file, but it does not prevent model calls
-or guarantee that nothing sensitive appears in terminal output or normal Run
-evidence.
+## 6. Negative robustness checks
 
-Before sharing diagnostics, make a separate copy and inspect it manually. Prefer
-a small sanitized excerpt containing the artifact/version and relevant failure
-over uploading an entire Run, trace, or `.battalion` directory.
+Known outstanding BTN-129 remediation: an empty Architect response currently
+reports `RunRecoveryUnsafe` without an interrupt and leaves an
+`attempt-started` checkpoint. Record this case as a defect until a corrected
+candidate passes the expectation below. BTN-173's integration fixes do not
+repair it or establish CLI acceptance; preserve evidence and do not force replay.
 
-Do not edit the authoritative Run JSON merely to make it safe to share. Keep the
-original evidence private and sanitize a copy instead.
+Capture the console output and saved state for each case:
 
-## Retention, backup, deletion, and uninstall
+- identical Driver and Reviewer models at setup;
+- unknown run ID for `status` and `resume`;
+- a repeated ticket invocation (it must mint a distinct Run UUID, not overwrite
+  the original Run);
+- a foreground interruption after a durable node checkpoint; and
+- malformed, empty, or non-JSON Architect, Driver, Reviewer, or Refactorer
+  output.
 
-Battalion currently keeps saved Runs and related evidence until you manage those
-files. It does **not** currently provide a general:
+Use approved controlled-provider fixtures for malformed role output, retaining
+their exact response and checkpoint. Record an infrastructure failure and
+actionable saved error, with no generic crash or abandoned `in-progress` Run.
+Do not assume all roles require JSON: Architect's plan and other role contracts
+must be respected when constructing the negative case. Pre-write RED/GREEN
+artifact-category violations instead follow the bounded correction flow above.
 
-- automatic retention or expiry policy,
-- per-Run purge command,
-- backup/restore service, or
-- secure-delete guarantee.
+Record interrupted Runs' reported recovery disposition; unknown-outcome attempts
+must not be forced into replay. Provider-failure and controlled-output exercises
+remain human UAT, not credential-free documentation checks.
 
-Recon candidates and their review records are also retained as evidence.
+## Evidence to retain
 
-If you need a diagnostic backup before recovery work, follow the narrow
-[recovery backup procedure](troubleshooting.md#state-backup). Do not restore old
-Run state over current state casually: external effects or file writes may
-already have happened.
-
-Removing Battalion's virtual environment or desktop application does not remove
-project-local `.battalion` state, external trace files, terminal logs, backups,
-provider-side data, integration-side data, or credentials stored elsewhere.
-There is currently no Battalion-wide data-uninstall command.
-
-Deletion or retention at a third-party model provider or integration is governed
-by that service. Removing a local file cannot retract a request already sent to
-another system.
-
-<a id="integrations"></a>
-## Integrations and authority
-
-Battalion integrations do not automatically gain authority merely because they
-are configured. Configuration, credentials, provider capability, and model
-output are all separate from **human authorization**.
-
-For outbound events, Battalion records Run state before attempting delivery and
-tracks delivery attempts in durable side-effect evidence. An ambiguous external
-result is not silently treated as success.
-
-Current integration support is still bounded. In the reviewed baseline, ordinary
-CLI `run`/`resume` and detached desktop workers do not automatically construct a
-full integration runtime just because `battalion.integrations.yaml` exists.
-Declaring valid configuration therefore does not prove that an event was sent.
-
-When an outbound event sink is actually invoked, the event envelope is designed
-to be small: identifiers, event type, timestamp, and a bounded summary rather
-than a complete Run dump. Other capability adapters can have different request
-contracts, so do not assume every integration receives exactly the same fields.
-
-Integration credentials are resolved at the transport boundary and should not
-be copied into portable project configuration.
-
-## Important current limitations
-
-Keep these limitations in mind when evaluating a Battalion deployment:
-
-- Battalion cannot guarantee what a third-party provider logs, retains, trains
-  on, or forwards.
-- Recorded inference identity is bounded by what the configured provider,
-  router, and endpoint expose; it does not prove same-host execution.
-- Context-size limits do not remove secrets.
-- `.gitignore` does not define what model context is safe.
-- Reviewer test snapshots are not security sandboxes.
-- Saved Run evidence can contain sensitive content even without trace export.
-- Trace files have no automatic redaction, encryption, rotation, or expiry.
-- Battalion has no general data-retention, purge, backup/restore, or secure-delete
-  service today.
-- Installing or uninstalling the application does not automatically manage all
-  copies of project evidence.
-- Configuring an integration does not itself prove that the integration is
-  active or authorized.
-
-These are boundaries to understand, not reasons to bypass Battalion's evidence,
-write-scope, Actor, interrupt, or human-approval controls.
-
-## Source and implementation notes
-
-This guide describes the current user-facing data-handling contract. The detailed
-architecture and historical decisions remain in the repository's ADRs, RFCs,
-canonical GitHub Issues, and implementation tests. In particular:
-
-- [BTN-172](https://github.com/lrburkholder/battalion/issues/268) established the
-  public data-handling disclosure.
-- [BTN-54](https://github.com/lrburkholder/battalion/issues/87) implemented
-  requested/resolved inference identity, contradiction, and diversity evidence.
-- [ADR-0024](adrs/adr0024.md) covers the inference configuration architecture.
-
-For day-to-day desktop operation, see the [Desktop Workflow](ui/workflow.md).
-For operational recovery, use [Troubleshooting and Recovery](troubleshooting.md),
-including the [recovery backup procedure](troubleshooting.md#state-backup).
-For installation and a first disposable Run, use [Getting Started](getting-started.md).
-For formal artifact validation, see the [CLI UAT data-handling checks](uat/cli.md#data-handling)
-and [desktop UAT data-handling checks](uat/desktop.md#data-handling).
+Retain the artifact record, script approval, documentation-only defect log,
+per-scenario pass/fail/blocked disposition, command transcript,
+`battalion.config.yaml` with any secrets
+removed, `.battalion/state/<RUN_UUID>.json`, `plan.md`, generated source and
+test files, and the final `pytest` result. `--trace-output` is opt-in raw
+provider text for the local operator: it may be sensitive, is not acceptance
+evidence, and must not be shared with credentials or raw prompt/source payloads.
