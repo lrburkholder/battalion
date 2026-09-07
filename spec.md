@@ -311,9 +311,20 @@ Actor attribution. Resume revalidates current evidence before saving the action
 and resolution together; failure consumes neither. Action replay must retain the
 original Actor, text, and contract ID, including recovery after authorization was
 saved but before graph entry. A later contract cannot inherit earlier checkpoint
-authorization. Compact initial construction and client evidence intake remain
-pending. Generic Driver-checkpoint resolution and
+authorization. Client evidence intake remains pending. Generic Driver-checkpoint resolution and
 unavailable intake therefore fail closed.
+
+`seal_compact_target_handoff` constructs a compact contract only from exact
+authoritative work-item/specification targets, with matching current source
+references and the admitted revisions. It retains both revision provenances,
+fabricates no Architect execution or plan, and uses the same source/scope/path
+reconciliation and worker guard as full sealing. Missing or advisory-only paths,
+stale references, conflicting targets, collisions, and unknown recipes fail
+closed. Initial sealing precedes Driver and cannot replace human actions.
+Contract readiness does not enable recipe execution: both start and resume reject
+compact or upgraded recipes through the existing full-workflow executor. Compact
+dispatch requires its own stage/completion handling, including semantic review
+and human acceptance; no compact assurance requirement is skipped by sealing.
 
 `change_artifact_target_handoff` applies an active-human Actor's exact request
 while no worker or competing action is active. It compares the expected history

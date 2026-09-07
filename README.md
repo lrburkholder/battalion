@@ -384,9 +384,9 @@ The main implementation areas are:
 | `battalion.artifact_targets` | Artifact-target and Architect-candidate domain models with pre-write Architect validation on the BTN-194 branch |
 | `battalion.artifact_target_state` | BTN-195 branch immutable handoff history on RunState 1.2 with admission, provenance, and Driver attempt linkage |
 | `battalion.artifact_target_reconciliation` | Deterministic target assessment against explicit current evidence, exact recipe phases, and read-only scope/path inspection |
-| `battalion.artifact_target_sealing` | Constructs initial contracts from captured Architect execution evidence; shared application sealing verifies the current plan and persists reconciliation without dispatching Driver |
+| `battalion.artifact_target_sealing` | Constructs full contracts from captured Architect evidence and compact contracts from exact authoritative work-item/specification targets; sealing persists reconciliation without dispatch |
 | `battalion.project_source` / `project_source_files` | BTN-195 branch source snapshots for admitted Git Runs; sealing checks fresh source against the pre-execution baseline and verified scoped-write receipts |
-| `battalion.artifact_target_runtime` | Mandatory pre-Driver sealing/revalidation with exact checkpoint authorization and Actor-authorized correction/return/cancel operations; compact construction and client intake remain in progress |
+| `battalion.artifact_target_runtime` | Mandatory pre-Driver sealing/revalidation with exact checkpoint authorization and Actor-authorized correction/return/cancel operations; client intake remains in progress and compact dispatch requires its own executor |
 | `battalion.context` | Bounded model context assembly |
 | `battalion.scope` | Mechanical write-scope enforcement |
 | `battalion.llm` | Per-role model access through LiteLLM |

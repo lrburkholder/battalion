@@ -6,7 +6,7 @@ from battalion.artifact_targets import ArtifactTargetContract, ArtifactTargetEvi
 from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence
 from battalion.artifact_target_state import ArtifactTargetReasonCode
 from battalion.state.models import RunState, RunStatus, completed_architect_handoff
-from battalion.workflow_admission import AdmissionEvidenceSource
+from battalion.workflow_admission import AdmissionEvidenceSource, AdmissionEvidenceCondition
 from battalion.workflow_recipes import (
     DEFAULT_WORKFLOW_RECIPE_REGISTRY, UnknownWorkflowRecipe, WorkflowRecipeRegistry, WorkflowStage,
 )
@@ -105,3 +105,76 @@ def construct_architect_target_contract(
             reason.STALE_EVIDENCE, "Initial sealing cannot replace or reactivate a handoff; an explicit correction is required.",
         )
     return contract
+
+
+def construct_compact_target_contract(
+    state: RunState, *, current: ArtifactTargetCurrentEvidence,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> ArtifactTargetContract:
+    """Construct only from exact authoritative revision-pinned source targets.
+
+    This does not enable recipe execution or turn bounded-scope facts into paths.
+    Reconciliation still evaluates all current evidence, including conflicting
+    descriptions of a target retained here under its first observed identity.
+    """
+    reason = ArtifactTargetReasonCode
+    admission = state.workflow_admission
+    if admission is None or state.project_id is None:
+        raise ArtifactTargetSealingRejected(reason.MISSING_EVIDENCE, "Compact sealing requires an admitted project Run.")
+    if state.status in {RunStatus.DONE, RunStatus.FAILED_INFRA} or any(
+        item.role == "driver" for item in state.execution_record.node_executions
+    ):
+        raise ArtifactTargetSealingRejected(reason.STALE_EVIDENCE, "Compact initial sealing must precede Driver and terminal history.")
+    history = state.artifact_target_handoff
+    if history and history.corrections:
+        raise ArtifactTargetSealingRejected(reason.STALE_EVIDENCE, "Initial sealing cannot replace human handoff actions.")
+    execution = admission.execution
+    key = (execution.continuation_recipe_id or execution.recipe_id,
+           execution.continuation_recipe_version or execution.recipe_version)
+    try:
+        recipe = registry.resolve(*key)
+    except UnknownWorkflowRecipe as exc:
+        raise ArtifactTargetSealingRejected(reason.INCOMPATIBLE_RECIPE, str(exc)) from exc
+    if WorkflowStage.ARCHITECTURE in recipe.stages or (current.recipe_id, current.recipe_version) != key:
+        raise ArtifactTargetSealingRejected(reason.INCOMPATIBLE_RECIPE, "Compact sealing requires the exact admitted recipe without Architect.")
+    decision = admission.decision
+    if decision.specification_revision is None or current.project_source_revision is None:
+        raise ArtifactTargetSealingRejected(reason.MISSING_EVIDENCE, "Compact contracts require pinned specification and source revisions.")
+    if len({ref.evidence_id for ref in current.references}) != len(current.references):
+        raise ArtifactTargetSealingRejected(reason.CONTRADICTORY_EVIDENCE, "Current source references are ambiguous.")
+    targets = {}
+    references = set()
+    for supplied in current.exact_targets:
+        ref = supplied.reference
+        if ref.source not in {AdmissionEvidenceSource.WORK_ITEM, AdmissionEvidenceSource.SPECIFICATION}:
+            continue
+        observed = next((item for item in current.references if item.evidence_id == ref.evidence_id), None)
+        if observed is None or not observed.authoritative:
+            continue
+        revision = decision.work_item_revision if ref.source == AdmissionEvidenceSource.WORK_ITEM else decision.specification_revision
+        if (observed.source != ref.source or observed.source_revision != ref.source_revision
+                or ref.source_revision != revision or observed.condition != AdmissionEvidenceCondition.PRESENT):
+            raise ArtifactTargetSealingRejected(reason.STALE_EVIDENCE, "Exact compact targets lack current matching source evidence.")
+        references.add(ref)
+        for target in supplied.targets:
+            targets.setdefault(target.target_id, target)
+    if not targets:
+        raise ArtifactTargetSealingRejected(reason.MISSING_TARGETS, "Compact Run requires exact authoritative work-item/specification targets; clarify or upgrade to full.")
+    references.update(ArtifactTargetEvidenceReference(
+        evidence_id=ref.evidence_id, source=ref.source, source_revision=ref.source_revision,
+    ) for ref in admission.assessment.evidence_references
+        if ref.source in {AdmissionEvidenceSource.WORK_ITEM, AdmissionEvidenceSource.SPECIFICATION})
+    if len(references) > 50:
+        raise ArtifactTargetSealingRejected(reason.AMBIGUOUS_TARGETS, "Compact source references exceed the bounded contract limit.")
+    if len(targets) > 100:
+        raise ArtifactTargetSealingRejected(reason.AMBIGUOUS_TARGETS, "Exact compact targets exceed the bounded contract limit.")
+    paths = [item.project_relative_path.casefold() for item in targets.values()]
+    if len(paths) != len(set(paths)):
+        raise ArtifactTargetSealingRejected(reason.DUPLICATE_TARGETS, "Exact compact targets contain colliding paths.")
+    return ArtifactTargetContract(
+        project_id=state.project_id, work_item_revision=decision.work_item_revision,
+        specification_revision=decision.specification_revision,
+        project_source_revision=current.project_source_revision,
+        workflow_admission_decision_id=decision.decision_id,
+        targets=tuple(targets.values()), evidence_references=tuple(references),
+    )

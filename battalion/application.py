@@ -101,6 +101,7 @@ from battalion.state.models import (
 from battalion.state.persistence import load_state, save_state
 from battalion.workflow_recipes import (
     DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    UnknownWorkflowRecipe,
     WorkflowRecipe,
     WorkflowRecipeRegistry,
     WorkflowStage,
@@ -216,6 +217,15 @@ class ChangeArtifactTargetHandoff:
     actor_id: UUID | None = None
     corrected_contract: ArtifactTargetContract | None = None
     current_evidence: ArtifactTargetCurrentEvidence | None = None
+
+
+@dataclass(frozen=True)
+class SealCompactTargetHandoff:
+    """Seal source-supplied targets without enabling compact recipe execution."""
+
+    run_id: str
+    project_root: str | Path
+    current_evidence: ArtifactTargetCurrentEvidence
 
 
 class InvalidWriteScope(ApplicationError):
@@ -1034,6 +1044,11 @@ def start_run(
 ) -> RunOperationResult:
     """Execute a new run through the graph and persist its resulting state."""
     initial_state = command.initial_state
+    if initial_state.workflow_admission is not None:
+        _validate_admitted_resume(
+            initial_state.workflow_admission, current_evidence=None,
+            policy=DEFAULT_WORKFLOW_ADMISSION_POLICY, registry=DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+        )
     if initial_state.cost_policy is not command.config.cost_policy:
         raise InvalidInferencePolicy("Initial state cost policy does not match the active configuration")
     try:
@@ -1277,7 +1292,7 @@ def _validate_admitted_resume(
         )
     elif execution.recipe_id != "full-implementation-run":
         raise WorkflowAdmissionResumeRejected(
-            "the persisted compact recipe cannot be resumed through the full-workflow graph"
+            "the persisted compact recipe cannot be executed through the full-workflow graph"
         )
     return execution
 
@@ -1977,6 +1992,44 @@ def seal_architect_target_handoff(
         raise ArtifactTargetHandoffRejected(reason.UNSAFE_PATH, str(exc)) from exc
     except (OSError, ValueError, TypeError) as exc:
         raise ArtifactTargetHandoffRejected(reason.MISSING_EVIDENCE, f"Cannot seal handoff: {exc}") from exc
+
+
+def seal_compact_target_handoff(
+    command: SealCompactTargetHandoff,
+    *, state_dir: str | Path = DEFAULT_STATE_DIR,
+    worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Persist exact compact evidence under the same worker/action exclusion."""
+    path = state_path(command.run_id, state_dir)
+    try:
+        with _inactive_worker_guard(command.run_id, worker_dir=worker_dir):
+            state = _load_run(command.run_id, state_dir)
+            if str(load_project_identity(command.project_root).project_id) != state.project_id:
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.STALE_EVIDENCE, "Project marker does not match this Run")
+            try:
+                recipe = registry.resolve(command.current_evidence.recipe_id, command.current_evidence.recipe_version)
+            except UnknownWorkflowRecipe as exc:
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.INCOMPATIBLE_RECIPE, str(exc)) from exc
+            if WorkflowStage.ARCHITECTURE in recipe.stages:
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.INCOMPATIBLE_RECIPE, "Use Architect sealing for the full recipe")
+            if state.artifact_target_handoff and state.artifact_target_handoff.corrections:
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.STALE_EVIDENCE, "Initial compact sealing cannot replace human handoff actions")
+            if state.status in {RunStatus.DONE, RunStatus.FAILED_INFRA} or any(
+                item.role == "driver" for item in state.execution_record.node_executions
+            ):
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.STALE_EVIDENCE, "Initial sealing must precede Driver and terminal history")
+            updated = reconcile_run_handoff(state, project_root=command.project_root,
+                                            current=command.current_evidence, case_sensitive_paths=False, registry=registry)
+            if updated is not state:
+                save_state(updated, path)
+            return RunOperationResult(updated.run_id, updated.run_alias, updated.schema_version, path, updated)
+    except ArtifactTargetSealingRejected as exc:
+        raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
+    except _WorkerAlreadyActive as exc:
+        raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.STALE_EVIDENCE, "Cannot seal while a worker or another action is active") from exc
+    except (OSError, ValueError, TypeError) as exc:
+        raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.MISSING_EVIDENCE, str(exc)) from exc
 
 
 def change_artifact_target_handoff(

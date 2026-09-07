@@ -41,8 +41,11 @@ contract ID, records Actor-attributed authorization, and revalidates before savi
 the resolution. Actor-authorized correction, return-to-Architect, and cancellation
 now append immutable actions under the worker guard with replay/conflict checks.
 Approval revalidates exact replacement targets without widening scope or rebasing
-source. Compact initial construction and client evidence intake remain pending;
-those paths fail closed. The ticket remains branch work in progress.
+source. Compact initial contracts now require exact authoritative source targets
+and retain both work-item and specification provenance. Client evidence intake
+remains pending; start/resume reject compact recipes through the full-workflow
+executor even when their target contracts are ready. The ticket remains branch
+work in progress pending integration review and acceptance evidence.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 

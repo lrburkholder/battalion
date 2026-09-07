@@ -6,7 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence, reconcile_artifact_targets
-from battalion.artifact_target_sealing import ArtifactTargetSealingRejected, construct_architect_target_contract
+from battalion.artifact_target_sealing import ArtifactTargetSealingRejected, construct_architect_target_contract, construct_compact_target_contract
 from battalion.artifact_target_sources import current_project_source_revision, verified_run_write_digests
 from battalion.artifact_target_state import ArtifactTargetCorrection, ArtifactTargetHandoffRecord, ArtifactTargetReasonCode as Reason
 from battalion.artifact_targets import ArtifactTargetContract, normalize_target_path
@@ -15,7 +15,7 @@ from battalion.project_source_files import capture_project_source
 from battalion.scope.artifact_target_paths import inspect_artifact_target_paths
 from battalion.scope.tool_binding import normalize_scope_root
 from battalion.state.models import ProgressStage, RunState, RunStatus
-from battalion.workflow_recipes import DEFAULT_WORKFLOW_RECIPE_REGISTRY
+from battalion.workflow_recipes import DEFAULT_WORKFLOW_RECIPE_REGISTRY, UnknownWorkflowRecipe, WorkflowStage
 
 
 class ArtifactTargetGateRejected(ArtifactTargetSealingRejected):
@@ -61,12 +61,20 @@ def reconcile_run_handoff(
         contract = replacement_contract
     elif initial_only or not history.contracts:
         architects = [item for item in state.execution_record.node_executions if item.role == "architect"]
-        contract = construct_architect_target_contract(
-            state, execution_id=current.architect_execution_id or (architects[-1].execution_id if architects else "missing"),
-            current=ArtifactTargetCurrentEvidence.model_validate({
-                **current.model_dump(), "project_source_revision": baseline.revision,
-            }), registry=registry,
-        )
+        pinned = ArtifactTargetCurrentEvidence.model_validate({
+            **current.model_dump(), "project_source_revision": baseline.revision,
+        })
+        try:
+            recipe = registry.resolve(current.recipe_id, current.recipe_version)
+        except UnknownWorkflowRecipe as exc:
+            raise ArtifactTargetSealingRejected(Reason.INCOMPATIBLE_RECIPE, str(exc)) from exc
+        if not initial_only and WorkflowStage.ARCHITECTURE not in recipe.stages:
+            contract = construct_compact_target_contract(state, current=pinned, registry=registry)
+        else:
+            contract = construct_architect_target_contract(
+                state, execution_id=current.architect_execution_id or (architects[-1].execution_id if architects else "missing"),
+                current=pinned, registry=registry,
+            )
     else:
         contract = next((item for item in history.contracts if item.contract_id == history.active_contract_id), None)
         if contract is None:
