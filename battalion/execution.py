@@ -536,7 +536,7 @@ class ExecutionCapture:
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.7",
+                "schema_version": "1.8",
                 "node_executions": [
                     item for item in new_state.execution_record.node_executions
                     if item.execution_id != self.execution_id
@@ -557,7 +557,7 @@ class ExecutionCapture:
             prompt_provenance=self.prompt_provenance,
         )
         record = state.execution_record.model_copy(update={
-            "schema_version": "1.7",
+            "schema_version": "1.8",
             "node_executions": [*state.execution_record.node_executions, execution],
         })
         return state.model_copy(update={"execution_record": record})

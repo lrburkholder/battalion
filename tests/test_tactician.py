@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 from support.responses import json_response
 
 from battalion.application import AssessTactician, assess_tactician
 from battalion.config import BattalionConfig
+from battalion.llm.cost_policy import CostPolicy, active_cost_policy
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig
 from battalion.tactician import (
     InvalidTacticianRecommendation,
@@ -125,6 +127,30 @@ def test_uncertain_work_receives_a_bounded_full_recipe_recommendation() -> None:
     assert [item.evidence_id for item in assessment.input_evidence_references] == [
         "work-item", "accepted-adr"
     ]
+
+
+def test_application_binds_the_cost_policy_to_tactician_calls() -> None:
+    target = NodeLLMConfig(
+        model="ollama/qwen3", endpoint_url="http://127.0.0.1:11434",
+        inference_location="local", cost_classification="local",
+        classification_source="same-host verification",
+        classification_observed_at=datetime(2026, 9, 6, tzinfo=timezone.utc),
+    )
+    observed: list[CostPolicy] = []
+
+    assessment = assess_tactician(
+        AssessTactician(
+            _uncertain_input(),
+            BattalionConfig(
+                models={"default": target, "tactician": target},
+                cost_policy=CostPolicy.FREE_ONLY,
+            ),
+        ),
+        call_llm_fn=lambda *_: (observed.append(active_cost_policy()) or _response()),
+    )
+
+    assert assessment.provenance.configured_model == "ollama/qwen3"
+    assert observed == [CostPolicy.FREE_ONLY]
 
 
 def test_tactician_can_recommend_clarification_for_missing_architecture() -> None:
