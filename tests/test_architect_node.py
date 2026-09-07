@@ -4,15 +4,17 @@ import pytest
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig
 from battalion.nodes.architect import (
     EmptyPlanContent,
+    InvalidArchitectHandoff,
     WriteScopeMisconfigured,
     extract_content,
+    parse_handoff,
     run_architect,
 )
 from battalion.state.models import RunStatus
 
 
 from support.state import make_run_state
-from support.responses import litellm_response as litellm_style_response
+from support.responses import json_response, litellm_response as litellm_style_response
 
 
 def make_state(write_scope=None, **overrides):
@@ -23,6 +25,32 @@ def make_state(write_scope=None, **overrides):
     )
 
 
+def handoff_payload(plan_markdown="# Plan\n\nStep one.", **overrides):
+    return {
+        "handoff_version": "1.0",
+        "plan_markdown": plan_markdown,
+        "targets": [{
+            "target_id": "widget-test",
+            "project_relative_path": "tests/test_widget.py",
+            "assignments": [{
+                "owner_role": "driver",
+                "workflow_phase": "driver-red",
+                "intended_operation": "create",
+            }],
+            "evidence_references": [],
+        }],
+        "implementation_steps": [{
+            "description": "Add the failing behavior test.",
+            "target_ids": ["widget-test"],
+        }],
+        **overrides,
+    }
+
+
+def handoff_response(plan_markdown="# Plan\n\nStep one.", **overrides):
+    return json_response(handoff_payload(plan_markdown, **overrides))
+
+
 def test_extract_content_from_litellm_style_response():
     resp = litellm_style_response("# Plan\n\nDo the thing.")
     assert extract_content(resp) == "# Plan\n\nDo the thing."
@@ -30,7 +58,7 @@ def test_extract_content_from_litellm_style_response():
 
 def test_run_architect_writes_plan_md(tmp_path):
     def fake_completion(**kwargs):
-        return litellm_style_response("# Plan\n\nStep one.")
+        return handoff_response()
 
     state = make_state()
     config = NodeLLMConfig(model="test-model")
@@ -43,7 +71,15 @@ def test_run_architect_writes_plan_md(tmp_path):
         call_llm_fn=lambda node, cfg, msgs, **kw: fake_completion(),
     )
 
-    assert (tmp_path / "plan.md").read_text() == "# Plan\n\nStep one."
+    plan = (tmp_path / "plan.md").read_text()
+    assert plan.startswith("# Plan\n\nStep one.\n")
+    assert plan.count("<!-- BEGIN GENERATED:artifact-targets -->") == 1
+    assert (
+        "| `widget-test` | <code>tests/test_widget.py</code> | driver | "
+        "driver-red | create |"
+    ) in plan
+    assert "1. Add the failing behavior test." in plan
+    assert "Targets: `widget-test`" in plan
     assert updated.phase == "driver"
     assert updated.status == RunStatus.IN_PROGRESS
 
@@ -55,7 +91,7 @@ def test_run_architect_passes_spec_text_and_node_name_to_llm():
         captured["node_name"] = node_name
         captured["config"] = config
         captured["messages"] = messages
-        return litellm_style_response("plan content")
+        return handoff_response("plan content")
 
     state = make_state()
     config = NodeLLMConfig(model="test-model")
@@ -83,7 +119,7 @@ def test_run_architect_forwards_on_stream_to_the_llm_call():
         on_stream = kwargs["on_stream"]
         on_stream({"type": "reasoning", "content": "thinking…"})
         on_stream({"type": "token", "content": "plan text"})
-        return litellm_style_response("plan text")
+        return handoff_response("plan text")
 
     state = make_state()
     config = NodeLLMConfig(model="test-model")
@@ -111,7 +147,7 @@ def test_run_architect_omits_on_stream_when_not_given():
 
     def fixed_arity_fake(node_name, config, messages):
         captured["node_name"] = node_name
-        return litellm_style_response("plan")
+        return handoff_response("plan")
 
     run_architect(
         make_state(),
@@ -148,7 +184,7 @@ def test_run_architect_only_ever_receives_its_own_scope(tmp_path, monkeypatch):
         spec_text="spec",
         llm_config=NodeLLMConfig(model="test-model"),
         base_dir=tmp_path,
-        call_llm_fn=lambda *a, **kw: litellm_style_response("content"),
+        call_llm_fn=lambda *a, **kw: handoff_response("content"),
     )
 
     assert captured_scopes["node_name"] == "architect"
@@ -164,7 +200,7 @@ def test_run_architect_raises_clear_error_when_scope_missing_plan_md(tmp_path):
             spec_text="spec",
             llm_config=NodeLLMConfig(model="test-model"),
             base_dir=tmp_path,
-            call_llm_fn=lambda *a, **kw: litellm_style_response("content"),
+            call_llm_fn=lambda *a, **kw: handoff_response("content"),
         )
 
 
@@ -210,12 +246,73 @@ def test_run_architect_rejects_empty_llm_content(tmp_path):
     assert not (tmp_path / "plan.md").exists()
 
 
+def test_run_architect_rejects_non_text_content_before_write(tmp_path):
+    with pytest.raises(InvalidArchitectHandoff) as caught:
+        run_architect(
+            make_state(),
+            spec_text="spec",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *args, **kwargs: {
+                "choices": [{"message": {"content": {"not": "text"}}}],
+            },
+        )
+
+    assert caught.value.reason_code == "architect-handoff-malformed"
+    assert not (tmp_path / "plan.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("content", "reason_code"),
+    [
+        pytest.param("not json", "architect-handoff-malformed", id="non-json"),
+        pytest.param(
+            '{"handoff_version":"1.0","handoff_version":"1.0"}',
+            "architect-handoff-malformed",
+            id="duplicate-json-field",
+        ),
+        pytest.param("[1, 2]", "architect-handoff-invalid", id="non-object"),
+    ],
+)
+def test_parse_handoff_rejects_ambiguous_or_malformed_output(content, reason_code):
+    with pytest.raises(InvalidArchitectHandoff) as caught:
+        parse_handoff(content)
+
+    assert caught.value.reason_code == reason_code
+    assert len(str(caught.value)) <= 1_900
+
+
+def test_run_architect_rejects_complete_invalid_candidate_before_write(tmp_path):
+    conflicting = handoff_payload(targets=[
+        handoff_payload()["targets"][0],
+        {
+            **handoff_payload()["targets"][0],
+            "project_relative_path": "test_widget.py",
+        },
+    ])
+
+    with pytest.raises(InvalidArchitectHandoff) as caught:
+        run_architect(
+            make_state(),
+            spec_text="spec",
+            llm_config=NodeLLMConfig(model="test-model"),
+            base_dir=tmp_path,
+            call_llm_fn=lambda *args, **kwargs: json_response(conflicting),
+        )
+
+    assert caught.value.reason_code == "architect-handoff-invalid"
+    assert caught.value.offending_paths == (
+        "tests/test_widget.py", "test_widget.py",
+    )
+    assert not (tmp_path / "plan.md").exists()
+
+
 def test_run_architect_system_prompt_override_takes_effect_over_file_default():
     captured = {}
 
     def fake_call_llm(node_name, config, messages, **kwargs):
         captured["system_content"] = messages[0]["content"]
-        return litellm_style_response("plan content")
+        return handoff_response("plan content")
 
     state = make_state()
     run_architect(
@@ -235,7 +332,7 @@ def test_run_architect_defaults_to_file_loaded_prompt_when_no_override():
 
     def fake_call_llm(node_name, config, messages, **kwargs):
         captured["system_content"] = messages[0]["content"]
-        return litellm_style_response("plan content")
+        return handoff_response("plan content")
 
     state = make_state()
     run_architect(

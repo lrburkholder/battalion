@@ -375,6 +375,7 @@ The main implementation areas are:
 | `battalion.execution` | Durable execution, artifact, usage, and cost evidence |
 | `battalion.history` / `battalion.history_store` | History evidence, descriptive analytics, and disposable SQLite indexes |
 | `battalion.role_results` | Typed role-result validation |
+| `battalion.artifact_targets` | Artifact-target and Architect-candidate domain models with pre-write Architect validation on the BTN-194 branch |
 | `battalion.context` | Bounded model context assembly |
 | `battalion.scope` | Mechanical write-scope enforcement |
 | `battalion.llm` | Per-role model access through LiteLLM |
