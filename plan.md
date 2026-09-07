@@ -38,8 +38,11 @@ budget consumption, or tools, and retains the contract ID on Driver executions.
 Start/resume accept explicit current target evidence and translate gate rejection
 to a typed application error. Driver-checkpoint resume now requires an exact
 contract ID, records Actor-attributed authorization, and revalidates before saving
-the resolution. Human correction operations, compact initial construction, and client evidence intake remain
-pending; those paths fail closed. The ticket remains branch work in progress.
+the resolution. Actor-authorized correction, return-to-Architect, and cancellation
+now append immutable actions under the worker guard with replay/conflict checks.
+Approval revalidates exact replacement targets without widening scope or rebasing
+source. Compact initial construction and client evidence intake remain pending;
+those paths fail closed. The ticket remains branch work in progress.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 

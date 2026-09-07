@@ -8,8 +8,8 @@ from uuid import uuid4
 from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence, reconcile_artifact_targets
 from battalion.artifact_target_sealing import ArtifactTargetSealingRejected, construct_architect_target_contract
 from battalion.artifact_target_sources import current_project_source_revision, verified_run_write_digests
-from battalion.artifact_target_state import ArtifactTargetHandoffRecord, ArtifactTargetReasonCode as Reason
-from battalion.artifact_targets import normalize_target_path
+from battalion.artifact_target_state import ArtifactTargetCorrection, ArtifactTargetHandoffRecord, ArtifactTargetReasonCode as Reason
+from battalion.artifact_targets import ArtifactTargetContract, normalize_target_path
 from battalion.project_source import ProjectSourceChanged
 from battalion.project_source_files import capture_project_source
 from battalion.scope.artifact_target_paths import inspect_artifact_target_paths
@@ -30,6 +30,8 @@ def reconcile_run_handoff(
     state: RunState, *, project_root, current: ArtifactTargetCurrentEvidence,
     case_sensitive_paths: bool, initial_only: bool = False,
     registry=DEFAULT_WORKFLOW_RECIPE_REGISTRY, clock=None,
+    replacement_contract: ArtifactTargetContract | None = None,
+    correction: ArtifactTargetCorrection | None = None,
 ) -> RunState:
     """Observe current files and append evidence without granting human authority.
 
@@ -53,7 +55,11 @@ def reconcile_run_handoff(
         source_revision = observed.revision
         unresolved.add(Reason.STALE_EVIDENCE)
     history = state.artifact_target_handoff or ArtifactTargetHandoffRecord()
-    if initial_only or not history.contracts:
+    if replacement_contract is not None:
+        if correction is None or correction.corrected_contract_id != replacement_contract.contract_id:
+            raise ArtifactTargetSealingRejected(Reason.MISSING_EVIDENCE, "Replacement requires its exact correction action.")
+        contract = replacement_contract
+    elif initial_only or not history.contracts:
         architects = [item for item in state.execution_record.node_executions if item.role == "architect"]
         contract = construct_architect_target_contract(
             state, execution_id=current.architect_execution_id or (architects[-1].execution_id if architects else "missing"),
@@ -87,7 +93,7 @@ def reconcile_run_handoff(
         contract, write_scope=state.write_scope, base_dir=root,
         case_sensitive_paths=case_sensitive_paths,
     )
-    previous = history.reconciliations[-1] if history.reconciliations else None
+    previous = history.reconciliations[-1] if history.reconciliations and replacement_contract is None else None
     result = reconcile_artifact_targets(
         contract, current=current, paths=paths, previous=previous, registry=registry,
         reconciliation_id=f"reconciliation-{uuid4()}",
@@ -98,8 +104,9 @@ def reconcile_run_handoff(
     if previous is not None and previous.outcome == "clarification-required":
         raise ArtifactTargetSealingRejected(Reason.STALE_EVIDENCE, "A recorded clarification requires a human correction; initial sealing cannot approve it.")
     handoff = ArtifactTargetHandoffRecord(
-        contracts=history.contracts or (contract,),
-        reconciliations=(*history.reconciliations, result), corrections=history.corrections,
+        contracts=(*history.contracts, contract) if replacement_contract is not None else history.contracts or (contract,),
+        reconciliations=(*history.reconciliations, result),
+        corrections=(*history.corrections, correction) if correction is not None else history.corrections,
         active_contract_id=contract.contract_id,
     )
     return RunState.model_validate({**state.model_dump(), "schema_version": "1.2", "artifact_target_handoff": handoff})
@@ -110,6 +117,8 @@ def admit_driver_attempt(state: RunState, *, project_root, current, node_name: s
     from battalion.identity import load_project_identity
 
     try:
+        if state.artifact_target_handoff and state.artifact_target_handoff.corrections and state.artifact_target_handoff.corrections[-1].action == "cancel":
+            raise ArtifactTargetSealingRejected(Reason.STALE_EVIDENCE, "Cancelled handoff cannot authorize Driver; create a new Run.")
         if state.status in {RunStatus.DONE, RunStatus.FAILED_INFRA}:
             raise ArtifactTargetSealingRejected(Reason.STALE_EVIDENCE, "Terminal Run cannot authorize another Driver attempt.")
         if current is None:

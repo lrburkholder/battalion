@@ -228,7 +228,7 @@ Fields per ticket/run (draft — to be refined during Architect phase):
   supersession history, and an explicit active contract identity. Persisted
   references cross-validate but never rewrite `workflow_admission`. Deterministic
   reconciliation and source collection feed the mandatory pre-Driver gate;
-  correction operations and client intake remain pending; see ADR-0038.)
+  client intake remains pending; see ADR-0038.)
 
 New-run construction belongs to the shared application boundary. It generates
 the canonical run UUID and project marker before execution; graph nodes cannot
@@ -311,9 +311,25 @@ Actor attribution. Resume revalidates current evidence before saving the action
 and resolution together; failure consumes neither. Action replay must retain the
 original Actor, text, and contract ID, including recovery after authorization was
 saved but before graph entry. A later contract cannot inherit earlier checkpoint
-authorization. Human correction operations, compact initial construction, and
-client evidence intake remain pending. Generic Driver-checkpoint resolution and
+authorization. Compact initial construction and client evidence intake remain
+pending. Generic Driver-checkpoint resolution and
 unavailable intake therefore fail closed.
+
+`change_artifact_target_handoff` applies an active-human Actor's exact request
+while no worker or competing action is active. It compares the expected history
+tip and uses a stable action ID. Approval requires a replacement contract that
+supersedes that tip and passes fresh reconciliation against the unchanged source
+baseline and existing scope. Invalid requests save neither approval nor partial
+history. Identical replay returns current state without writes or dispatch;
+changed Actor/action/contract/reason conflicts with the original request.
+Approval preserves historical attempts, admission, and prior contract records.
+If a prior Driver checkpoint was already resolved, correction at a Driver boundary
+opens a new manual checkpoint for the replacement instead of inheriting approval.
+Return-to-Architect clears the active contract and prepares Architect without
+dispatch; approval then requires a new completed candidate. Cancellation clears
+the active contract and blocks further role execution or resume. These actions
+do not rebase changed source/specification/admission identities; that requires a
+new admitted Run. Compact workflows require explicit upgrade before Architect.
 
 Before any Driver attempt begins, Battalion requires one current, validated
 `ArtifactTargetContract`. The contract is application-owned execution evidence,

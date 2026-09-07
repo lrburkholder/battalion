@@ -386,7 +386,7 @@ The main implementation areas are:
 | `battalion.artifact_target_reconciliation` | Deterministic target assessment against explicit current evidence, exact recipe phases, and read-only scope/path inspection |
 | `battalion.artifact_target_sealing` | Constructs initial contracts from captured Architect execution evidence; shared application sealing verifies the current plan and persists reconciliation without dispatching Driver |
 | `battalion.project_source` / `project_source_files` | BTN-195 branch source snapshots for admitted Git Runs; sealing checks fresh source against the pre-execution baseline and verified scoped-write receipts |
-| `battalion.artifact_target_runtime` | Mandatory pre-Driver sealing/revalidation and exact Actor-attributed checkpoint authorization; human correction, compact construction, and client intake remain in progress |
+| `battalion.artifact_target_runtime` | Mandatory pre-Driver sealing/revalidation with exact checkpoint authorization and Actor-authorized correction/return/cancel operations; compact construction and client intake remain in progress |
 | `battalion.context` | Bounded model context assembly |
 | `battalion.scope` | Mechanical write-scope enforcement |
 | `battalion.llm` | Per-role model access through LiteLLM |

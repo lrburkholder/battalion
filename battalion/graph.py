@@ -358,6 +358,9 @@ def _scaffold_node(
     propagate unchanged.
     """
     def node(state: RunState) -> RunState:
+        history = state.artifact_target_handoff
+        if history and history.corrections and history.corrections[-1].action == "cancel":
+            raise UnsafeRecoveryError("Cancelled handoff cannot execute another role")
         # Reject authority configuration before snapshots, model calls, budget
         # consumption, or durable attempts. Node binding rechecks before use.
         validate_write_scope(state.write_scope, base_dir)
@@ -1115,6 +1118,9 @@ def build_graph(
     # conditional entry point below is what actually makes resume_target
     # take effect.
     def _entry_router(state: RunState) -> str:
+        history = state.artifact_target_handoff
+        if history and history.corrections and history.corrections[-1].action == "cancel":
+            return NODE_BLOCKED
         target = state.resume_target
         if target in (
             NODE_ARCHITECT,
