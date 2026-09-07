@@ -1,5 +1,10 @@
 """Graph handling of malformed role output and typed Driver results."""
 
+import pytest
+
+# Role-contract correction and escalation are isolated from target admission.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")
+
 
 from battalion.nodes.architect import run_architect
 from battalion.nodes.driver import InvalidModeOutput

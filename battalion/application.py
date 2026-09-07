@@ -18,6 +18,13 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
+from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence
+from battalion.artifact_target_runtime import ArtifactTargetGateRejected, reconcile_run_handoff
+from battalion.artifact_target_sealing import ArtifactTargetSealingRejected
+from battalion.artifact_target_state import ArtifactTargetReasonCode
+from battalion.project_source import ProjectSourceUnavailable
+from battalion.project_source_files import capture_project_source
+
 from battalion.actors import (
     Actor,
     ActorError,
@@ -168,6 +175,30 @@ def resume_ticket(*args, **kwargs):
 
 class ApplicationError(Exception):
     """Base class for expected failures exposed to presentation clients."""
+
+
+class ArtifactTargetHandoffRejected(ApplicationError):
+    """Initial sealing or Driver admission lacks evidence or needs correction."""
+
+    def __init__(self, reason_code: ArtifactTargetReasonCode, message: str):
+        self.reason_code = reason_code
+        super().__init__(message)
+
+
+@dataclass(frozen=True)
+class SealArchitectTargetHandoff:
+    """Reconcile a retained candidate while the Run worker is inactive.
+
+    Current revisions and references must come from authoritative application
+    intake. This command does not accept a replacement candidate or authorize
+    Driver. Source observation is shared with the mandatory graph gate.
+    """
+
+    run_id: str
+    architect_execution_id: str
+    project_root: str | Path
+    current_evidence: ArtifactTargetCurrentEvidence
+    case_sensitive_paths: bool
 
 
 class InvalidWriteScope(ApplicationError):
@@ -321,6 +352,7 @@ class StartRun:
     initial_state: RunState
     config: BattalionConfig
     overwrite: bool = False
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None
 
 
 @dataclass(frozen=True)
@@ -348,6 +380,8 @@ class ResumeRun:
     resolution: str = "authorized resume"
     action_id: str | None = None
     current_admission_evidence: WorkflowAdmissionEvidence | None = None
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None
+    artifact_target_contract_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -888,6 +922,8 @@ def _execute_graph(
         return result
     except ApplicationError:
         raise
+    except ArtifactTargetGateRejected as exc:
+        raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
     except WriteScopeMisconfigured as exc:
         raise InvalidWriteScope(str(exc)) from exc
     except Exception as exc:
@@ -922,7 +958,8 @@ def _prepare_resume(
         previous = next((a for a in state.human_action_log if a.action_id == identifier), None)
         if previous is not None:
             if (previous.kind != "interrupt-resolution" or previous.actor_id != actor.actor_id
-                    or previous.detail != command.resolution.strip()):
+                    or previous.detail != command.resolution.strip()
+                    or previous.artifact_target_contract_id != command.artifact_target_contract_id):
                 raise HumanActionRejected("Resume action ID conflicts with its original authorization")
             pending = intent is not None and intent.action_id == identifier and not intent.completed
             if not pending:
@@ -935,6 +972,7 @@ def _prepare_resume(
     if state.status is RunStatus.AWAITING_HUMAN:
         state = _resolve_latest_interrupt(
             state, actor=actor, resolution=command.resolution, action_id=identifier,
+            artifact_target_contract_id=command.artifact_target_contract_id,
         )
         progress = state.graph_progress
         interrupt = state.interrupt_log[-1] if state.interrupt_log else None
@@ -1020,6 +1058,8 @@ def start_run(
             on_node_event=node_callback,
             on_token=token_callback,
             on_state_checkpoint=checkpoint,
+            **({"current_artifact_evidence": command.current_artifact_evidence}
+               if command.current_artifact_evidence is not None else {}),
         )
     if final_state.run_id != initial_state.run_id:
         raise RunIdentityChanged(
@@ -1071,6 +1111,28 @@ def resume_run(
         return RunOperationResult(
             state.run_id, state.run_alias, state.schema_version, path, state,
         )
+    if command.artifact_target_contract_id is not None:
+        # The resolution exists only in memory until fresh admission succeeds.
+        # Failed evidence must not consume the human's action ID or interrupt.
+        from battalion.artifact_target_runtime import admit_driver_attempt
+        authorization = next((action for action in state.human_action_log
+                              if state.resume_intent is not None
+                              and action.action_id == state.resume_intent.action_id
+                              and action.artifact_target_contract_id == command.artifact_target_contract_id), None)
+        checkpoint = next((entry for index, entry in enumerate(state.interrupt_log)
+                           if authorization is not None and authorization.target == f"interrupt:{index}"
+                           and entry.trigger == "manual-checkpoint"
+                           and entry.context.get("next_phase") in {"driver_red", "driver_green"}), None)
+        if checkpoint is None:
+            raise HumanActionRejected("Contract authorization requires its exact Driver checkpoint action")
+        try:
+            state = admit_driver_attempt(
+                state, project_root=command.config.base_dir,
+                current=command.current_artifact_evidence,
+                node_name=checkpoint.context["next_phase"],
+            )
+        except ArtifactTargetGateRejected as exc:
+            raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
     recovery = assess_recovery(state)
     if recovery is not None and recovery.disposition == "terminal":
         raise RunRecoveryUnsafe(state.run_id, recovery)
@@ -1105,6 +1167,8 @@ def resume_run(
             on_node_event=node_callback,
             on_token=token_callback,
             on_state_checkpoint=checkpoint,
+            **({"current_artifact_evidence": command.current_artifact_evidence}
+               if command.current_artifact_evidence is not None else {}),
         )
     if final_state.run_id != state.run_id:
         raise RunIdentityChanged(
@@ -1822,6 +1886,16 @@ def create_admitted_run(
             }
         ).model_dump()
     )
+    # Capture before any role can write. Non-Git projects retain explicit
+    # missing source evidence; sealing must not invent a baseline after a role.
+    if (Path(command.config.base_dir) / ".git").exists():
+        try:
+            source = capture_project_source(command.config.base_dir, project_id=state.project_id)
+        except ProjectSourceUnavailable as exc:
+            raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.MISSING_EVIDENCE, str(exc)) from exc
+        state = RunState.model_validate({
+            **state.model_dump(), "schema_version": "1.2", "project_source_snapshot": source,
+        })
     path = state_path(state.run_id, state_dir)
     if path.exists():
         raise RunAlreadyExists(state.run_id, path)
@@ -1834,6 +1908,52 @@ def create_admitted_run(
         state_path=path,
         state=state,
     )
+
+
+def seal_architect_target_handoff(
+    command: SealArchitectTargetHandoff,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    _clock: Callable[[], datetime] | None = None,
+) -> RunOperationResult:
+    """Persist initial evidence without changing admission, interrupts or attempts.
+
+    Identical replays do not append records. A changed observation may invalidate
+    readiness, but this operation cannot clear a prior clarification, replace a
+    contract, or reactivate one cleared by a human action.
+    """
+    path = state_path(command.run_id, state_dir)
+    reason = ArtifactTargetReasonCode
+    try:
+        with _inactive_worker_guard(command.run_id, worker_dir=worker_dir):
+            state = _load_run(command.run_id, state_dir)
+            root = Path(command.project_root).resolve(strict=True)
+            identity = load_project_identity(root)
+            if str(identity.project_id) != state.project_id:
+                raise ArtifactTargetHandoffRejected(reason.STALE_EVIDENCE, "Project marker does not match this Run.")
+            current = ArtifactTargetCurrentEvidence.model_validate({
+                **command.current_evidence.model_dump(),
+                "architect_execution_id": command.architect_execution_id,
+            })
+            updated = reconcile_run_handoff(
+                state, project_root=root, current=current,
+                case_sensitive_paths=command.case_sensitive_paths,
+                initial_only=True, registry=registry, clock=_clock,
+            )
+            if updated is state:
+                return RunOperationResult(state.run_id, state.run_alias, state.schema_version, path, state)
+            save_state(updated, path)
+            return RunOperationResult(updated.run_id, updated.run_alias, updated.schema_version, path, updated)
+    except ArtifactTargetSealingRejected as exc:
+        raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
+    except _WorkerAlreadyActive as exc:
+        raise ArtifactTargetHandoffRejected(reason.STALE_EVIDENCE, "Cannot seal while a worker or another action is active.") from exc
+    except WriteScopeMisconfigured as exc:
+        raise ArtifactTargetHandoffRejected(reason.UNSAFE_PATH, str(exc)) from exc
+    except (OSError, ValueError, TypeError) as exc:
+        raise ArtifactTargetHandoffRejected(reason.MISSING_EVIDENCE, f"Cannot seal handoff: {exc}") from exc
 
 
 def _require_current_workflow_assessment(
@@ -2271,6 +2391,7 @@ def _resolve_latest_interrupt(
     resolution: str,
     occurred_at: datetime | None = None,
     action_id: str | None = None,
+    artifact_target_contract_id: str | None = None,
 ) -> RunState:
     """Resolve exactly the latest unresolved interrupt before canonical resume."""
     unresolved = [
@@ -2282,11 +2403,24 @@ def _resolve_latest_interrupt(
     interrupts = list(state.interrupt_log)
     if unresolved:
         index = unresolved[-1]
+        entry = interrupts[index]
+        driver_checkpoint = entry.trigger == "manual-checkpoint" and entry.context.get("next_phase") in {"driver_red", "driver_green"}
+        handoff = state.artifact_target_handoff
+        if driver_checkpoint and handoff is not None:
+            if (artifact_target_contract_id is None or artifact_target_contract_id != handoff.active_contract_id
+                    or not handoff.reconciliations
+                    or handoff.reconciliations[-1].contract_id != artifact_target_contract_id
+                    or handoff.reconciliations[-1].outcome != "ready"):
+                raise HumanActionRejected("Driver checkpoint requires the exact current ready contract ID")
+        elif artifact_target_contract_id is not None:
+            raise HumanActionRejected("Contract authorization requires a ready handoff and a Driver checkpoint")
         interrupts[index] = interrupts[index].model_copy(
             update={"resolution": resolution.strip()}
         )
         target = f"interrupt:{index}"
     elif not interrupts:
+        if artifact_target_contract_id is not None:
+            raise HumanActionRejected("Legacy pause cannot authorize an artifact target contract")
         # Legacy awaiting-human state predates durable interrupt evidence.
         target = "legacy-pause"
     else:
@@ -2308,6 +2442,7 @@ def _resolve_latest_interrupt(
             resulting_state_version=state.schema_version,
             resulting_status=state.status,
             resulting_phase=state.phase,
+            artifact_target_contract_id=artifact_target_contract_id,
         )
     except (TypeError, ValueError) as exc:
         raise HumanActionRejected(str(exc)) from exc

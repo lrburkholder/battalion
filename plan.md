@@ -18,8 +18,28 @@ and contract models, lexical path validation, explicit case-collision policy,
 target-ID step references, and deterministic content identities. Architect now
 parses that typed response before its existing scoped write, renders a marked
 target projection into `plan.md`, and uses the bounded role-contract correction
-path for invalid candidates. This branch does not persist handoffs, change Run
-state, or enforce the future Driver gate.
+path for invalid candidates.
+BTN-195 branch work adds `battalion.artifact_target_state` and the optional
+`RunState` schema `1.2` handoff sibling. The persistence foundation retains
+immutable contract, reconciliation, and Actor-attributed correction history,
+validates supersession and admission/recipe/Architect provenance references,
+and reads schema `1.0`/`1.1` without inventing target evidence. Deterministic
+reconciliation now evaluates current revisions, exact recipe phases, authoritative
+compact targets, and scope/path evidence collected through existing bound-tool
+resolution. Revalidation compares the previous contract, recipe, source, scope,
+and path-policy snapshots. Architect now captures the candidate after its scoped
+plan write in execution-record `1.9`. Shared application initial sealing loads
+that evidence, checks the current scoped plan/project identity, and persists the
+reconciled contract without changing admission or resolving interrupts. Admitted
+Git Runs now capture a bounded pre-execution source snapshot; sealing compares
+fresh contents with that baseline and exact verified scoped-write receipts.
+The graph now seals/revalidates at every Driver entry before attempt creation,
+budget consumption, or tools, and retains the contract ID on Driver executions.
+Start/resume accept explicit current target evidence and translate gate rejection
+to a typed application error. Driver-checkpoint resume now requires an exact
+contract ID, records Actor-attributed authorization, and revalidates before saving
+the resolution. Human correction operations, compact initial construction, and client evidence intake remain
+pending; those paths fail closed. The ticket remains branch work in progress.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 

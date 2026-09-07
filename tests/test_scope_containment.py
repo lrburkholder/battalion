@@ -306,3 +306,7 @@ def test_cli_renders_scope_configuration_error_without_starting_run(tmp_path):
     assert "Invalid write scope" in result.output
     assert "Starting run" not in result.output
     assert not (tmp_path / ".battalion").exists()
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

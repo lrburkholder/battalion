@@ -110,7 +110,9 @@ def cli_arguments(block: str, variables: dict[str, str]) -> list[list[str]]:
 
 
 @pytest.mark.parametrize("executable", ["pwsh", "powershell"])
-def test_guide_project_setup_run_uuid_inspect_and_resume(tmp_path, monkeypatch, executable):
+def test_guide_project_setup_run_uuid_inspect_and_resume(tmp_path, monkeypatch, executable, isolated_artifact_gate):
+    # Keep guide/role/subprocess coverage while BTN-196 intake and BTN-195 exact
+    # checkpoint authorization are pending; real admission is tested separately.
     # Execute the documented project creation, then the documented CLI arguments.
     result = powershell(
         "$ErrorActionPreference = 'Stop'\n"

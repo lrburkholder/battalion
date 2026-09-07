@@ -347,3 +347,7 @@ def test_candidate_review_promotes_or_rejects_without_mutating_evidence(tmp_path
             action=ReviewAction.REJECT,
             actor_id=actor_id,
         ))
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")
