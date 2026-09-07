@@ -134,7 +134,7 @@ def test_guide_project_setup_run_uuid_inspect_and_resume(tmp_path, monkeypatch, 
     runner = CliRunner()
     setup = runner.invoke(app, cli_arguments(BLOCKS["setup"], models)[0])
     assert setup.exit_code == 0, setup.output
-    assert checks == ["ollama/doc-architect"]  # one connectivity check per provider
+    assert checks == ["ollama/doc-architect", "ollama/doc-driver", "ollama/doc-reviewer"]
     assert (project / "src/greeting.py").is_file()
 
     import battalion.nodes.architect as architect
@@ -143,7 +143,36 @@ def test_guide_project_setup_run_uuid_inspect_and_resume(tmp_path, monkeypatch, 
     import battalion.nodes.refactorer as refactorer
 
     responses = {
-        "architect": iter(["# Plan\nImplement greet within src/ and review pytest evidence."]),
+        "architect": iter([json.dumps({
+            "handoff_version": "1.0",
+            "plan_markdown": "# Plan\nImplement greet within src/ and review pytest evidence.",
+            "targets": [
+                {
+                    "target_id": "greeting-test",
+                    "project_relative_path": "src/test_greeting.py",
+                    "assignments": [{
+                        "owner_role": "driver",
+                        "workflow_phase": "driver-red",
+                        "intended_operation": "create",
+                    }],
+                    "evidence_references": [],
+                },
+                {
+                    "target_id": "greeting-source",
+                    "project_relative_path": "src/greeting.py",
+                    "assignments": [{
+                        "owner_role": "driver",
+                        "workflow_phase": "driver-green",
+                        "intended_operation": "create",
+                    }],
+                    "evidence_references": [],
+                },
+            ],
+            "implementation_steps": [{
+                "description": "Add greeting tests and implement greet.",
+                "target_ids": ["greeting-test", "greeting-source"],
+            }],
+        })]),
         "driver": iter([
             json.dumps({"files": {"test_greeting.py": (
                 'from greeting import greet\n\n'

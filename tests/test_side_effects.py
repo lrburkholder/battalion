@@ -34,7 +34,7 @@ from battalion.state.models import (
     SideEffectStatus,
 )
 from battalion.state.persistence import load_state, save_state
-from conftest import make_run_state
+from support.state import make_run_state
 
 NOW = datetime(2026, 8, 26, 12, 0, 0, tzinfo=timezone.utc)
 

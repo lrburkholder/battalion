@@ -32,7 +32,8 @@ from battalion.integrations.webhook import (
     http_webhook_outbound_event_sink_registration,
     http_webhook_transport_factory,
 )
-from battalion.state.models import Budget, InterruptLogEntry, RunState, RunStatus, SideEffectStatus
+from battalion.state.models import InterruptLogEntry, RunState, RunStatus, SideEffectStatus
+from support.state import make_run_state
 
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
@@ -40,7 +41,6 @@ NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
 
 def _state(status: RunStatus = RunStatus.DONE) -> RunState:
     values: dict[str, object] = {
-        "schema_version": "1.0",
         "run_id": "run-btn-74",
         "run_alias": "BTN-74-slate",
         "project_id": "40000000-0000-4000-8000-000000000074",
@@ -49,14 +49,13 @@ def _state(status: RunStatus = RunStatus.DONE) -> RunState:
         "status": status,
         "phase": "done" if status is RunStatus.DONE else "pause",
         "write_scope": {},
-        "retry_bound": 2,
-        "budget": Budget(limit=10),
+        "budget_limit": 10,
     }
     if status is RunStatus.AWAITING_HUMAN:
         values["interrupt_log"] = [
             InterruptLogEntry(trigger="budget-exceeded", timestamp=NOW, context={})
         ]
-    return RunState(**values)
+    return make_run_state(**values)
 
 
 @dataclass

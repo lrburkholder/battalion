@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 from battalion.context import (
     architect_context,
     driver_context,
@@ -10,7 +12,7 @@ from battalion.context import (
 )
 from battalion.intel import AcceptedInstinct, IntelRepository, InstinctAudience
 from battalion.intel.retrieval import InstinctRetriever
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunState, RunStatus
 
 
 def _accepted(
@@ -55,16 +57,13 @@ def _accepted(
 
 
 def _state(spec: str = "Implement deterministic write scope checks") -> RunState:
-    return RunState(
-        schema_version="1.0",
-        run_id="run-BTN-24",
-        ticket_id="BTN-24",
+    return make_run_state(
+        run_id='run-BTN-24',
+        ticket_id='BTN-24',
         spec=spec,
         status=RunStatus.IN_PROGRESS,
-        phase="architect",
-        write_scope={"driver": ["src/"], "refactorer": ["src/"]},
-        retry_bound=2,
-        budget=Budget(limit=20),
+        write_scope={'driver': ['src/'], 'refactorer': ['src/']},
+        budget_limit=20,
     )
 
 

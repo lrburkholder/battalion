@@ -21,7 +21,8 @@ from battalion.scope.tool_binding import ScopeViolationError
 from battalion.state.models import RunStatus
 
 
-from conftest import make_run_state
+from support.state import make_run_state
+from support.responses import files_response, json_response, litellm_response
 
 
 def make_state(write_scope=None, **overrides):
@@ -34,20 +35,8 @@ def make_state(write_scope=None, **overrides):
     return make_run_state(**fields)
 
 
-def files_response(files: dict) -> dict:
-    import json
-    return {"choices": [{"message": {"content": json.dumps({"files": files})}}]}
-
-
-def fenced_files_response(files: dict) -> dict:
-    import json
-    body = json.dumps({"files": files})
-    return {"choices": [{"message": {"content": f"```json\n{body}\n```"}}]}
-
-
 def result_response(kind: str, reason_code: str, summary: str) -> dict:
-    import json
-    return {"choices": [{"message": {"content": json.dumps({
+    return json_response({
         "files": {},
         "result": {
             "kind": kind,
@@ -55,45 +44,24 @@ def result_response(kind: str, reason_code: str, summary: str) -> dict:
             "summary": summary,
             "evidence_refs": [{"kind": "artifact", "reference": "plan.md"}],
         },
-    })}}]}
+    })
 
 
-def test_extract_files_parses_plain_json():
-    resp = files_response({"src/module.py": "print('hi')"})
+@pytest.mark.parametrize("fenced", [False, True], ids=["plain", "markdown-fenced"])
+def test_extract_files_parses_json(fenced):
+    resp = files_response({"src/module.py": "print('hi')"}, fenced=fenced)
     assert extract_files(resp) == {"src/module.py": "print('hi')"}
 
 
-def test_extract_files_parses_markdown_fenced_json():
-    resp = fenced_files_response({"src/module.py": "print('hi')"})
-    assert extract_files(resp) == {"src/module.py": "print('hi')"}
-
-
-def test_extract_files_rejects_invalid_json():
-    resp = {"choices": [{"message": {"content": "not json at all"}}]}
-    with pytest.raises(MalformedDriverOutput):
-        extract_files(resp)
-
-
-def test_extract_files_rejects_missing_files_key():
-    resp = {"choices": [{"message": {"content": '{"not_files": {}}'}}]}
-    with pytest.raises(MalformedDriverOutput):
-        extract_files(resp)
-
-
-def test_extract_files_rejects_non_dict_files_value():
-    resp = {"choices": [{"message": {"content": '{"files": ["not", "a", "dict"]}'}}]}
-    with pytest.raises(MalformedDriverOutput):
-        extract_files(resp)
-
-
-def test_extract_files_rejects_non_string_content():
-    resp = {"choices": [{"message": {"content": '{"files": {"module.py": 123}}'}}]}
-    with pytest.raises(MalformedDriverOutput):
-        extract_files(resp)
-
-
-def test_extract_files_rejects_empty_string_path():
-    resp = {"choices": [{"message": {"content": '{"files": {"": "content"}}'}}]}
+@pytest.mark.parametrize("content", [
+    pytest.param("not json at all", id="invalid-json"),
+    pytest.param('{"not_files": {}}', id="missing-files-key"),
+    pytest.param('{"files": ["not", "a", "dict"]}', id="non-dict-files"),
+    pytest.param('{"files": {"module.py": 123}}', id="non-string-content"),
+    pytest.param('{"files": {"": "content"}}', id="empty-path"),
+])
+def test_extract_files_rejects_malformed_output(content):
+    resp = litellm_response(content)
     with pytest.raises(MalformedDriverOutput):
         extract_files(resp)
 
