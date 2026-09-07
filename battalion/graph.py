@@ -627,11 +627,12 @@ def _make_architect_node(
         state: RunState,
         instincts: tuple[AcceptedInstinct, ...],
         execution_id: str,
-        _correction_context: str | None,
+        correction_context: str | None,
     ) -> dict[str, Any]:
         return {
             "spec_text": architect_context(
-                state, instincts=instincts, node_execution_id=execution_id
+                state, instincts=instincts, node_execution_id=execution_id,
+                automatic_correction=correction_context,
             )
         }
 

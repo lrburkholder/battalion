@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from battalion.integrations.configuration import IntegrationConfiguration
 from battalion.llm.configuration import NodeLLMConfig, validate_model_diversity
+from battalion.llm.cost_policy import CostPolicy
 
 
 DEFAULT_CONFIG_PATH = Path("battalion.config.yaml")
@@ -23,6 +24,7 @@ class BattalionConfig(BaseModel):
     base_dir: str = "."
     prompts_dir: str | None = None
     budget_limit: int = 100
+    cost_policy: CostPolicy = CostPolicy.PAID_CAPABLE
     reviewer_test_timeout_seconds: float = Field(default=300.0, gt=0, le=3600)
     manual_checkpoints: list[str] = Field(default_factory=list)
     write_scope: dict[str, list[str]] = Field(default_factory=dict)
@@ -98,6 +100,7 @@ def load_config(
     base_dir = (cli_overrides or {}).get("base_dir", yaml_data.get("base_dir", "."))
     prompts_dir = (cli_overrides or {}).get("prompts_dir", yaml_data.get("prompts_dir"))
     budget_limit = (cli_overrides or {}).get("budget_limit", yaml_data.get("budget_limit", 100))
+    cost_policy = (cli_overrides or {}).get("cost_policy", yaml_data.get("cost_policy", CostPolicy.PAID_CAPABLE))
     reviewer_test_timeout_seconds = (cli_overrides or {}).get(
         "reviewer_test_timeout_seconds",
         yaml_data.get("reviewer_test_timeout_seconds", 300.0),
@@ -115,6 +118,7 @@ def load_config(
         base_dir=base_dir,
         prompts_dir=prompts_dir,
         budget_limit=budget_limit,
+        cost_policy=cost_policy,
         reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
         manual_checkpoints=manual_checkpoints,
         write_scope=write_scope,
@@ -126,6 +130,7 @@ def save_config(
     models: dict[str, dict[str, Any]],
     config_path: str | Path | None = None,
     existing: dict[str, Any] | None = None,
+    cost_policy: CostPolicy | str | None = None,
 ) -> Path:
     """Merge the given per-node models into a battalion.config.yaml.
 
@@ -152,6 +157,8 @@ def save_config(
         existing = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
     data = {**(existing or {}), "models": models}
+    if cost_policy is not None:
+        data["cost_policy"] = CostPolicy(cost_policy).value
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return path
