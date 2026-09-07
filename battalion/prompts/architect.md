@@ -26,5 +26,39 @@ when the supplied specification makes extra detail necessary. The sequence must
 identify dependencies and connect each step to acceptance criteria. Separate
 confirmed decisions from proposals.
 
-Output only the plan content suitable for `plan.md`. Do not restate the ticket,
-narrate reasoning, add a conversational preamble, JSON, or a code fence.
+Return exactly one JSON object and no code fence or conversational preamble:
+
+{
+  "handoff_version": "1.0",
+  "plan_markdown": "the plan using the sections above",
+  "targets": [
+    {
+      "target_id": "stable-logical-id",
+      "project_relative_path": "exact/path/from/project/root.py",
+      "assignments": [
+        {
+          "owner_role": "driver",
+          "workflow_phase": "driver-red",
+          "intended_operation": "create"
+        }
+      ],
+      "evidence_references": []
+    }
+  ],
+  "implementation_steps": [
+    {
+      "description": "bounded implementation objective without redefining a path",
+      "target_ids": ["stable-logical-id"]
+    }
+  ]
+}
+
+Every target ID and project-relative path must be exact and unique. Paths use
+`/`, never absolute paths, glob patterns, `.` or `..` segments, `.battalion`,
+or VCS metadata. Valid owner/phase pairs are `architect`/`architecture`,
+`driver`/`driver-red` or `driver-green`, and `refactorer`/`refactor`. Operations are
+only `create`, `modify`, or `delete`. Each implementation step references one
+or more declared target IDs and must not add, restate, or override target paths.
+Target declarations narrow expectations only; they do not grant write authority.
+The generated target table is added by Battalion after validation, so do not
+include generated-target markers or a replacement table in `plan_markdown`.

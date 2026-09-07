@@ -35,8 +35,10 @@ from battalion.actors import (
     unlink_external_identity as _unlink_external_identity,
 )
 from battalion.config import BattalionConfig
+from battalion.llm.cost_policy import InferencePolicyError, cost_policy_context, validate_cost_policy
 from battalion.scope.tool_binding import WriteScopeMisconfigured, validate_write_scope
 from battalion.execution import summarize_costs
+from battalion.history import HistoryQuery
 from battalion.identity import (
     IdentityError,
     ProjectIdentity,
@@ -170,6 +172,10 @@ class ApplicationError(Exception):
 
 class InvalidWriteScope(ApplicationError):
     """The project-relative authority declarations cannot safely be bound."""
+
+
+class InvalidInferencePolicy(ApplicationError):
+    """The configured targets cannot be admitted under the selected policy."""
 
 
 def _validate_write_scope(write_scope: dict[str, list[str]], base_dir: str | Path) -> None:
@@ -800,6 +806,10 @@ def create_initial_state(
     """Create one canonical new-run state through the application boundary."""
     _validate_write_scope(config.write_scope, config.base_dir)
     try:
+        validate_cost_policy(config.models, config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
+    try:
         project = load_project_identity(config.base_dir, create=True)
         _resolve_human_actor(config.base_dir, None)
     except (IdentityError, OSError) as exc:
@@ -818,6 +828,7 @@ def create_initial_state(
         write_scope=config.write_scope,
         retry_bound=2,
         budget=Budget(limit=config.budget_limit, used=0),
+        cost_policy=config.cost_policy,
         reviewer_rejection_history=[],
         interrupt_log=[],
         manual_checkpoints=config.manual_checkpoints,
@@ -962,6 +973,12 @@ def start_run(
 ) -> RunOperationResult:
     """Execute a new run through the graph and persist its resulting state."""
     initial_state = command.initial_state
+    if initial_state.cost_policy is not command.config.cost_policy:
+        raise InvalidInferencePolicy("Initial state cost policy does not match the active configuration")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
     _validate_write_scope(initial_state.write_scope, command.config.base_dir)
     path = state_path(initial_state.run_id, state_dir)
     if path.exists() and not command.overwrite:
@@ -992,17 +1009,18 @@ def start_run(
         if publisher is not None:
             publisher.handle_checkpoint(validated)
 
-    final_state = _execute_graph(
-        execute, run_id=initial_state.run_id, path=path,
-        initial_state=initial_state,
-        llm_configs=command.config.models,
-        base_dir=command.config.base_dir,
-        prompts_dir=command.config.prompts_dir,
-        reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
-        on_node_event=node_callback,
-        on_token=token_callback,
-        on_state_checkpoint=checkpoint,
-    )
+    with cost_policy_context(command.config.cost_policy):
+        final_state = _execute_graph(
+            execute, run_id=initial_state.run_id, path=path,
+            initial_state=initial_state,
+            llm_configs=command.config.models,
+            base_dir=command.config.base_dir,
+            prompts_dir=command.config.prompts_dir,
+            reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
+            on_node_event=node_callback,
+            on_token=token_callback,
+            on_state_checkpoint=checkpoint,
+        )
     if final_state.run_id != initial_state.run_id:
         raise RunIdentityChanged(
             f"Run identity changed from {initial_state.run_id} to {final_state.run_id}."
@@ -1032,6 +1050,12 @@ def resume_run(
 ) -> RunOperationResult:
     """Load, resume through the canonical graph behavior, and save one run."""
     state = _load_run(command.run_id, state_dir)
+    if state.cost_policy is not command.config.cost_policy:
+        raise InvalidInferencePolicy("Resume configuration cannot change a run's durable cost policy")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
     if state.workflow_admission is not None:
         _validate_admitted_resume(
             state.workflow_admission,
@@ -1070,17 +1094,18 @@ def resume_run(
         if publisher is not None:
             publisher.handle_checkpoint(validated)
 
-    final_state = _execute_graph(
-        execute, run_id=state.run_id, path=path,
-        state=state,
-        llm_configs=command.config.models,
-        base_dir=command.config.base_dir,
-        prompts_dir=command.config.prompts_dir,
-        reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
-        on_node_event=node_callback,
-        on_token=token_callback,
-        on_state_checkpoint=checkpoint,
-    )
+    with cost_policy_context(command.config.cost_policy):
+        final_state = _execute_graph(
+            execute, run_id=state.run_id, path=path,
+            state=state,
+            llm_configs=command.config.models,
+            base_dir=command.config.base_dir,
+            prompts_dir=command.config.prompts_dir,
+            reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
+            on_node_event=node_callback,
+            on_token=token_callback,
+            on_state_checkpoint=checkpoint,
+        )
     if final_state.run_id != state.run_id:
         raise RunIdentityChanged(
             f"Run identity changed from {state.run_id} to {final_state.run_id}."
@@ -1249,6 +1274,62 @@ def inspect_project(query: InspectProject) -> ProjectInspection:
     entries = _discover_desktop_runs(root, catalog)
     runs = tuple(_inspect_catalog_entry(root, entry, identity) for entry in entries)
     return ProjectInspection(project_root=root, identity=identity, runs=runs)
+
+
+def query_history(
+    project_root: str | Path,
+    query: HistoryQuery | None = None,
+    *,
+    dimension: str | None = None,
+    rebuild: bool = False,
+) -> dict:
+    """Search/aggregate canonical project evidence through a disposable index.
+
+    Rebuild is explicit authorization to replace unrecognized projection bytes.
+    Malformed and inaccessible canonical sources remain visible as limitations.
+    """
+    from hashlib import sha256
+    import json
+    import sqlite3
+
+    from battalion.history import IDENTITY_FIELDS, aggregate_attempts, link_intel, project_run
+    from battalion.history_store import HistoryStore
+
+    query = query or HistoryQuery()
+    if dimension is not None and dimension not in IDENTITY_FIELDS:
+        raise ApplicationError(f"Dimension must be one of: {', '.join(IDENTITY_FIELDS)}")
+    project = inspect_project(InspectProject(project_root=project_root))
+    rows = []
+    limitations = []
+    for run in project.runs:
+        if run.inspection is None:
+            limitations.append({"run_id": run.catalog_entry.run_id,
+                                "availability": run.availability, "detail": run.limitation})
+        else:
+            rows.extend(project_run(run.inspection.state, str(run.inspection.state_path)))
+    try:
+        intel = inspect_intel(InspectIntel(project_root=project_root))
+    except IntelReadFailed as exc:
+        limitations.append({"availability": "intel-unavailable", "detail": str(exc)})
+    else:
+        link_intel(rows, (*intel.accepted, *intel.candidates))
+    rows.sort(key=lambda row: (row["ticket_id"], row["run_id"]))
+    fingerprint = sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
+    store = HistoryStore(project.project_root / ".battalion" / "projections" / "history.sqlite")
+    if any(not path.resolve().is_relative_to(project.project_root)
+           for path in (store.path, store.receipt)):
+        raise ApplicationError("History projection paths must remain inside the project")
+    try:
+        with store.locked():
+            store.refresh(rows, fingerprint, replace=rebuild)
+            total, matches = store.search(query, paginate=dimension is None)
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        raise ApplicationError(f"History projection: {exc}") from exc
+    result = aggregate_attempts(matches, dimension) if dimension else {
+        "total": total, "limit": query.limit, "offset": query.offset, "results": matches,
+    }
+    return {**result, "selection": query.selection(),
+            "limitations": limitations, "projection_path": str(store.path)}
 
 
 def establish_local_actor(command: BootstrapLocalActor) -> ActorInspection:
@@ -1574,10 +1655,15 @@ def assess_tactician(
     )
     if llm_config is None:
         raise ApplicationError("No Tactician or default model is configured")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
     kwargs: dict[str, Any] = {"registry": registry}
     if call_llm_fn is not None:
         kwargs["call_llm_fn"] = call_llm_fn
-    return _run_tactician(command.assessment_input, llm_config, **kwargs)
+    with cost_policy_context(command.config.cost_policy):
+        return _run_tactician(command.assessment_input, llm_config, **kwargs)
 
 
 def inspect_workflow_admission_policy(

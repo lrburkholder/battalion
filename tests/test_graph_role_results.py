@@ -1,6 +1,7 @@
 """Graph handling of malformed role output and typed Driver results."""
 
 
+from battalion.nodes.architect import run_architect
 from battalion.nodes.driver import InvalidModeOutput
 from battalion.nodes.driver import run_driver
 from battalion.nodes.refactorer import MalformedRefactorerOutput
@@ -9,6 +10,7 @@ from battalion.state.models import RunState, RunStatus
 from battalion.scope.tool_binding import ScopeViolationError
 from support.state import make_run_state
 from support.graph import invoke_graph, refactorer_advancing, reviewer_accepting, resume_graph
+from support.responses import json_response
 
 
 class TestRoleOutputFailuresPause:
@@ -18,6 +20,127 @@ class TestRoleOutputFailuresPause:
     parsers raise, so the regression covers the two UAT failures without
     requiring a live provider.
     """
+
+    def test_architect_invalid_handoff_retries_before_any_plan_write(self, tmp_path):
+        calls = []
+        invalid = {
+            "handoff_version": "1.0",
+            "plan_markdown": "# Invalid plan",
+            "targets": [
+                {
+                    "target_id": "greeting-test",
+                    "project_relative_path": "src/test_greeting.py",
+                    "assignments": [{
+                        "owner_role": "driver", "workflow_phase": "driver-red",
+                        "intended_operation": "create",
+                    }],
+                },
+                {
+                    "target_id": "greeting-test",
+                    "project_relative_path": "test_greeting.py",
+                    "assignments": [{
+                        "owner_role": "driver", "workflow_phase": "driver-red",
+                        "intended_operation": "create",
+                    }],
+                },
+            ],
+            "implementation_steps": [{
+                "description": "Add the failing greeting test.",
+                "target_ids": ["greeting-test"],
+            }],
+        }
+        corrected = {
+            **invalid,
+            "plan_markdown": "# Corrected plan",
+            "targets": [invalid["targets"][0]],
+        }
+
+        def architect_runner(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            calls.append(spec_text)
+            if len(calls) == 2:
+                assert not (tmp_path / "plan.md").exists()
+            response = invalid if len(calls) == 1 else corrected
+            return run_architect(
+                state, spec_text, llm_config, base_dir=base_dir,
+                prompts_dir=prompts_dir,
+                call_llm_fn=lambda *args, **kwargs: json_response(response),
+            )
+
+        completed = RunState.model_validate(invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=10,
+            architect=architect_runner,
+        ))
+
+        assert completed.status is RunStatus.DONE
+        assert len(calls) == 2
+        assert "Battalion automatic correction" in calls[1]
+        architect_attempts = [
+            attempt for attempt in completed.execution_record.node_executions
+            if attempt.phase == "architect"
+        ]
+        assert [attempt.attempt_disposition for attempt in architect_attempts] == [
+            "corrected", "accepted",
+        ]
+        violation = architect_attempts[0].role_contract_violation
+        assert violation.reason_code == "architect-handoff-invalid"
+        assert violation.offending_paths == [
+            "src/test_greeting.py", "test_greeting.py",
+        ]
+        assert "<code>src/test_greeting.py</code>" in (
+            tmp_path / "plan.md"
+        ).read_text()
+
+    def test_repeated_architect_invalid_handoff_never_advances_to_driver(self, tmp_path):
+        architect_calls = []
+        driver_calls = []
+        invalid = {
+            "handoff_version": "1.0",
+            "plan_markdown": "# Invalid plan",
+            "targets": [{
+                "target_id": "greeting-test",
+                "project_relative_path": "src/test_greeting.py",
+                "assignments": [{
+                    "owner_role": "driver", "workflow_phase": "driver-red",
+                    "intended_operation": "create",
+                }],
+            }],
+            "implementation_steps": [{
+                "description": "Reference an undeclared target.",
+                "target_ids": ["missing-target"],
+            }],
+        }
+
+        def invalid_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            architect_calls.append(spec_text)
+            return run_architect(
+                state, spec_text, llm_config, base_dir=base_dir,
+                prompts_dir=prompts_dir,
+                call_llm_fn=lambda *args, **kwargs: json_response(invalid),
+            )
+
+        def driver_must_not_run(*args, **kwargs):
+            driver_calls.append((args, kwargs))
+            raise AssertionError("Driver must not run after an invalid Architect handoff")
+
+        final = RunState.model_validate(invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=5,
+            architect=invalid_architect, driver=driver_must_not_run,
+        ))
+
+        assert final.status is RunStatus.AWAITING_HUMAN
+        assert final.phase == NODE_PAUSE
+        assert len(architect_calls) == 2
+        assert "Battalion automatic correction" in architect_calls[1]
+        assert driver_calls == []
+        assert not (tmp_path / "plan.md").exists()
+        architect_attempts = [
+            attempt for attempt in final.execution_record.node_executions
+            if attempt.phase == "architect"
+        ]
+        assert [
+            attempt.role_contract_violation.resulting_disposition
+            for attempt in architect_attempts
+        ] == ["retry", "escalation"]
 
     def test_driver_mode_violation_retries_same_phase_with_durable_evidence(self, tmp_path):
         calls = []

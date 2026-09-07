@@ -9,7 +9,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from battalion.integrations.configuration import IntegrationConfiguration
-from battalion.llm.litellm_client import NodeLLMConfig, ModelDiversityError
+from battalion.llm.configuration import NodeLLMConfig, validate_model_diversity
+from battalion.llm.cost_policy import CostPolicy
 
 
 DEFAULT_CONFIG_PATH = Path("battalion.config.yaml")
@@ -23,6 +24,7 @@ class BattalionConfig(BaseModel):
     base_dir: str = "."
     prompts_dir: str | None = None
     budget_limit: int = 100
+    cost_policy: CostPolicy = CostPolicy.PAID_CAPABLE
     reviewer_test_timeout_seconds: float = Field(default=300.0, gt=0, le=3600)
     manual_checkpoints: list[str] = Field(default_factory=list)
     write_scope: dict[str, list[str]] = Field(default_factory=dict)
@@ -65,7 +67,7 @@ def load_config(
     for node in ("architect", "driver", "reviewer", "refactorer", "tactician"):
         model_key = f"BATTALION_MODEL_{node.upper()}"
         if model_key in os.environ:
-            env_models[node] = NodeLLMConfig(model=os.environ[model_key])
+            env_models[node] = os.environ[model_key]
 
     # 3. Build config with priority: YAML -> env -> CLI
     models = {}
@@ -75,52 +77,30 @@ def load_config(
         models[node] = NodeLLMConfig(**model_data)
 
     # Apply env overrides
-    models.update(env_models)
+    for node, model in env_models.items():
+        previous = models.get(node) or models.get("default")
+        models[node] = previous.with_model(model) if previous else NodeLLMConfig(model=model)
 
     # Apply CLI overrides
     if cli_overrides:
         for node in ("architect", "driver", "reviewer", "refactorer"):
             key = f"model_{node}"
             if key in cli_overrides and cli_overrides[key]:
-                models[node] = NodeLLMConfig(model=cli_overrides[key])
+                model = cli_overrides[key]
+                previous = models.get(node) or models.get("default")
+                models[node] = previous.with_model(model) if previous else NodeLLMConfig(model=model)
 
     # If no models configured at all, provide a default
     if not models:
         models["default"] = NodeLLMConfig(model="gpt-4o-mini")
     
-    # BTN-14: Enforce model diversity between Driver and Reviewer
-    # Track which models were explicitly configured (not just default fallback)
-    driver_explicit = "driver" in yaml_data.get("models", {})
-    reviewer_explicit = "reviewer" in yaml_data.get("models", {})
-    
-    # Also check CLI overrides
-    if cli_overrides:
-        if "model_driver" in cli_overrides and cli_overrides["model_driver"]:
-            driver_explicit = True
-        if "model_reviewer" in cli_overrides and cli_overrides["model_reviewer"]:
-            reviewer_explicit = True
-    
-    # Also check env overrides
-    if "driver" in env_models:
-        driver_explicit = True
-    if "reviewer" in env_models:
-        reviewer_explicit = True
-    
-    # Only enforce when both are explicitly configured
-    if driver_explicit and reviewer_explicit:
-        driver_config = models.get("driver") or models.get("default")
-        reviewer_config = models.get("reviewer") or models.get("default")
-        if driver_config and reviewer_config and driver_config.model == reviewer_config.model:
-            raise ModelDiversityError(
-                f"Driver and Reviewer cannot use the same model. "
-                f"Both are configured with model '{driver_config.model}'. "
-                f"Please configure different models for driver and reviewer nodes."
-            )
+    validate_model_diversity(models)
     
     # Merge other config fields
     base_dir = (cli_overrides or {}).get("base_dir", yaml_data.get("base_dir", "."))
     prompts_dir = (cli_overrides or {}).get("prompts_dir", yaml_data.get("prompts_dir"))
     budget_limit = (cli_overrides or {}).get("budget_limit", yaml_data.get("budget_limit", 100))
+    cost_policy = (cli_overrides or {}).get("cost_policy", yaml_data.get("cost_policy", CostPolicy.PAID_CAPABLE))
     reviewer_test_timeout_seconds = (cli_overrides or {}).get(
         "reviewer_test_timeout_seconds",
         yaml_data.get("reviewer_test_timeout_seconds", 300.0),
@@ -138,6 +118,7 @@ def load_config(
         base_dir=base_dir,
         prompts_dir=prompts_dir,
         budget_limit=budget_limit,
+        cost_policy=cost_policy,
         reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
         manual_checkpoints=manual_checkpoints,
         write_scope=write_scope,
@@ -149,6 +130,7 @@ def save_config(
     models: dict[str, dict[str, Any]],
     config_path: str | Path | None = None,
     existing: dict[str, Any] | None = None,
+    cost_policy: CostPolicy | str | None = None,
 ) -> Path:
     """Merge the given per-node models into a battalion.config.yaml.
 
@@ -167,11 +149,16 @@ def save_config(
     """
     import yaml
 
+    # All callers of the persistence boundary must obey the non-secret schema.
+    for model_data in models.values():
+        NodeLLMConfig(**model_data)
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
     if existing is None and path.exists():
         existing = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
     data = {**(existing or {}), "models": models}
+    if cost_policy is not None:
+        data["cost_policy"] = CostPolicy(cost_policy).value
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return path

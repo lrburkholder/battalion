@@ -28,7 +28,7 @@ PUBLISHED_DOCUMENTS = {
     "docs/adrs/README.md": "docs/adrs/index.md",
     **{
         f"docs/adrs/adr{number:04d}.md": f"docs/adrs/adr{number:04d}.md"
-        for number in range(1, 40)
+        for number in range(1, 41)
     },
     "docs/rfcs/rfc0004.md": "docs/rfcs/rfc0004.md",
     "docs/ui/workflow.md": "docs/operator/workflow.md",
@@ -40,6 +40,7 @@ PUBLISHED_DOCUMENTS = {
     "docs/rfcs/rfc0012.md": "docs/rfcs/rfc0012.md",
     "docs/rfcs/rfc0013.md": "docs/rfcs/rfc0013.md",
     "docs/rfcs/rfc0014.md": "docs/rfcs/rfc0014.md",
+    "docs/rfcs/rfc0022.md": "docs/rfcs/rfc0022.md",
     "benchmarks/desktop/README.md": "benchmarks/desktop/index.md",
     "benchmarks/desktop/tauri/evidence/findings.md": "benchmarks/desktop/tauri/findings.md",
     "benchmarks/desktop/pyside6/evidence/findings.md": "benchmarks/desktop/pyside6/findings.md",

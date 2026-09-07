@@ -82,8 +82,13 @@ def test_architect_prompt_requires_evidence_bounded_plan():
 
     assert "Do not invent requirements" in prompt
     assert "Do not fill the gap with a generic architecture" in prompt
-    assert "Output only the plan content suitable for `plan.md`" in prompt
     assert "target 250 words or fewer" in prompt
+    assert "Return exactly one JSON object" in prompt
+    assert '"handoff_version": "1.0"' in prompt
+    assert '"project_relative_path"' in prompt
+    assert '"target_ids"' in prompt
+    assert "must not add, restate, or override target paths" in prompt
+    assert "do not grant write authority" in prompt
 
 
 def test_refactorer_prompt_preserves_behavior_and_architecture():

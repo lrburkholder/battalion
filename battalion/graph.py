@@ -46,7 +46,7 @@ from battalion.interrupts.triggers import (
     check_budget_exceeded_trigger,
     log_interrupt,
 )
-from battalion.llm.litellm_client import InfraFailure
+from battalion.llm.litellm_client import InfraFailure, InferenceIdentityContradiction
 from battalion.nodes.errors import RoleContractViolation, RoleOutputError
 from battalion.execution import ExecutionCapture
 from battalion.recovery import UnsafeRecoveryError, assess_recovery
@@ -253,6 +253,51 @@ def _resolve_llm_config(llm_configs: dict[str, Any], roles: tuple[str, ...]) -> 
     return config
 
 
+def _reported_effective_identities(calls: list[Any]) -> set[str]:
+    """Return only concrete identities emitted by an inference response/router."""
+    return {
+        value.casefold()
+        for call in calls
+        for value in (getattr(call, "response_model", None), getattr(call, "routed_model", None))
+        if isinstance(value, str) and value.strip()
+    }
+
+
+def _runtime_diversity_contradiction(
+    state: RunState, node_name: str, capture: ExecutionCapture, model_config: Any,
+) -> InferenceIdentityContradiction | None:
+    """Reject proven Driver/Reviewer identity collisions without alias guessing."""
+    role = "driver" if node_name.startswith("driver") else (
+        "reviewer" if node_name.startswith("reviewer") else None
+    )
+    if role not in {"driver", "reviewer"}:
+        return None
+    current = _reported_effective_identities(capture.llm_calls)
+    if not current:
+        return None
+    peer = "reviewer" if role == "driver" else "driver"
+    prior = _reported_effective_identities([
+        call
+        for execution in state.execution_record.node_executions
+        if execution.role == peer
+        for call in execution.llm_calls
+    ])
+    overlap = current & prior
+    if not overlap:
+        return None
+    identity = sorted(overlap)[0]
+    detail = (
+        f"Runtime inference evidence resolved both Driver and Reviewer to {identity!r}; "
+        "this contradicts the configured model-diversity assumption."
+    )
+    for call in capture.llm_calls:
+        if identity in _reported_effective_identities([call]):
+            call.identity_contradiction = detail
+    return InferenceIdentityContradiction(
+        node_name, getattr(model_config, "model", "unconfigured"), 1, RuntimeError(detail)
+    )
+
+
 def _next_phase_value(
     value: str | Callable[[RunState], str], state: RunState
 ) -> str:
@@ -449,6 +494,11 @@ def _scaffold_node(
                 if on_token is not None:
                     call_kwargs["on_stream"] = on_token
                 new_state = runner(**call_kwargs)
+                contradiction = _runtime_diversity_contradiction(
+                    state, node_name, capture, model_config
+                )
+                if contradiction is not None:
+                    raise contradiction
             except RoleContractViolation as exc:
                 correction_attempt += 1
                 evidence = RoleContractViolationEvidence(
@@ -577,11 +627,12 @@ def _make_architect_node(
         state: RunState,
         instincts: tuple[AcceptedInstinct, ...],
         execution_id: str,
-        _correction_context: str | None,
+        correction_context: str | None,
     ) -> dict[str, Any]:
         return {
             "spec_text": architect_context(
-                state, instincts=instincts, node_execution_id=execution_id
+                state, instincts=instincts, node_execution_id=execution_id,
+                automatic_correction=correction_context,
             )
         }
 

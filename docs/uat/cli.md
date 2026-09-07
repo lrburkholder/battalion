@@ -21,8 +21,9 @@ does not freeze the guide or waive fixture safety/approval requirements.
 1a on 2026-08-30 in the BTN-172 task. This approves the script, not final live
 acceptance. Use the commit containing this approval as the reviewed revision
 and record its hash, reviewer/date, and approval scope with the UAT evidence.
-The operator also deferred BTN-54 to post-UAT; its current inference-provenance
-limitations remain disclosed and do not block this guide or script delivery.
+BTN-54 was later completed. Its requested/resolved inference identity,
+contradiction, and diversity evidence should now be validated as part of the
+candidate rather than treated as deferred work.
 
 Exercise Battalion as an installed command-line application against a
 disposable local project. This plan is intentionally separate from unit tests:
@@ -63,8 +64,9 @@ Do not silently repair the environment and count the original pass as success.
 
 Retain wheel import location, CLI help, and packaged prompt smoke output. Verify
 setup writes secret-free configuration, checks connectivity, and keeps Driver
-and Reviewer distinct. Validation is one model per provider, not a claim that
-every role model has passed. The guide's manual checkpoint, printed UUID,
+and Reviewer distinct. Validation checks each distinct effective target for
+connectivity, including different endpoints or credentials for the same model;
+role suitability still needs UAT. The guide's manual checkpoint, printed UUID,
 human-readable inspection, durable resolution, and final `done`/pytest evidence
 are mandatory. `$Python`, `$Project`, and `$RunId` below are the variables
 established by that guide; replace `$RunId` after **each** new Run.
@@ -163,6 +165,9 @@ Pass criteria:
 - `battalion status <RUN_UUID> --human --costs` identifies each node's model,
   provider token usage, and bounded streamed reasoning/content character counts
   without embedding raw trace text in `RunState`.
+- Where the provider/router reports a resolved model identity, execution
+  evidence retains it separately from the requested target and records any
+  contradiction instead of silently replacing either identity.
 - The terminal retains available node-associated progress. Raw reasoning/token
   text is provider-dependent, not guaranteed evidence for every model.
 

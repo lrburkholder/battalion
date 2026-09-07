@@ -6,6 +6,68 @@ from battalion.llm.litellm_client import build_node_configs, ModelDiversityError
 from battalion.config import load_config, BattalionConfig
 
 
+@pytest.mark.parametrize("driver,reviewer", [
+    pytest.param(
+        {"model": "openai/qwen3-q4", "endpoint_url": "http://localhost:8000/v1", "canonical_model_family": "Qwen3"},
+        {"model": "ollama/qwen3-q8", "endpoint_url": "http://localhost:11434", "canonical_model_family": "qwen3"},
+        id="same-family-different-providers-endpoints-quantizations"),
+    pytest.param({"model": "openai/gpt-4o"}, {"model": "gpt-4o"}, id="prefix-alias"),
+    pytest.param({"model": "openai/qwen3", "endpoint_url": "http://localhost:8000/v1"},
+                 {"model": "openai/gpt-4o"}, id="endpoint-family-missing"),
+    pytest.param({"model": "openai/auto", "canonical_model_family": "qwen3"},
+                 {"model": "openai/gpt-4o"}, id="opaque-route-with-declared-family"),
+    pytest.param({"model": "openai/profiles/coding", "canonical_model_family": "qwen3"},
+                 {"model": "openai/gpt-4o"}, id="opaque-profile"),
+    pytest.param({"model": "openai/qwen3", "canonical_model_family": "family-one"},
+                 {"model": "ollama/qwen3", "canonical_model_family": "family-two"}, id="same-request-conflicting-family"),
+])
+@pytest.mark.parametrize("boundary", ["build", "load", "setup"])
+def test_canonical_diversity_rejected_at_configuration_boundaries(tmp_path, monkeypatch, driver, reviewer, boundary):
+    import yaml
+    from battalion.config import load_config
+    from battalion.setup import run_setup
+
+    models = {"driver": driver, "reviewer": reviewer}
+    path = tmp_path / "config.yaml"
+    if boundary == "load":
+        path.write_text(yaml.safe_dump({"models": models}), encoding="utf-8")
+    if boundary == "setup":
+        monkeypatch.setattr("battalion.setup.detect_provider", lambda model: (
+            tuple(reversed(model.split("/", 1))) if "/" in model else (model, "openai")
+        ))
+    with pytest.raises(ModelDiversityError):
+        if boundary == "build":
+            build_node_configs(models)
+        elif boundary == "load":
+            load_config(path)
+        else:
+            run_setup(config_path=path, existing_yaml={"models": models}, validate=False)
+    if boundary == "setup":
+        assert not path.exists()
+
+
+def test_distinct_endpoint_families_are_admitted():
+    configs = build_node_configs({
+        "driver": {"model": "openai/qwen3", "endpoint_url": "http://localhost:8000/v1", "canonical_model_family": "qwen3"},
+        "reviewer": {"model": "openai/llama3", "endpoint_url": "http://localhost:8000/v1", "canonical_model_family": "llama3"},
+    })
+    assert configs["driver"].canonical_model_family != configs["reviewer"].canonical_model_family
+
+
+@pytest.mark.parametrize("boundary", ["build", "load"])
+def test_endpoint_default_cannot_bypass_diversity(tmp_path, boundary):
+    import yaml
+    models = {"default": {"model": "openai/qwen3", "endpoint_url": "http://localhost:8000/v1",
+                           "canonical_model_family": "qwen3"}}
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump({"models": models}), encoding="utf-8")
+    with pytest.raises(ModelDiversityError, match="same model"):
+        if boundary == "build":
+            build_node_configs(models)
+        else:
+            load_config(path)
+
+
 class TestModelDiversity:
     """Test that Driver and Reviewer cannot use the same model."""
 

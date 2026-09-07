@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 from battalion.cli import app
 from battalion.config import load_config
 from battalion.llm.litellm_client import ModelDiversityError
+from battalion.llm.configuration import InferenceConfigurationError
 from battalion.setup import (
     ConnectivityCheckFailed,
     MissingApiKey,
@@ -15,6 +16,7 @@ from battalion.setup import (
     detect_provider,
     run_setup,
     save_config,
+    validate_openai_compatible_model_catalog,
     validate_connectivity,
 )
 
@@ -120,11 +122,11 @@ def test_existing_config_preserved_except_specified_changes(tmp_path):
     assert raw["custom_field"] == {"nested": True}
 
 
-def test_connectivity_validated_once_per_provider(tmp_path, monkeypatch):
-    """AC2: every configured provider is validated before setup completes."""
+def test_connectivity_validated_once_per_model(tmp_path, monkeypatch):
+    """Shared providers cannot suppress checks for distinct selected models."""
     calls = []
 
-    def fake_validate(model, api_key=None, completion_fn=None):
+    def fake_validate(model, api_key=None, completion_fn=None, config=None):
         calls.append((model, api_key))
 
     monkeypatch.setattr("battalion.setup.validate_connectivity", fake_validate)
@@ -136,13 +138,14 @@ def test_connectivity_validated_once_per_provider(tmp_path, monkeypatch):
             "architect": "openai/gpt-4o-mini",
             "driver": "openai/gpt-4o-mini",
             "reviewer": "anthropic/claude-3-5-sonnet-20241022",
-            "refactorer": "openai/gpt-4o-mini",
+            "refactorer": "openai/gpt-4o",
         },
         validate=True,
     )
 
     assert sorted(c[0] for c in calls) == [
         "anthropic/claude-3-5-sonnet-20241022",
+        "openai/gpt-4o",
         "openai/gpt-4o-mini",
     ]
     assert ("openai/gpt-4o-mini", "sk-openai") in calls
@@ -150,10 +153,15 @@ def test_connectivity_validated_once_per_provider(tmp_path, monkeypatch):
     assert path.exists()
 
 
-def test_connectivity_failure_aborts_before_save(tmp_path, monkeypatch):
+@pytest.mark.parametrize("failed_model", [
+    pytest.param("openai/gpt-4o-mini", id="first-model-unavailable"),
+    pytest.param("openai/gpt-4o", id="second-model-same-provider-unavailable"),
+])
+def test_connectivity_failure_aborts_before_save(tmp_path, monkeypatch, failed_model):
     """AC2: a failed connectivity check stops setup and writes nothing."""
-    def boom(model, api_key=None, completion_fn=None):
-        raise ConnectivityCheckFailed(f"no route to {model}")
+    def boom(model, api_key=None, completion_fn=None, config=None):
+        if model == failed_model:
+            raise ConnectivityCheckFailed(f"no route to {model}")
 
     monkeypatch.setattr("battalion.setup.validate_connectivity", boom)
     path = tmp_path / "battalion.config.yaml"
@@ -291,6 +299,154 @@ def test_api_key_for_provider_env_priority(monkeypatch):
     assert api_key_for_provider("openai") == "sk-env"
 
 
+def test_freellmapi_catalog_uses_secret_boundary_and_requires_requested_model(monkeypatch):
+    """BTN-53: router discovery is authenticated but never persists the bearer."""
+    from battalion.llm.configuration import NodeLLMConfig
+
+    bearer = "test-freellmapi-bearer"
+    config = NodeLLMConfig(
+        model="openai/qwen3-coder",
+        endpoint_url="http://127.0.0.1:3001/v1",
+        backend="freellmapi",
+        api_key_env="FREELLMAPI_TOKEN",
+    )
+    monkeypatch.setenv("FREELLMAPI_TOKEN", bearer)
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"data": [{"id": "qwen3-coder"}]}'
+
+    def opener(request, timeout):
+        captured["url"] = request.full_url
+        captured["authorization"] = request.get_header("Authorization")
+        captured["timeout"] = timeout
+        return Response()
+
+    validate_openai_compatible_model_catalog(
+        config, config.request_params()["api_key"], opener=opener
+    )
+
+    assert captured == {
+        "url": "http://127.0.0.1:3001/v1/models",
+        "authorization": f"Bearer {bearer}",
+        "timeout": 10,
+    }
+
+
+def test_freellmapi_catalog_hides_authentication_failure_and_missing_model(monkeypatch):
+    """Catalog errors are a setup failure, not a bearer-bearing provider error."""
+    from io import BytesIO
+    from urllib.error import HTTPError
+
+    from battalion.llm.configuration import NodeLLMConfig
+
+    bearer = "test-freellmapi-bearer"
+    config = NodeLLMConfig(
+        model="openai/qwen3-coder",
+        endpoint_url="http://127.0.0.1:3001/v1",
+        backend="freellmapi",
+        api_key_env="FREELLMAPI_TOKEN",
+    )
+    monkeypatch.setenv("FREELLMAPI_TOKEN", bearer)
+    key = config.request_params()["api_key"]
+
+    def unauthorized(request, timeout):
+        raise HTTPError(request.full_url, 401, f"Bearer {bearer}", {}, BytesIO())
+
+    with pytest.raises(ConnectivityCheckFailed) as auth_error:
+        validate_openai_compatible_model_catalog(config, key, opener=unauthorized)
+    assert bearer not in str(auth_error.value)
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"data": [{"id": "another-model"}]}'
+
+    with pytest.raises(ConnectivityCheckFailed, match="qwen3-coder") as model_error:
+        validate_openai_compatible_model_catalog(config, key, opener=lambda *args, **kwargs: Response())
+    assert bearer not in str(model_error.value)
+
+
+def test_freellmapi_setup_configures_all_roles_without_persisting_bearer(tmp_path, monkeypatch):
+    """All roles use the shared path; only the environment holds the router key."""
+    bearer = "test-freellmapi-bearer"
+    monkeypatch.setenv("FREELLMAPI_TOKEN", bearer)
+    models = {
+        "architect": ("qwen3", "qwen3"),
+        "driver": ("qwen3-coder", "qwen3-coder"),
+        "reviewer": ("llama3", "llama3"),
+        "refactorer": ("mistral-small", "mistral-small"),
+    }
+    targets = {
+        role: {
+            "model": f"openai/{model}",
+            "endpoint_url": "http://127.0.0.1:3001/v1",
+            "backend": "freellmapi",
+            "inference_location": "remote",
+            "canonical_model_family": family,
+            "api_key_env": "FREELLMAPI_TOKEN",
+        }
+        for role, (model, family) in models.items()
+    }
+    catalog_checks = []
+    completion_calls = []
+    monkeypatch.setattr(
+        "battalion.setup.validate_openai_compatible_model_catalog",
+        lambda config, key: catalog_checks.append((config.model, key)),
+    )
+    path = tmp_path / "config.yaml"
+
+    written = run_setup(
+        config_path=path,
+        node_overrides=targets,
+        completion_fn=lambda **kwargs: completion_calls.append(kwargs),
+    )
+
+    assert catalog_checks == [(f"openai/{model}", bearer) for model, _ in models.values()]
+    assert [call["model"] for call in completion_calls] == [
+        f"openai/{model}" for model, _ in models.values()
+    ]
+    assert {role: target["canonical_model_family"] for role, target in written.items()} == {
+        role: family for role, (_, family) in models.items()
+    }
+    assert bearer not in path.read_text(encoding="utf-8")
+
+
+def test_freellmapi_catalog_rejection_aborts_setup_without_saving(tmp_path, monkeypatch):
+    """Unavailable capacity/model surfaces at setup without leaking its bearer."""
+    monkeypatch.setenv("FREELLMAPI_TOKEN", "test-freellmapi-bearer")
+    path = tmp_path / "config.yaml"
+    monkeypatch.setattr(
+        "battalion.setup.validate_openai_compatible_model_catalog",
+        lambda *args: (_ for _ in ()).throw(ConnectivityCheckFailed("catalog unavailable")),
+    )
+
+    with pytest.raises(ConnectivityCheckFailed, match="catalog unavailable"):
+        run_setup(
+            config_path=path,
+            node_overrides={"architect": {
+                "model": "openai/qwen3-coder",
+                "endpoint_url": "http://127.0.0.1:3001/v1",
+                "backend": "freellmapi",
+                "api_key_env": "FREELLMAPI_TOKEN",
+            }},
+            completion_fn=lambda **kwargs: pytest.fail("completion must not run after catalog failure"),
+        )
+    assert not path.exists()
+
+
 def test_setup_cli_writes_config(tmp_path, monkeypatch):
     """`battalion setup` persists a config via the real run_setup path."""
     runner = CliRunner()
@@ -342,3 +498,199 @@ def test_setup_cli_uses_default_path(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / "battalion.config.yaml").exists()
+
+
+@pytest.mark.parametrize("model,endpoint", [
+    pytest.param("ollama_chat/qwen3", "http://localhost:11434", id="ollama"),
+    pytest.param("openai/qwen3", "http://127.0.0.1:1234/v1", id="openai-compatible"),
+    pytest.param("lm_studio/qwen3", "http://localhost:1234/v1", id="lm-studio"),
+    pytest.param("hosted_vllm/qwen3", "http://localhost:8000/v1", id="vllm"),
+])
+def test_local_setup_uses_real_provider_detection_and_preserves_target(tmp_path, monkeypatch, model, endpoint):
+    monkeypatch.setattr("battalion.setup.detect_provider", detect_provider)
+    calls = []
+    path = tmp_path / "config.yaml"
+    written = run_setup(
+        config_path=path,
+        node_overrides={"architect": {
+            "model": model, "endpoint_url": endpoint, "inference_location": "local",
+            "backend": "workstation", "temperature": 0.3,
+            "extra_params": {"timeout": 10},
+        }},
+        completion_fn=lambda **kwargs: calls.append(kwargs),
+    )
+    assert calls[0]["model"] == model
+    assert calls[0]["api_base"] == endpoint
+    assert calls[0]["api_key"] == "battalion-keyless"
+    assert calls[0]["timeout"] == 10
+    assert written["architect"]["inference_location"] == "local"
+    config = load_config(path)
+    assert config.models["architect"].endpoint_url == endpoint
+    assert config.models["architect"].backend == "workstation"
+    assert config.models["architect"].temperature == 0.3
+    # Mixed local/remote configuration still checks the remote selected models.
+    assert [call["model"] for call in calls[1:]] == ["openai/gpt-4o-mini", "openai/gpt-4o"]
+
+
+def test_setup_preserves_complete_targets_and_extra_roles_without_mutating_input(tmp_path):
+    from copy import deepcopy
+    path = tmp_path / "config.yaml"
+    existing = {"budget_limit": 7, "models": {
+        "architect": {"model": "openai/gpt-4o-mini", "temperature": 0.4, "max_retries": 5,
+                      "extra_params": {"api_base": "http://localhost:1234/v1", "max_tokens": 256}},
+        "tactician": {"model": "ollama/qwen3", "endpoint_url": "http://localhost:11434"},
+    }}
+    original = deepcopy(existing)
+    calls = []
+    written = run_setup(config_path=path, existing_yaml=existing,
+                        model_overrides={"architect": "openai/qwen3"},
+                        completion_fn=lambda **kwargs: calls.append(kwargs))
+    assert existing == original
+    architect = written["architect"]
+    assert architect["endpoint_url"] == "http://localhost:1234/v1"
+    assert architect["temperature"] == 0.4
+    assert architect["max_retries"] == 5
+    assert architect["extra_params"] == {"max_tokens": 256}
+    assert written["tactician"]["endpoint_url"] == "http://localhost:11434"
+    assert calls[-1]["model"] == "ollama/qwen3"
+    assert yaml.safe_load(path.read_text())["budget_limit"] == 7
+
+
+@pytest.mark.parametrize("difference", ["endpoint", "model", "credential", "parameters"])
+def test_connectivity_checks_distinct_effective_targets(tmp_path, monkeypatch, difference):
+    monkeypatch.setenv("SERVER_ONE", "one-test-value")
+    monkeypatch.setenv("SERVER_TWO", "two-test-value")
+    first = {"model": "openai/qwen3", "endpoint_url": "http://localhost:8000/v1",
+             "api_key_env": "SERVER_ONE"}
+    second = dict(first)
+    if difference == "endpoint":
+        second["endpoint_url"] = "http://localhost:9000/v1"
+    elif difference == "model":
+        second["model"] = "openai/llama3"
+    elif difference == "credential":
+        second["api_key_env"] = "SERVER_TWO"
+    else:
+        second["extra_params"] = {"api_version": "2025-01-01"}
+    calls = []
+    run_setup(config_path=tmp_path / "config.yaml",
+              node_overrides={"architect": first, "refactorer": second},
+              completion_fn=lambda **kwargs: calls.append(kwargs))
+    assert len(calls) == 4
+    assert calls[0]["api_base"] == first["endpoint_url"]
+    assert calls[-1]["api_base"] == second["endpoint_url"]
+    assert calls[0] != calls[-1]
+
+
+def test_connectivity_deduplicates_identical_requests_with_different_display_metadata(tmp_path):
+    target = {"model": "openai/qwen3", "endpoint_url": "http://localhost:8000/v1"}
+    calls = []
+    run_setup(config_path=tmp_path / "config.yaml", node_overrides={
+        "architect": {**target, "backend": "architect-server"},
+        "refactorer": {**target, "backend": "refactorer-server", "max_retries": 5},
+    }, completion_fn=lambda **kwargs: calls.append(kwargs))
+    assert len(calls) == 3
+
+
+def test_unavailable_endpoint_preserves_existing_file_and_hides_provider_secret(tmp_path, monkeypatch):
+    monkeypatch.setenv("SERVER_TOKEN", "test-secret")
+    path = tmp_path / "config.yaml"
+    original = "budget_limit: 7\n"
+    path.write_text(original, encoding="utf-8")
+    notices = []
+
+    def unavailable(**kwargs):
+        raise ConnectionError("Authorization: Bearer test-secret")
+
+    with pytest.raises(ConnectivityCheckFailed) as error:
+        run_setup(config_path=path, node_overrides={"architect": {
+            "endpoint_url": "http://localhost:8000/v1", "api_key_env": "SERVER_TOKEN",
+        }}, completion_fn=unavailable, echo=notices.append)
+    assert path.read_text(encoding="utf-8") == original
+    assert "test-secret" not in str(error.value)
+    assert "test-secret" not in " ".join(notices)
+
+
+def test_remote_proxy_on_loopback_is_keyless_without_claiming_local_inference(tmp_path, monkeypatch):
+    def unexpected_key_lookup(provider):
+        pytest.fail("A keyless target must not request cloud credentials")
+    monkeypatch.setattr("battalion.setup.api_key_for_provider", unexpected_key_lookup)
+    targets = {role: {"model": f"openai/{model}", "endpoint_url": "http://localhost:8000/v1",
+                      "inference_location": "remote", "canonical_model_family": model}
+               for role, model in [("architect", "qwen3"), ("driver", "qwen3"),
+                                   ("reviewer", "llama3"), ("refactorer", "qwen3")]}
+    path = tmp_path / "config.yaml"
+    written = run_setup(config_path=path, node_overrides=targets, completion_fn=lambda **kwargs: None)
+    assert all(target["inference_location"] == "remote" for target in written.values())
+    assert "battalion-keyless" not in path.read_text()
+
+
+@pytest.mark.parametrize("target", [
+    pytest.param({"endpoint_url": "https://inference.example/v1"}, id="remote-auth-unspecified"),
+    pytest.param({"api_key_env": "UNSET_SERVER_TOKEN"}, id="missing-reference"),
+    pytest.param({"endpoint_url": "http://localhost:8000/v1", "extra_params": {"api_key": "test-secret"}}, id="inline-secret"),
+])
+def test_invalid_auth_fails_before_network_or_save(tmp_path, monkeypatch, target):
+    monkeypatch.delenv("UNSET_SERVER_TOKEN", raising=False)
+    path = tmp_path / "config.yaml"
+    calls = []
+    with pytest.raises(InferenceConfigurationError):
+        run_setup(config_path=path, node_overrides={"architect": target},
+                  completion_fn=lambda **kwargs: calls.append(kwargs))
+    assert calls == []
+    assert not path.exists()
+
+
+def test_setup_cli_configures_endpoint_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("SERVER_TOKEN", "test-secret")
+    path = tmp_path / "config.yaml"
+    result = CliRunner().invoke(app, [
+        "setup", "--config", str(path), "--no-validate",
+        "--model-driver", "openai/qwen3", "--endpoint", "driver=http://localhost:8000/v1",
+        "--canonical-model-family", "driver=qwen3", "--inference-location", "driver=local",
+        "--api-key-env", "driver=SERVER_TOKEN", "--backend", "driver=workstation",
+    ])
+    assert result.exit_code == 0, result.output
+    driver = load_config(path).models["driver"]
+    assert driver.endpoint_url == "http://localhost:8000/v1"
+    assert driver.canonical_model_family == "qwen3"
+    assert driver.api_key_env == "SERVER_TOKEN"
+    assert "test-secret" not in path.read_text()
+    assert "test-secret" not in result.output
+
+
+def test_guided_setup_collects_endpoint_and_family(tmp_path):
+    def prompt(message, default):
+        if message.startswith("Endpoint base URL for driver"):
+            return "http://localhost:8000/v1"
+        if message.startswith("Inference location for driver"):
+            return "local"
+        if message.startswith("Concrete canonical model family for driver"):
+            return "gpt-4o-mini"
+        return default
+    written = run_setup(config_path=tmp_path / "config.yaml", prompt=prompt, validate=False)
+    assert written["driver"]["endpoint_url"] == "http://localhost:8000/v1"
+    assert written["driver"]["inference_location"] == "local"
+    assert written["driver"]["canonical_model_family"] == "gpt-4o-mini"
+
+
+def test_existing_default_endpoint_is_inherited_without_remote_expansion(tmp_path, monkeypatch):
+    monkeypatch.setattr("battalion.setup.api_key_for_provider", lambda provider: pytest.fail("unexpected cloud credential lookup"))
+    default = {"model": "openai/qwen3", "endpoint_url": "http://localhost:8000/v1",
+               "canonical_model_family": "qwen3", "inference_location": "local"}
+    reviewer = {**default, "model": "openai/llama3", "canonical_model_family": "llama3"}
+    calls = []
+    written = run_setup(config_path=tmp_path / "config.yaml",
+                        existing_yaml={"models": {"default": default, "reviewer": reviewer}},
+                        completion_fn=lambda **kwargs: calls.append(kwargs))
+    assert all(data["endpoint_url"] == default["endpoint_url"] for data in written.values())
+    assert [call["model"] for call in calls] == ["openai/qwen3", "openai/llama3"]
+
+
+@pytest.mark.parametrize("text", ["models: [", "[]", "models: []"], ids=["invalid-yaml", "root-sequence", "models-sequence"])
+def test_setup_cli_reports_malformed_configuration_without_replacing_it(tmp_path, text):
+    path = tmp_path / "config.yaml"
+    path.write_text(text, encoding="utf-8")
+    result = CliRunner().invoke(app, ["setup", "--config", str(path), "--no-validate"])
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert path.read_text(encoding="utf-8") == text
