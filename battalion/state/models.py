@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from battalion.role_results import RoleExecutionResult
 from battalion.work import WorkItem
+from battalion.llm.cost_policy import CostPolicy
 
 if TYPE_CHECKING:
     from battalion.workflow_admission_state import WorkflowAdmissionRunRecord
@@ -376,7 +377,12 @@ class CostSource(str, Enum):
 
 
 class LLMCallCost(BaseModel):
-    """Token usage and explicitly sourced monetary evidence for one LLM call."""
+    """Token, cost, and non-secret inference-identity evidence for one LLM call.
+
+    ``model`` is retained as the pre-BTN-54 display/compatibility field.  New
+    records keep the requested target separate from a response or router's
+    effective identity; absent provider metadata stays absent.
+    """
 
     call_id: str = Field(min_length=1, max_length=200)
     model: str = Field(min_length=1, max_length=500)
@@ -387,6 +393,15 @@ class LLMCallCost(BaseModel):
         default=None, pattern=r"^[A-Z]{3}$"
     )
     cost_source: CostSource = CostSource.UNKNOWN
+    requested_model: str | None = Field(default=None, min_length=1, max_length=500)
+    response_model: str | None = Field(default=None, min_length=1, max_length=500)
+    backend: str | None = Field(default=None, min_length=1, max_length=200)
+    endpoint_url: str | None = Field(default=None, min_length=1, max_length=2000)
+    inference_location: Literal["local", "remote", "unknown"] | None = None
+    routed_provider: str | None = Field(default=None, min_length=1, max_length=500)
+    routed_model: str | None = Field(default=None, min_length=1, max_length=500)
+    identity_contradiction: str | None = Field(default=None, min_length=1, max_length=2000)
+    cost_policy: CostPolicy = CostPolicy.PAID_CAPABLE
 
     @model_validator(mode="before")
     @classmethod
@@ -470,8 +485,8 @@ class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
     schema_version: Literal[
-        "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"
-    ] = "1.7"
+        "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"
+    ] = "1.8"
     node_executions: list[NodeExecution] = Field(default_factory=list)
 
 
@@ -645,6 +660,7 @@ class RunState(BaseModel):
     reviewer_rejection_history: list[RejectionRecord] = Field(default_factory=list)
     retry_bound: int
     budget: Budget
+    cost_policy: CostPolicy = CostPolicy.PAID_CAPABLE
     interrupt_log: list[InterruptLogEntry] = Field(default_factory=list)
     manual_checkpoints: list[str] = Field(default_factory=list)
     resume_target: str | None = None

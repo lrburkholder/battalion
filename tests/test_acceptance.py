@@ -34,10 +34,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
+from support.responses import files_response, litellm_response
+from support.state import make_llm_configs as make_configs, make_run_state, persisted_checkpoint
+from support.execution import make_interrupt
+
 from battalion.cli import app as cli_app
-from battalion.graph import NODE_ARCHITECT, build_graph, resume_ticket
+from battalion.graph import build_graph, resume_ticket
 from battalion.interrupts.triggers import (
     TRIGGER_BUDGET_EXCEEDED,
     TRIGGER_INFRA_FAILURE,
@@ -68,7 +73,36 @@ runner = CliRunner()
 # Fixtures / helpers
 # =============================================================================
 
-ARCHITECT_PLAN = "# Plan\n\nImplement the widget."
+ARCHITECT_HANDOFF = {
+    "handoff_version": "1.0",
+    "plan_markdown": "# Plan\n\nImplement the widget.",
+    "targets": [
+        {
+            "target_id": "widget-test",
+            "project_relative_path": "src/test_widget.py",
+            "assignments": [{
+                "owner_role": "driver",
+                "workflow_phase": "driver-red",
+                "intended_operation": "create",
+            }],
+            "evidence_references": [],
+        },
+        {
+            "target_id": "widget-source",
+            "project_relative_path": "src/widget.py",
+            "assignments": [{
+                "owner_role": "driver",
+                "workflow_phase": "driver-green",
+                "intended_operation": "create",
+            }],
+            "evidence_references": [],
+        },
+    ],
+    "implementation_steps": [{
+        "description": "Add the failing test, then implement the widget.",
+        "target_ids": ["widget-test", "widget-source"],
+    }],
+}
 FAILING_TEST = (
     "def test_widget():\n"
     "    from widget import widget\n"
@@ -77,41 +111,9 @@ FAILING_TEST = (
 IMPLEMENTATION = "def widget():\n    return 42\n"
 
 
-def make_configs():
-    return {
-        "default": NodeLLMConfig(model="test-model", max_retries=0),
-        "architect": NodeLLMConfig(model="test-model", max_retries=0),
-        "driver": NodeLLMConfig(model="test-model", max_retries=0),
-        "reviewer": NodeLLMConfig(model="test-model", max_retries=0),
-        "refactorer": NodeLLMConfig(model="test-model", max_retries=0),
-    }
-
-
 def make_initial_state(tmp: Path, ticket_id="BTN-AC", **overrides):
     (tmp / "src").mkdir(parents=True, exist_ok=True)
-    defaults = dict(
-        schema_version="1.0",
-        run_id=f"run-{ticket_id}",
-        ticket_id=ticket_id,
-        status=RunStatus.NOT_STARTED,
-        phase=NODE_ARCHITECT,
-        write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-        retry_bound=2,
-        budget=Budget(limit=100, used=0),
-        reviewer_rejection_history=[],
-        interrupt_log=[],
-        manual_checkpoints=[],
-    )
-    defaults.update(overrides)
-    return RunState(**defaults)
-
-
-def litellm_response(content: str) -> dict:
-    return {"choices": [{"message": {"content": content}}]}
-
-
-def files_response(files: dict[str, str]) -> dict:
-    return litellm_response(json.dumps({"files": files}))
+    return make_run_state(ticket_id=ticket_id, **overrides)
 
 
 def wrap(fn, call_llm_fn):
@@ -172,7 +174,7 @@ class TestAcceptanceCriteria1_FullFlow:
         calls = {"driver": 0}
 
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             calls["driver"] += 1
@@ -217,7 +219,7 @@ class TestAcceptanceCriteria2_InterruptTriggers:
         Reviewer rejects it with the same root cause twice, which must fire
         trigger #1 and pause."""
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             # A passing test is a RED-check violation (feature already exists).
@@ -265,7 +267,7 @@ class TestAcceptanceCriteria2_InterruptTriggers:
 
         # (b) graph-level routing: the error surfaces as trigger #2 + pause.
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             # A test-named path outside src/: passes RED's test-ness check,
@@ -287,7 +289,7 @@ class TestAcceptanceCriteria2_InterruptTriggers:
     def test_trigger3_budget_exceeded(self, tmp_path):
         """Budget is tracked per graph run; exceeding it mid-run pauses."""
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             raise AssertionError("Driver must not run once budget is exhausted")
@@ -355,7 +357,7 @@ class TestAcceptanceCriteria2_InterruptTriggers:
         """A user-declared checkpoint pauses unconditionally at the declared
         phase, before the next node runs."""
         def arch_llm(node, cfg, messages):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         def driver_llm(node, cfg, messages):
             raise AssertionError("Manual checkpoint before Driver must pause first")
@@ -384,28 +386,21 @@ def _make_paused_state_file(tmp: Path, run_id="run-BTN-AC"):
     """Write a realistic paused state to tmp/.battalion/state/{run_id}.json,
     as `battalion run` would have left it: interrupted mid-run at the
     REFACTOR_CHECK, with the resume target recorded in interrupt context."""
-    state = RunState(
-        schema_version="1.0",
+    state = make_run_state(
         run_id=run_id,
         ticket_id="BTN-AC",
         status=RunStatus.AWAITING_HUMAN,
         phase="awaiting_human",
-        write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-        retry_bound=2,
-        budget=Budget(limit=100, used=60),
-        reviewer_rejection_history=[],
+        budget_used=60,
         interrupt_log=[
-            InterruptLogEntry(
-                trigger=TRIGGER_BUDGET_EXCEEDED,
-                timestamp=datetime.now(timezone.utc),
+            make_interrupt(
+                TRIGGER_BUDGET_EXCEEDED,
                 context={"next_phase": "reviewer_refactor", "used": 60, "limit": 100},
             )
         ],
-        manual_checkpoints=[],
     )
     state_dir = tmp / ".battalion" / "state"
-    state_dir.mkdir(parents=True, exist_ok=True)
-    save_state(state, state_dir / f"{run_id}.json")
+    persisted_checkpoint(state_dir / f"{run_id}.json", state)
     return state
 
 
@@ -522,7 +517,7 @@ class TestAcceptanceCriteria5_Persistence:
         pass (BTN-1 AC, exercised through the versioned schema contract)."""
         bad = tmp_path / "bad.json"
         bad.write_text('{"schema_version": "1.0", "status": "not-a-status"}', encoding="utf-8")
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             load_state(bad)
 
 
@@ -540,7 +535,7 @@ class TestProgressEvents:
         events = []
 
         def arch_llm(node, cfg, messages, **kw):
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         calls = {"driver": 0}
 
@@ -593,7 +588,7 @@ class TestProgressEvents:
                 on_stream({"type": "reasoning", "content": "thinking…"})
                 on_stream({"type": "token", "content": "plan "})
                 on_stream({"type": "token", "content": "text"})
-            return litellm_response(ARCHITECT_PLAN)
+            return litellm_response(json.dumps(ARCHITECT_HANDOFF))
 
         calls = {"driver": 0}
 

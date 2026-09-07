@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,7 +22,7 @@ from battalion.identity import (
     open_projects,
     register_run,
 )
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunState, RunStatus
 from battalion.state.persistence import save_state
 
 
@@ -30,16 +32,13 @@ NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 def make_state(
     *, run_id: str, ticket_id: str, project_id: str | None, run_alias: str | None
 ) -> RunState:
-    return RunState(
-        schema_version="1.0",
+    return make_run_state(
         run_id=run_id,
         run_alias=run_alias,
         project_id=project_id,
         ticket_id=ticket_id,
-        status=RunStatus.NOT_STARTED,
-        phase="architect",
-        retry_bound=2,
-        budget=Budget(limit=10),
+        write_scope={},
+        budget_limit=10,
     )
 
 

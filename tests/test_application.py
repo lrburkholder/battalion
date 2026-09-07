@@ -1,5 +1,7 @@
 """Focused tests for the BTN-30 application command/query boundary."""
 
+from support.state import make_run_state
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
@@ -33,7 +35,7 @@ from battalion.integrations.configuration import (
 )
 from battalion.integrations.runtime import AdapterRegistration, IntegrationRuntime
 from battalion.role_results import DriverReasonCode, RoleExecutionResult, RoleResultKind
-from battalion.state.models import Budget, ExecutionRecord, NodeExecution, RunState, RunStatus
+from battalion.state.models import ExecutionRecord, NodeExecution, RunState, RunStatus
 from battalion.work import WorkItem, WorkItemProvenance
 
 
@@ -95,16 +97,13 @@ def make_state(
     run_id: str = "run-BTN-30-test",
     status: RunStatus = RunStatus.NOT_STARTED,
 ) -> RunState:
-    return RunState(
-        schema_version="1.0",
+    return make_run_state(
         run_id=run_id,
-        ticket_id="BTN-30-test",
-        spec="Application boundary test",
+        ticket_id='BTN-30-test',
+        spec='Application boundary test',
         status=status,
-        phase="architect",
-        write_scope={"architect": ["plan.md"], "driver": ["src/"]},
-        retry_bound=2,
-        budget=Budget(limit=10),
+        write_scope={'architect': ['plan.md'], 'driver': ['src/']},
+        budget_limit=10,
     )
 
 

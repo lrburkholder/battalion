@@ -37,18 +37,12 @@ from battalion.interrupts.triggers import (
 from battalion.llm.litellm_client import InfraFailure
 from battalion.nodes.errors import RoleOutputError
 from battalion.scope.tool_binding import ScopeViolationError
-from battalion.state.models import (
-    Budget,
-    CheckpointType,
-    RejectionRecord,
-    RunState,
-    RunStatus,
-)
+from battalion.state.models import CheckpointType, RejectionRecord, RunState, RunStatus
 
 
 # --- Fixtures ---
 
-from conftest import make_run_state
+from support.state import make_run_state
 
 def make_state(
     budget_used: int = 0,

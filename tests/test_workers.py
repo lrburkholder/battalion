@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 import io
 import json
 from dataclasses import replace
@@ -22,7 +24,7 @@ from battalion.application import (
     start_worker,
 )
 from battalion.config import BattalionConfig
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunState, RunStatus
 from battalion.state.persistence import load_state
 from battalion.workflow_admission import (
     AdmissionEvidenceCondition,
@@ -46,14 +48,11 @@ class FakeProcess:
 
 
 def make_state(run_id: str) -> RunState:
-    return RunState(
-        schema_version="1.0",
+    return make_run_state(
         run_id=run_id,
-        ticket_id="BTN-31-test",
-        status=RunStatus.NOT_STARTED,
-        phase="architect",
-        retry_bound=2,
-        budget=Budget(limit=10),
+        ticket_id='BTN-31-test',
+        write_scope={},
+        budget_limit=10,
     )
 
 

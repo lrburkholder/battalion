@@ -55,6 +55,8 @@ from battalion.recovery import assess_recovery
 from battalion.config import load_config, DEFAULT_CONFIG_PATH
 from battalion.llm.litellm_client import ModelDiversityError
 from battalion.setup import (
+    InferenceConfigurationError,
+    parse_role_options,
     ConnectivityCheckFailed,
     MissingApiKey,
     ProviderNotDetected,
@@ -134,6 +136,7 @@ def _print_status(
         typer.echo(f"Status:      {state.status.value}")
         typer.echo(f"Phase:       {state.phase}")
         typer.echo(f"Budget:      {state.budget.used} / {state.budget.limit}")
+        typer.echo(f"Cost policy: {state.cost_policy.value}")
         recovery = assess_recovery(state)
         if recovery is not None:
             typer.echo(f"Recovery:    {recovery.disposition}")
@@ -568,6 +571,17 @@ def setup(
     model_reviewer: str | None = typer.Option(None, "--model-reviewer"),
     model_refactorer: str | None = typer.Option(None, "--model-refactorer"),
     validate: bool = typer.Option(True, "--validate/--no-validate", help=f"Run live connectivity checks before saving. Data handling: {DATA_HANDLING_URL}"),
+    endpoint: list[str] = typer.Option([], "--endpoint", help="ROLE=URL base endpoint; repeat per role."),
+    inference_location: list[str] = typer.Option([], "--inference-location", help="ROLE=local|remote|unknown; operator classification, not verified locality."),
+    canonical_model_family: list[str] = typer.Option([], "--canonical-model-family", help="ROLE=FAMILY; required for endpoint-configured Driver and Reviewer."),
+    api_key_env: list[str] = typer.Option([], "--api-key-env", help="ROLE=ENV_VAR; credential variable name, never its value."),
+    keyless: list[str] = typer.Option([], "--keyless", help="ROLE=true|false|auto; authentication setting independent of inference location."),
+    backend: list[str] = typer.Option([], "--backend", help="ROLE=NAME; non-secret server identifier."),
+    cost_policy: str | None = typer.Option(None, "--cost-policy", help="local-only, free-only, or paid-capable (default)."),
+    cost_classification: list[str] = typer.Option([], "--cost-classification", help="ROLE=local|verified-free|paid|unknown."),
+    classification_source: list[str] = typer.Option([], "--classification-source", help="ROLE=SOURCE; bounded non-secret verification source."),
+    classification_observed_at: list[str] = typer.Option([], "--classification-observed-at", help="ROLE=ISO-8601 timestamp with timezone."),
+    classification_expires_at: list[str] = typer.Option([], "--classification-expires-at", help="ROLE=ISO-8601 timestamp with timezone."),
 ):
     """Configure LLM providers and validate connectivity, writing battalion.config.yaml."""
     overrides = {
@@ -579,11 +593,24 @@ def setup(
     interactive = sys.stdin.isatty()
     try:
         written = run_setup(
+            node_overrides=parse_role_options({
+                "endpoint_url": endpoint,
+                "inference_location": inference_location,
+                "canonical_model_family": canonical_model_family,
+                "api_key_env": api_key_env,
+                "keyless": keyless,
+                "backend": backend,
+                "cost_classification": cost_classification,
+                "classification_source": classification_source,
+                "classification_observed_at": classification_observed_at,
+                "classification_expires_at": classification_expires_at,
+            }),
             config_path=config or DEFAULT_CONFIG_PATH,
             model_overrides=overrides,
             validate=validate,
             prompt=_prompt_value if interactive else None,
             echo=typer.echo,
+            cost_policy=cost_policy,
         )
     except ProviderNotDetected as exc:
         typer.echo(f"Error: {exc}", err=True)
@@ -594,13 +621,61 @@ def setup(
     except ConnectivityCheckFailed as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
-    except ModelDiversityError as exc:
+    except (ModelDiversityError, InferenceConfigurationError) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
 
     typer.echo(f"Setup complete. Config written to: {config or DEFAULT_CONFIG_PATH}")
     for node in ("architect", "driver", "reviewer", "refactorer"):
         typer.echo(f"  {node}: {written[node]['model']}")
+
+
+@app.command("history")
+def history_command(
+    text: str = typer.Argument("", help="Case-insensitive literal substring to find in saved evidence."),
+    project: Path = typer.Option(Path("."), "--project", help="Initialized Battalion project."),
+    filters: list[str] = typer.Option([], "--filter", help="Exact field=value filter; repeat for AND. Use field=null for unknown."),
+    limit: int = typer.Option(100, min=1, max=1000),
+    offset: int = typer.Option(0, min=0),
+    dimension: str | None = typer.Option(None, "--analytics", help="Aggregate all matches by role and this inference-identity field."),
+    rebuild: bool = typer.Option(False, "--rebuild", help="Explicitly authorize replacing modified/corrupt derived projection data."),
+    date_from: str | None = typer.Option(None, help="Inclusive attempt start bound, ISO 8601 with timezone."),
+    date_to: str | None = typer.Option(None, help="Inclusive attempt start bound, ISO 8601 with timezone."),
+    cost_min: str | None = typer.Option(None, help="Minimum observed attempt subtotal for the selected currency/source."),
+    cost_max: str | None = typer.Option(None, help="Maximum observed attempt subtotal for the selected currency/source."),
+    cost_currency: str | None = typer.Option(None, help="Three-letter uppercase currency; requires --cost-source."),
+    cost_source: str | None = typer.Option(None, help="provider-reported or estimated; requires --cost-currency."),
+) -> None:
+    """Search Run history or compare descriptive model-role evidence as JSON."""
+    from battalion.application import query_history
+    from battalion.history import HistoryQuery
+    from datetime import datetime
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        parsed = {}
+        for item in filters:
+            name, separator, value = item.partition("=")
+            if not separator or name in parsed:
+                raise ValueError("Filters must be unique field=value pairs")
+            parsed[name] = None if value == "null" else value
+        query = HistoryQuery(
+            text, parsed, limit, offset,
+            date_from=datetime.fromisoformat(date_from) if date_from is not None else None,
+            date_to=datetime.fromisoformat(date_to) if date_to is not None else None,
+            cost_min=Decimal(cost_min) if cost_min is not None else None,
+            cost_max=Decimal(cost_max) if cost_max is not None else None,
+            cost_currency=cost_currency, cost_source=cost_source,
+        )
+        result = query_history(project, query,
+                               dimension=dimension, rebuild=rebuild)
+    except InvalidOperation as exc:
+        typer.echo("Error: Cost bounds must be decimal numbers", err=True)
+        raise typer.Exit(1) from exc
+    except (ApplicationError, ValueError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 def main() -> None:
