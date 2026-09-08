@@ -47,19 +47,23 @@ Approval revalidates exact replacement targets without widening scope or rebasin
 source. Compact initial contracts now require exact authoritative source targets
 and retain both work-item and specification provenance. Client evidence intake
 remains pending; start/resume reject compact recipes through the full-workflow
-executor even when their target contracts are ready. The ticket remains branch
-work in progress pending integration review and acceptance evidence.
+executor even when their target contracts are ready. The BTN-195 closeout audit
+maps all thirteen acceptance criteria to implementation and credential-free tests
+in ADR-0038. This is branch review evidence, not a main or release delivery claim;
+BTN-196 owns client intake and BTN-197 owns the broader enforcement acceptance.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 
 BTN-172 adds [operator data-handling guidance](docs/data-handling.md), public
 navigation, setup/trace notices, and CLI/desktop disclosure UAT scenarios.
 It documents current boundaries without changing role authority,
-context admission, or retention. Endpoint-aware inference identity remains
-BTN-54 work, explicitly deferred by the operator to post-UAT on 2026-08-30.
+context admission, or retention. The operator initially deferred BTN-54
+inference-identity work to post-UAT on 2026-08-30.
 The operator approved the BTN-172 CLI/desktop disclosure scenarios on that date;
 live acceptance remains separate from script approval, and Pages availability
-requires a verified main deployment.
+requires a verified main deployment. BTN-54 has since delivered requested/resolved
+inference identity, contradiction, and diversity evidence; the earlier deferral
+is historical rather than an outstanding implementation limitation.
 
 BTN-166's scoped-tool factory validates every directory and single-file authority
 declaration against the resolved project boundary. Application start/resume and worker launch reject invalid
@@ -439,15 +443,16 @@ additional configured roles, and never forwards ambient cloud keys to keyless
 endpoints. Preflight diversity requires concrete family declarations for
 endpoint-configured Driver/Reviewer targets and rejects equal families and
 opaque routes. Plain model configurations retain a compatibility path. This
-does not claim runtime identity verification (BTN-54), verified locality, or
-zero-cost policy enforcement (BTN-55), and is not shipped until merged.
+scope is configuration/preflight. Runtime identity evidence is implemented by
+BTN-54, and zero-cost admission/enforcement by BTN-55; neither configured nor
+provider-reported identity proves physical same-host execution.
 
 BTN-53 branch implementation recognizes `backend: freellmapi` only at setup's
 OpenAI-compatible catalog preflight. It authenticates `/v1/models` with an
 environment-backed bearer reference, verifies each requested concrete model,
 then reuses the shared LiteLLM completion and infrastructure-failure paths.
 FreeLLMAPI supplies no node-specific integration or policy authority; runtime
-route evidence remains BTN-54 and cost-policy enforcement remains BTN-55.
+route evidence is owned by BTN-54 and cost-policy enforcement by BTN-55.
 
 BTN-98 branch implementation introduces the `battalion.cartography` logical
 contract: strict typed map records, Battalion-owned identities, conservative

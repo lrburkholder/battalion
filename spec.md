@@ -736,9 +736,9 @@ warranted.
 | 5 | Infra failure | Node crash, malformed state, malformed or contract-violating role output, or LiteLLM call fails after retries | Separate handling path — not folded into triggers 1 or 3; surfaces as a distinct failure state, not a judgment escalation |
 | 6 | Manual checkpoint | User declares a checkpoint on the ticket/run config (e.g. "pause after Architect") independent of any system-detected condition | Graph pauses unconditionally at the declared point, regardless of whether any other trigger fired |
 
-ADR-0024 accepts a post-v1 extension of trigger #5 for runtime inference
-identity or zero-cost policy contradictions. That extension is not shipped
-until BTN-54 and BTN-55 implement and validate it.
+ADR-0024's extension of trigger #5 for runtime inference identity or zero-cost
+policy contradictions is implemented by BTN-54 and BTN-55 as described above.
+It uses the existing infrastructure-failure path, not a seventh interrupt.
 
 Deliberately deferred: severity-based ("critical finding") triggers. BTN-47
 must determine whether this belongs in existing Reviewer and interrupt policy
