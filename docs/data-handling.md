@@ -90,14 +90,20 @@ forward or retain requests.
 
 Verify the actual endpoint and routing you configured.
 
-Battalion currently records the configured model identity and available
-per-call model/token/cost evidence, but it does not always establish the final
-routed provider or effective endpoint. More complete inference identity and
-routing provenance is tracked by [BTN-54](https://github.com/lrburkholder/battalion/issues/87).
+Battalion records requested inference identity and the identity reported by the
+provider or router for each call when that evidence is available. It records
+contradictions instead of silently replacing the requested identity. It also
+retains model/token/cost evidence and the configured endpoint classification.
+This evidence improves routing provenance, but it cannot prove facts that the
+provider does not expose. In particular, a local-looking endpoint or reported
+model name alone does not prove same-host execution, no forwarding, or no
+provider-side logging.
 
-Driver and Reviewer must use different configured model identifiers. That is an
-important diversity check, but different strings alone do not prove that two
-requests ultimately reached independent backends.
+Driver and Reviewer diversity is checked against the configured concrete model
+families for endpoint-configured targets. Runtime identity evidence can expose a
+contradiction with those declarations. Different identifiers or family claims
+still do not prove that two requests ultimately reached independent physical
+backends.
 
 `setup --no-validate` only skips the setup connectivity request. It does not
 make later Battalion Runs offline.
@@ -267,7 +273,8 @@ Keep these limitations in mind when evaluating a Battalion deployment:
 
 - Battalion cannot guarantee what a third-party provider logs, retains, trains
   on, or forwards.
-- A local-looking model identifier does not prove local execution.
+- Recorded inference identity is bounded by what the configured provider,
+  router, and endpoint expose; it does not prove same-host execution.
 - Context-size limits do not remove secrets.
 - `.gitignore` does not define what model context is safe.
 - Reviewer test snapshots are not security sandboxes.
@@ -291,8 +298,8 @@ canonical GitHub Issues, and implementation tests. In particular:
 
 - [BTN-172](https://github.com/lrburkholder/battalion/issues/268) established the
   public data-handling disclosure.
-- [BTN-54](https://github.com/lrburkholder/battalion/issues/87) tracks stronger
-  requested/effective model and routing identity evidence.
+- [BTN-54](https://github.com/lrburkholder/battalion/issues/87) implemented
+  requested/resolved inference identity, contradiction, and diversity evidence.
 - [ADR-0024](adrs/adr0024.md) covers the inference configuration architecture.
 
 For day-to-day desktop operation, see the [Desktop Workflow](ui/workflow.md).

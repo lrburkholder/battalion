@@ -84,8 +84,10 @@ Shows terminal, earlier, legacy, missing, malformed, and inaccessible catalog
 entries. Historical evidence remains inspectable without pretending missing
 fields are known. Admitted Runs additionally show the original deterministic
 and optional Tactician assessment, human decision, exact recipe/version, and
-later upgrade trigger/evidence as distinct sections. Search and cross-run
-analytics remain BTN-44 work.
+later upgrade trigger/evidence as distinct sections. BTN-44 now provides shared
+history search and descriptive cross-run analytics through the application/CLI
+boundary. Desktop search and analytics controls remain follow-up presentation
+work.
 
 ### Intel
 
@@ -183,7 +185,7 @@ battalion.workers`. Both builds emit XML compilation reports.
 
 ## Explicitly not shipped
 
-- global history search and model-role analytics (BTN-44);
+- desktop history-search and model-role analytics controls;
 - multiple projects in one window;
 - settings and provider configuration screens;
 - graph zoom, pan, animation, or arbitrary transition control;
