@@ -35,6 +35,9 @@ Git Runs now capture a bounded pre-execution source snapshot; sealing compares
 fresh contents with that baseline and exact verified scoped-write receipts.
 The graph now seals/revalidates at every Driver entry before attempt creation,
 budget consumption, or tools, and retains the contract ID on Driver executions.
+Driver context now supplies the active contract's exact phase targets ahead of
+explanatory plan text, including corrected paths after restart. The schema-bounded
+target table is preserved in full alongside the bounded explanatory allowance.
 Start/resume accept explicit current target evidence and translate gate rejection
 to a typed application error. Driver-checkpoint resume now requires an exact
 contract ID, records Actor-attributed authorization, and revalidates before saving

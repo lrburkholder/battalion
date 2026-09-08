@@ -49,7 +49,9 @@ The core graph, human interrupts, CLI, desktop application, persistence, executi
 On the BTN-195 feature branch, Driver now requires current artifact-target
 evidence. Shared application execution supports that evidence; CLI/desktop intake
 is still in progress, so ordinary client execution currently fails closed at
-Driver. This branch is not yet a
+Driver. Driver context includes the active contract's exact phase targets, including
+human corrections, ahead of the explanatory plan. Large target tables are retained
+in full in addition to the bounded explanatory context. This branch is not yet a
 replacement for the acceptance build described below.
 
 Merging code to `main` does **not** mean that functionality has been accepted for release.

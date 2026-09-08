@@ -1,6 +1,8 @@
 """Human handoff authority through real persistence and source reconciliation."""
 
 from dataclasses import replace
+from functools import partial
+import json
 
 import pytest
 
@@ -63,6 +65,78 @@ def test_exact_correction_is_append_only_and_replay_is_not_a_new_approval(action
     with pytest.raises(HumanActionRejected, match="conflicts"):
         apply_action(replace(command, reason="Different request"), path)
     assert path.read_bytes() == saved
+
+
+def test_corrected_targets_reach_real_driver_after_restart(action_project):
+    from battalion.application import ResumeRun, resume_run
+    from battalion.config import BattalionConfig
+    from battalion.nodes.driver import run_driver
+    from support.responses import json_response
+
+    command, path = action_project
+    corrected = apply_action(command, path).state
+    seen = []
+
+    def provider(role, config, messages):
+        context = messages[-1]["content"]
+        handoff = json.loads(context.splitlines()[2])
+        seen.append(handoff)
+        assert handoff["contract_id"] == command.corrected_contract.contract_id
+        assert len(handoff["targets"]) == 1
+        target = handoff["targets"][0]
+        assert target["intended_operation"] == "create"
+        assert "salutation" in target["project_relative_path"]
+        # The original plan remains inspectable but cannot replace the prefix.
+        assert "tests/test_greeting.py" in context
+        return json_response({"files": {target["project_relative_path"]: "# salutation\n"}})
+
+    with patched_nodes(driver=partial(run_driver, call_llm_fn=provider)):
+        result = resume_run(ResumeRun(
+            run_id=command.run_id,
+            config=BattalionConfig(base_dir=str(command.project_root), models=make_llm_configs(),
+                                   write_scope=corrected.write_scope),
+            resolution="Approve corrected salutation targets", action_id="approve-corrected-driver",
+            artifact_target_contract_id=command.corrected_contract.contract_id,
+            current_artifact_evidence=command.current_evidence,
+        ), state_dir=path.parent)
+    assert result.state.status == RunStatus.DONE
+    assert [item["phase"] for item in seen] == ["driver-red", "driver-green"]
+    assert (command.project_root / "tests/test_salutation.py").read_text() == "# salutation\n"
+    assert (command.project_root / "src/salutation.py").read_text() == "# salutation\n"
+    assert not (command.project_root / "tests/test_greeting.py").exists()
+    assert not (command.project_root / "src/greeting.py").exists()
+    attempts = [item for item in result.state.execution_record.node_executions if item.role == "driver"]
+    assert len(attempts) == 2
+    assert all(item.artifact_target_contract_id == command.corrected_contract.contract_id for item in attempts)
+
+
+def test_large_target_table_survives_context_truncation(action_project):
+    from battalion.context import MAX_CONTEXT_CHARS, driver_context
+
+    command, path = action_project
+    # Keep paths short enough for real Windows filesystem reconciliation while
+    # making the complete table larger than the explanatory context allowance.
+    raw = command.corrected_contract.model_dump(exclude={"contract_id"})
+    raw["targets"] = [
+        {"target_id": f"test-{index:03}-" + "x" * 190,
+         "project_relative_path": f"tests/test_{index:03}_" + "x" * 100 + ".py",
+         "assignments": [{"owner_role": "driver", "workflow_phase": "driver-red",
+                          "intended_operation": "create"}]}
+        for index in range(99)
+    ] + [command.corrected_contract.targets[0].model_dump()]
+    command = replace(command, corrected_contract=ArtifactTargetContract.model_validate(raw))
+    state = apply_action(command, path).state
+    state = state.model_copy(update={"spec": "long specification " * MAX_CONTEXT_CHARS})
+    context = driver_context(state, command.project_root, "red")
+    prefix, explanation = context.split("\n\n", 1)
+    handoff = json.loads(prefix.splitlines()[2])
+    assert len(prefix) > MAX_CONTEXT_CHARS
+    assert len(handoff["targets"]) == 99
+    assert handoff["targets"][-1]["target_id"] == "test-098-" + "x" * 190
+    assert handoff["contract_id"] == command.corrected_contract.contract_id
+    assert len(explanation) <= MAX_CONTEXT_CHARS
+    assert "[context truncated]" in explanation
+    assert driver_context(state, command.project_root, "red") == context
 
 
 @pytest.mark.parametrize("change", ["stale-tip", "out-of-scope", "source-edit", "active-worker", "unknown-actor"])

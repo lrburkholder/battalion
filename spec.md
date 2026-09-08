@@ -705,6 +705,17 @@ source roots. Context is bounded before each LLM call: RED receives existing
 implementation context, GREEN receives accepted RED tests, and Refactorer
 receives the passing file set.
 
+On the BTN-195 branch, Driver context additionally begins with the active sealed
+contract ID and a canonical JSON table of target IDs, exact project-relative paths,
+and intended operations assigned to its current phase. This table takes precedence
+over path suggestions in the explanatory plan, including a superseded generated
+plan table after human correction. It does not grant write permission or replace
+structural scopes and role policy. The complete table is bounded by the contract
+schema (at most 100 targets, 200-character IDs, and 1,000-character paths) and is
+never truncated; the remaining explanatory context retains its separate
+32,000-character allowance. Consequently a large contract increases total Driver
+input size rather than silently dropping required target evidence.
+
 For a graph execution with GREEN artifact provenance, Refactorer receives the
 latest successful GREEN Driver's production artifact paths and may write only
 those paths. Its scope remains a structural ceiling, but artifact provenance is
