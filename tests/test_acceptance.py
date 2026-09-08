@@ -645,3 +645,7 @@ class TestProgressEvents:
         assert len(interrupts) == 1
         assert interrupts[0]["trigger"] == TRIGGER_INFRA_FAILURE
         assert interrupts[0]["node"] == "architect"
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

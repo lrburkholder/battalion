@@ -1,6 +1,7 @@
 """Deterministic, bounded execution context for Battalion roles (BTN-26)."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Literal, Sequence
 
@@ -206,7 +207,40 @@ def driver_context(
         (f"{file_kind}: {relative}", content)
         for relative, content in _driver_files(state, base_dir, selection)
     )
-    return _bounded(sections)
+    # The immutable handoff is required input, unlike explanatory context.
+    # Keep it outside the truncatable allowance so even a maximum-size target
+    # collection cannot silently lose paths behind long specification/plan text.
+    handoff = _driver_target_context(state, mode)
+    return handoff + _bounded(sections)
+
+
+def _driver_target_context(state: RunState, mode: Literal["red", "green"]) -> str:
+    history = state.artifact_target_handoff
+    if history is None or history.active_contract_id is None:
+        return ""
+    contract = next(
+        item for item in history.contracts
+        if item.contract_id == history.active_contract_id
+    )
+    phase = f"driver-{mode}"
+    targets = [
+        {"target_id": target.target_id,
+         "project_relative_path": target.project_relative_path,
+         "intended_operation": assignment.intended_operation}
+        for target in contract.targets
+        for assignment in target.assignments
+        if assignment.owner_role == "driver" and assignment.workflow_phase.value == phase
+    ]
+    return (
+        "## Sealed artifact targets\n"
+        "Use these exact project-relative paths for this phase. This active contract "
+        "supersedes path suggestions in plan prose, generated plan tables, and other "
+        "context. Structural write scopes and role restrictions still apply. "
+        "Escalate if the work requires different targets.\n"
+        + json.dumps({"contract_id": contract.contract_id, "phase": phase,
+                      "targets": targets}, ensure_ascii=False, separators=(",", ":"))
+        + "\n\n"
+    )
 
 
 def refactorer_context(

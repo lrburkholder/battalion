@@ -152,7 +152,7 @@ def test_streaming_requests_and_records_final_usage_frame(tmp_path):
     assert call.response_model == "router/resolved-model"
     assert call.routed_provider == "stream-router"
     assert call.routed_model == "provider/routed-model"
-    assert finished.execution_record.schema_version == "1.8"
+    assert finished.execution_record.schema_version == "1.9"
     execution = finished.execution_record.node_executions[0]
     assert execution.streamed_reasoning_characters == 3
     assert execution.streamed_content_characters == 2

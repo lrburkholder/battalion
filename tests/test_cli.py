@@ -426,3 +426,9 @@ def test_resume_infers_target_from_rejection(tmp_path, monkeypatch):
     assert captured_state["resume_target"] == "driver_green"
     # Phase is the node that was running when interrupted (driver_red), not the status
     assert captured_state["phase"] == "driver_red"
+
+import pytest
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

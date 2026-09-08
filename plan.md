@@ -18,19 +18,52 @@ and contract models, lexical path validation, explicit case-collision policy,
 target-ID step references, and deterministic content identities. Architect now
 parses that typed response before its existing scoped write, renders a marked
 target projection into `plan.md`, and uses the bounded role-contract correction
-path for invalid candidates. This branch does not persist handoffs, change Run
-state, or enforce the future Driver gate.
+path for invalid candidates.
+BTN-195 branch work adds `battalion.artifact_target_state` and the optional
+`RunState` schema `1.2` handoff sibling. The persistence foundation retains
+immutable contract, reconciliation, and Actor-attributed correction history,
+validates supersession and admission/recipe/Architect provenance references,
+and reads schema `1.0`/`1.1` without inventing target evidence. Deterministic
+reconciliation now evaluates current revisions, exact recipe phases, authoritative
+compact targets, and scope/path evidence collected through existing bound-tool
+resolution. Revalidation compares the previous contract, recipe, source, scope,
+and path-policy snapshots. Architect now captures the candidate after its scoped
+plan write in execution-record `1.9`. Shared application initial sealing loads
+that evidence, checks the current scoped plan/project identity, and persists the
+reconciled contract without changing admission or resolving interrupts. Admitted
+Git Runs now capture a bounded pre-execution source snapshot; sealing compares
+fresh contents with that baseline and exact verified scoped-write receipts.
+The graph now seals/revalidates at every Driver entry before attempt creation,
+budget consumption, or tools, and retains the contract ID on Driver executions.
+Driver context now supplies the active contract's exact phase targets ahead of
+explanatory plan text, including corrected paths after restart. The schema-bounded
+target table is preserved in full alongside the bounded explanatory allowance.
+Start/resume accept explicit current target evidence and translate gate rejection
+to a typed application error. Driver-checkpoint resume now requires an exact
+contract ID, records Actor-attributed authorization, and revalidates before saving
+the resolution. Actor-authorized correction, return-to-Architect, and cancellation
+now append immutable actions under the worker guard with replay/conflict checks.
+Approval revalidates exact replacement targets without widening scope or rebasing
+source. Compact initial contracts now require exact authoritative source targets
+and retain both work-item and specification provenance. Client evidence intake
+remains pending; start/resume reject compact recipes through the full-workflow
+executor even when their target contracts are ready. The BTN-195 closeout audit
+maps all thirteen acceptance criteria to implementation and credential-free tests
+in ADR-0038. This is branch review evidence, not a main or release delivery claim;
+BTN-196 owns client intake and BTN-197 owns the broader enforcement acceptance.
 BTN-173 prepares the main-based acceptance baseline, followed by CLI UAT
 (BTN-129), desktop UAT (BTN-132), and external-integration dogfooding (BTN-80).
 
 BTN-172 adds [operator data-handling guidance](docs/data-handling.md), public
 navigation, setup/trace notices, and CLI/desktop disclosure UAT scenarios.
 It documents current boundaries without changing role authority,
-context admission, or retention. Endpoint-aware inference identity remains
-BTN-54 work, explicitly deferred by the operator to post-UAT on 2026-08-30.
+context admission, or retention. The operator initially deferred BTN-54
+inference-identity work to post-UAT on 2026-08-30.
 The operator approved the BTN-172 CLI/desktop disclosure scenarios on that date;
 live acceptance remains separate from script approval, and Pages availability
-requires a verified main deployment.
+requires a verified main deployment. BTN-54 has since delivered requested/resolved
+inference identity, contradiction, and diversity evidence; the earlier deferral
+is historical rather than an outstanding implementation limitation.
 
 BTN-166's scoped-tool factory validates every directory and single-file authority
 declaration against the resolved project boundary. Application start/resume and worker launch reject invalid
@@ -410,15 +443,16 @@ additional configured roles, and never forwards ambient cloud keys to keyless
 endpoints. Preflight diversity requires concrete family declarations for
 endpoint-configured Driver/Reviewer targets and rejects equal families and
 opaque routes. Plain model configurations retain a compatibility path. This
-does not claim runtime identity verification (BTN-54), verified locality, or
-zero-cost policy enforcement (BTN-55), and is not shipped until merged.
+scope is configuration/preflight. Runtime identity evidence is implemented by
+BTN-54, and zero-cost admission/enforcement by BTN-55; neither configured nor
+provider-reported identity proves physical same-host execution.
 
 BTN-53 branch implementation recognizes `backend: freellmapi` only at setup's
 OpenAI-compatible catalog preflight. It authenticates `/v1/models` with an
 environment-backed bearer reference, verifies each requested concrete model,
 then reuses the shared LiteLLM completion and infrastructure-failure paths.
 FreeLLMAPI supplies no node-specific integration or policy authority; runtime
-route evidence remains BTN-54 and cost-policy enforcement remains BTN-55.
+route evidence is owned by BTN-54 and cost-policy enforcement by BTN-55.
 
 BTN-98 branch implementation introduces the `battalion.cartography` logical
 contract: strict typed map records, Battalion-owned identities, conservative

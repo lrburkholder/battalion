@@ -49,6 +49,8 @@ from battalion.interrupts.triggers import (
 from battalion.llm.litellm_client import InfraFailure, InferenceIdentityContradiction
 from battalion.nodes.errors import RoleContractViolation, RoleOutputError
 from battalion.execution import ExecutionCapture
+from battalion.artifact_target_runtime import ArtifactTargetGateRejected, admit_driver_attempt
+from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence
 from battalion.recovery import UnsafeRecoveryError, assess_recovery
 from battalion.scope.tool_binding import ScopeViolationError, validate_write_scope
 from battalion.state.models import (
@@ -327,6 +329,7 @@ def _scaffold_node(
     error_resume_node: str,
     check_next_phase: str | Callable[[RunState], str],
     pause_resume_node: str,
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None,
 ) -> Callable[[RunState], RunState]:
     """Build one graph node around the shared per-attempt scaffolding.
 
@@ -355,6 +358,9 @@ def _scaffold_node(
     propagate unchanged.
     """
     def node(state: RunState) -> RunState:
+        history = state.artifact_target_handoff
+        if history and history.corrections and history.corrections[-1].action == "cancel":
+            raise UnsafeRecoveryError("Cancelled handoff cannot execute another role")
         # Reject authority configuration before snapshots, model calls, budget
         # consumption, or durable attempts. Node binding rechecks before use.
         validate_write_scope(state.write_scope, base_dir)
@@ -391,6 +397,19 @@ def _scaffold_node(
             return result
 
         while True:
+            if node_name in {NODE_DRIVER_RED, NODE_DRIVER_GREEN}:
+                before_gate = state
+                try:
+                    state = admit_driver_attempt(
+                        state, project_root=base_dir, current=current_artifact_evidence,
+                        node_name=node_name,
+                    )
+                except ArtifactTargetGateRejected as exc:
+                    if on_state_checkpoint is not None:
+                        on_state_checkpoint(exc.state)
+                    raise
+                if on_state_checkpoint is not None and state is not before_gate:
+                    on_state_checkpoint(state)
             # Corrections share the Run budget. Check before creating another
             # attempt, including recovery from the saved rejected candidate.
             # A pending resume intent is the human's explicit continuation;
@@ -436,6 +455,7 @@ def _scaffold_node(
                     )
                 capture.execution_id = previous.execution_id
                 capture.started_at = previous.started_at
+                capture.artifact_target_contract_id = previous.artifact_target_contract_id
             else:
                 state = capture.create_attempt(state)
             state = state.model_copy(update={
@@ -668,6 +688,7 @@ def _make_driver_node(
     on_token: Callable[[dict], None] | None = None,
     instinct_retriever: InstinctRetriever | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None,
 ) -> Callable[[RunState], RunState]:
     """Create a Driver node function for the graph.
 
@@ -697,6 +718,7 @@ def _make_driver_node(
         node_name=node_name,
         llm_roles=("driver",),
         runner=run_driver,
+        current_artifact_evidence=current_artifact_evidence,
         build_inputs=build_inputs,
         audience=InstinctAudience.DRIVER,
         static_kwargs={"mode": mode},
@@ -879,6 +901,7 @@ def build_graph(
     intel_repository: IntelRepository | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
     reviewer_test_timeout_seconds: float = 300.0,
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None,
 ) -> StateGraph:
     """Build the Battalion StateGraph with all nodes and edges.
     
@@ -923,10 +946,12 @@ def build_graph(
     )
     driver_red_node = _make_driver_node(
         "red", llm_configs, base_dir, prompts_dir,
+        current_artifact_evidence=current_artifact_evidence,
         on_state_checkpoint=on_state_checkpoint, **shared
     )
     driver_green_node = _make_driver_node(
         "green", llm_configs, base_dir, prompts_dir,
+        current_artifact_evidence=current_artifact_evidence,
         on_state_checkpoint=on_state_checkpoint, **shared
     )
     reviewer_red_node = _make_reviewer_node(
@@ -1093,6 +1118,9 @@ def build_graph(
     # conditional entry point below is what actually makes resume_target
     # take effect.
     def _entry_router(state: RunState) -> str:
+        history = state.artifact_target_handoff
+        if history and history.corrections and history.corrections[-1].action == "cancel":
+            return NODE_BLOCKED
         target = state.resume_target
         if target in (
             NODE_ARCHITECT,
@@ -1168,6 +1196,7 @@ def resume_ticket(
     on_token: Callable[[dict], None] | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
     reviewer_test_timeout_seconds: float = 300.0,
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None,
 ) -> RunState:
     """Resume a paused ticket from its saved state.
     
@@ -1207,6 +1236,7 @@ def resume_ticket(
         on_node_event=on_node_event, on_token=on_token,
         on_state_checkpoint=on_state_checkpoint,
         reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
+        current_artifact_evidence=current_artifact_evidence,
     )
 
 
@@ -1220,6 +1250,7 @@ def run_ticket(
     on_token: Callable[[dict], None] | None = None,
     on_state_checkpoint: Callable[[RunState], None] | None = None,
     reviewer_test_timeout_seconds: float = 300.0,
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None,
 ) -> RunState:
     """Run a caller-created state through the graph until done or interrupted.
     
@@ -1256,6 +1287,7 @@ def run_ticket(
         on_node_event=on_node_event, on_token=on_token,
         on_state_checkpoint=checkpoint,
         reviewer_test_timeout_seconds=reviewer_test_timeout_seconds,
+        current_artifact_evidence=current_artifact_evidence,
     )
     
     # Compile graph

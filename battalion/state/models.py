@@ -13,6 +13,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from battalion.artifact_target_state import ArtifactTargetHandoffRecord
+from battalion.artifact_targets import ArchitectHandoffCandidate, Digest
+from battalion.project_source import ProjectSourceSnapshot
 from battalion.role_results import RoleExecutionResult
 from battalion.work import WorkItem
 from battalion.llm.cost_policy import CostPolicy
@@ -121,6 +124,16 @@ class HumanActionRecord(BaseModel):
     resulting_state_version: str = Field(min_length=1, max_length=100)
     resulting_status: RunStatus
     resulting_phase: str = Field(min_length=1, max_length=200)
+    artifact_target_contract_id: Digest | None = None
+
+    @model_validator(mode="after")
+    def validate_target_authorization(self) -> Self:
+        if self.artifact_target_contract_id is not None and (
+            self.kind != "interrupt-resolution" or self.actor_id is None
+            or self.disposition != "applied"
+        ):
+            raise ValueError("contract authorization requires an applied Actor-attributed interrupt resolution")
+        return self
 
 
 class ProgressStage(str, Enum):
@@ -473,21 +486,67 @@ class NodeExecution(BaseModel):
     operator_summary: OperatorSummary | None = None
     prompt_provenance: PromptProvenance | None = None
     code_provenance: CodeProvenance | None = None
+    architect_handoff_candidate: ArchitectHandoffCandidate | None = None
+    verified_scoped_writes: tuple[ArtifactProvenance, ...] = Field(default=(), max_length=100)
+    artifact_target_contract_id: Digest | None = None
 
     @model_validator(mode="after")
     def validate_completion(self) -> Self:
+        if self.artifact_target_contract_id is not None and self.role != "driver":
+            raise ValueError("only Driver attempts may reference an artifact target contract")
         if (self.outcome == "in-progress") != (self.ended_at is None):
             raise ValueError("Only unfinished attempts may omit the completion timestamp")
+        if self.architect_handoff_candidate is not None and (
+            self.role != "architect" or self.outcome not in {"succeeded", "interrupted"}
+        ):
+            raise ValueError("only a completed Architect attempt can retain a handoff candidate")
+        if self.verified_scoped_writes and self.outcome == "in-progress":
+            raise ValueError("only a completed attempt can retain verified scoped writes")
+        if len({item.path for item in self.verified_scoped_writes}) != len(self.verified_scoped_writes):
+            raise ValueError("verified scoped-write paths must be unique")
+        if any(item.originating_node_execution_id != self.execution_id for item in self.verified_scoped_writes):
+            raise ValueError("verified scoped writes must belong to their execution")
         return self
+
+
+def completed_architect_handoff(
+    attempt: NodeExecution, interrupt_log: list[InterruptLogEntry],
+) -> bool:
+    """Distinguish a post-write human/budget pause from a failed role attempt."""
+    if attempt.role != "architect":
+        return False
+    if attempt.outcome == "succeeded":
+        return True
+    return (
+        attempt.outcome == "interrupted"
+        and attempt.architect_handoff_candidate is not None
+        and bool(attempt.interrupt_ids)
+        and all(
+            0 <= index < len(interrupt_log)
+            and interrupt_log[index].node_execution_id == attempt.execution_id
+            and interrupt_log[index].trigger in {"manual-checkpoint", "budget-exceeded"}
+            for index in attempt.interrupt_ids
+        )
+    )
 
 
 class ExecutionRecord(BaseModel):
     """Separately versioned history for all node attempts in a run."""
 
     schema_version: Literal[
-        "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"
-    ] = "1.8"
+        "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"
+    ] = "1.9"
     node_executions: list[NodeExecution] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_handoff_version(self) -> Self:
+        if self.schema_version != "1.9" and any(
+            attempt.architect_handoff_candidate is not None or attempt.verified_scoped_writes
+            or attempt.artifact_target_contract_id is not None
+            for attempt in self.node_executions
+        ):
+            raise ValueError("Architect candidate storage requires execution-record schema 1.9")
+        return self
 
 
 class SideEffectOutcome(str, Enum):
@@ -671,12 +730,14 @@ class RunState(BaseModel):
     human_action_log: list[HumanActionRecord] = Field(default_factory=list, max_length=500)
     side_effect_ledger: SideEffectLedger = Field(default_factory=SideEffectLedger)
     workflow_admission: WorkflowAdmissionRunRecord | None = None
+    artifact_target_handoff: ArtifactTargetHandoffRecord | None = None
+    project_source_snapshot: ProjectSourceSnapshot | None = None
 
     @model_validator(mode="after")
     def validate_recovery_evidence(self) -> Self:
-        if self.workflow_admission is not None and self.schema_version != "1.1":
+        if self.workflow_admission is not None and self.schema_version not in {"1.1", "1.2"}:
             raise ValueError(
-                "workflow admission persistence requires RunState schema version 1.1"
+                "workflow admission persistence requires RunState schema version 1.1 or 1.2"
             )
         progress = self.graph_progress
         if progress is not None and progress.execution_id is not None:
@@ -696,6 +757,91 @@ class RunState(BaseModel):
             matches = [a for a in self.human_action_log if a.action_id == self.resume_intent.action_id]
             if len(matches) != 1 or matches[0].kind != "interrupt-resolution":
                 raise ValueError("Resume intent requires its original authorization record")
+        return self
+
+    @model_validator(mode="after")
+    def validate_artifact_target_history(self) -> Self:
+        if self.project_source_snapshot is not None:
+            if self.schema_version != "1.2" or str(self.project_source_snapshot.project_id) != self.project_id:
+                raise ValueError("project-source snapshot requires matching project identity and RunState schema 1.2")
+        handoff = self.artifact_target_handoff
+        contracts = {item.contract_id: item for item in handoff.contracts} if handoff else {}
+        for action in self.human_action_log:
+            if action.artifact_target_contract_id is None:
+                continue
+            if action.artifact_target_contract_id not in contracts:
+                raise ValueError("checkpoint authorization references an unknown contract")
+            matches = [entry for index, entry in enumerate(self.interrupt_log)
+                       if action.target == f"interrupt:{index}"]
+            if (len(matches) != 1 or matches[0].trigger != "manual-checkpoint"
+                    or matches[0].context.get("next_phase") not in {"driver_red", "driver_green"}
+                    or matches[0].resolution != action.detail):
+                raise ValueError("contract authorization must match its resolved Driver checkpoint")
+            if not any(result.contract_id == action.artifact_target_contract_id
+                       and result.outcome == "ready" and result.occurred_at <= action.occurred_at
+                       for result in handoff.reconciliations):
+                raise ValueError("checkpoint authorization requires preceding ready evidence")
+        for attempt in self.execution_record.node_executions:
+            if attempt.artifact_target_contract_id is not None:
+                if attempt.artifact_target_contract_id not in contracts:
+                    raise ValueError("Driver attempt references an unknown artifact target contract")
+                contract = contracts[attempt.artifact_target_contract_id]
+                if not any(assignment.owner_role == "driver"
+                           and assignment.workflow_phase.value == attempt.phase.replace("_", "-")
+                           for target in contract.targets for assignment in target.assignments):
+                    raise ValueError("Driver attempt phase is absent from its artifact target contract")
+                if not any(result.contract_id == attempt.artifact_target_contract_id
+                           and result.outcome == "ready" and result.occurred_at <= attempt.started_at
+                           for result in handoff.reconciliations):
+                    raise ValueError("Driver attempt requires ready evidence before its start")
+        if handoff is None:
+            return self
+        if self.schema_version != "1.2":
+            raise ValueError("artifact target persistence requires RunState schema version 1.2")
+        admission = self.workflow_admission
+        if admission is None or self.project_id is None:
+            raise ValueError("artifact target history requires project identity and workflow admission")
+        decision = admission.decision
+        for contract in handoff.contracts:
+            if str(contract.project_id) != self.project_id:
+                raise ValueError("artifact target contract belongs to a different project")
+            if self.project_source_snapshot is not None and contract.project_source_revision != self.project_source_snapshot.revision:
+                raise ValueError("artifact target contract must retain the Run's source baseline")
+            if (
+                contract.workflow_admission_decision_id != decision.decision_id
+                or contract.work_item_revision != decision.work_item_revision
+                or contract.specification_revision != decision.specification_revision
+            ):
+                raise ValueError("artifact target contract does not match retained admission identity")
+            if (contract.architect_execution_id is None) != (contract.plan_artifact_digest is None):
+                raise ValueError("Architect provenance requires both execution identity and plan digest")
+            if contract.architect_execution_id is not None:
+                attempts = [
+                    attempt for attempt in self.execution_record.node_executions
+                    if attempt.execution_id == contract.architect_execution_id
+                ]
+                if len(attempts) != 1 or not completed_architect_handoff(attempts[0], self.interrupt_log):
+                    raise ValueError("artifact target contract requires its successful Architect execution")
+                candidate = attempts[0].architect_handoff_candidate
+                if candidate is not None and contract.supersedes_contract_id is None and (
+                    contract.targets != candidate.targets
+                ):
+                    raise ValueError("initial artifact target contract must match its retained Architect candidate")
+                if not any(
+                    artifact.path == "plan.md"
+                    and artifact.sha256 == contract.plan_artifact_digest
+                    and artifact.originating_run_id == self.run_id
+                    and artifact.originating_node_execution_id == contract.architect_execution_id
+                    for artifact in attempts[0].artifact_provenance
+                ):
+                    raise ValueError("artifact target plan digest does not match Architect provenance")
+        execution = admission.execution
+        recipe_keys = {(execution.recipe_id, execution.recipe_version)}
+        if execution.continuation_recipe_id is not None:
+            recipe_keys.add((execution.continuation_recipe_id, execution.continuation_recipe_version))
+        for result in handoff.reconciliations:
+            if (result.recipe_id, result.recipe_version) not in recipe_keys:
+                raise ValueError("artifact target reconciliation references an unadmitted recipe")
         return self
 
     @field_validator("project_id")

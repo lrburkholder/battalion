@@ -100,3 +100,9 @@ def test_resume_appends_node_associated_trace_output(tmp_path, monkeypatch):
     assert [(event["node"], event["kind"], event["content"]) for event in events] == [
         ("driver_green", "reasoning", "implement now"),
     ]
+
+import pytest
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

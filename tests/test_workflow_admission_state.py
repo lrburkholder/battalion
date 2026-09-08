@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
 from support.state import make_run_state
+from support.execution import make_node_execution
 
 from datetime import datetime, timezone
 from uuid import UUID
@@ -10,6 +13,8 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from battalion.artifact_targets import ArtifactTargetContract
+from battalion.artifact_target_state import ArtifactTargetHandoffRecord
 from battalion.state.models import RunState, RunStatus
 from battalion.state.persistence import load_state, save_state
 from battalion.workflow_admission import (
@@ -164,3 +169,124 @@ def test_missing_referenced_assessment_fails_closed() -> None:
         WorkflowAdmissionRunRecord.model_validate(
             {**record.model_dump(), "decision": rewritten.model_dump()}
         )
+
+
+def _run_with_target_history() -> RunState:
+    admission = _admission_record()
+    contract = ArtifactTargetContract(
+        project_id="bd4b6e64-25fd-408a-a747-9633a803f036",
+        work_item_revision=admission.decision.work_item_revision,
+        specification_revision=admission.decision.specification_revision,
+        project_source_revision="source-r1",
+        workflow_admission_decision_id=admission.decision.decision_id,
+        architect_execution_id="architect:1", plan_artifact_digest="a" * 64,
+        evidence_references=[{
+            "evidence_id": "work-item:BTN-143", "source": "work-item",
+            "source_revision": admission.decision.work_item_revision,
+        }],
+        targets=[{
+            "target_id": "greeting-test", "project_relative_path": "src/test_greeting.py",
+            "assignments": [{
+                "owner_role": "driver", "workflow_phase": "driver-red",
+                "intended_operation": "create",
+            }],
+        }],
+    )
+    return make_run_state(
+        schema_version="1.2", run_id="run-targets", project_id=str(contract.project_id),
+        workflow_admission=admission,
+        artifact_target_handoff=ArtifactTargetHandoffRecord(
+            contracts=[contract], active_contract_id=contract.contract_id,
+            reconciliations=[{
+                "reconciliation_id": "reconciliation:1", "contract_id": contract.contract_id,
+                "occurred_at": "2026-09-06T00:00:00Z", "outcome": "ready",
+                "recipe_id": admission.execution.recipe_id,
+                "recipe_version": admission.execution.recipe_version,
+                "project_source_revision": "source-r1", "write_scope_digest": "b" * 64,
+                "path_policy_digest": "c" * 64,
+            }],
+        ),
+        execution_record={"node_executions": [make_node_execution(
+            role="architect", phase="architect", execution_id="architect:1",
+            artifact_provenance=[{
+                "path": "plan.md", "sha256": "a" * 64, "originating_run_id": "run-targets",
+                "originating_node_execution_id": "architect:1",
+            }],
+        )]},
+    )
+
+
+def test_target_handoff_round_trips_without_rewriting_admission(tmp_path):
+    state = _run_with_target_history()
+    admission_json = state.workflow_admission.model_dump_json()
+    path = tmp_path / "run.json"
+    save_state(state, path)
+    loaded = load_state(path)
+    assert loaded == state
+    assert loaded.schema_version == "1.2"
+    assert loaded.workflow_admission.model_dump_json() == admission_json
+    assert loaded.artifact_target_handoff.active_contract_id == (
+        loaded.artifact_target_handoff.contracts[0].contract_id
+    )
+
+
+@pytest.mark.parametrize("schema_version", ["1.0", "1.1"])
+def test_pre_target_schema_loads_without_fabricating_handoff(tmp_path, schema_version):
+    state = _run_state(admission=_admission_record() if schema_version == "1.1" else None)
+    raw = state.model_dump(mode="json", exclude={"artifact_target_handoff"})
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    loaded = load_state(path)
+    assert loaded.schema_version == schema_version
+    assert loaded.artifact_target_handoff is None
+
+
+@pytest.mark.parametrize("mutation,match", [
+    pytest.param("legacy-schema", "schema version 1.2", id="legacy-cannot-claim-targets"),
+    pytest.param("missing-admission", "requires project identity and workflow admission", id="missing-admission"),
+    pytest.param("different-project", "different project", id="project-mismatch"),
+    pytest.param("work-revision", "retained admission identity", id="work-revision-mismatch"),
+    pytest.param("spec-revision", "retained admission identity", id="spec-revision-mismatch"),
+    pytest.param("decision", "retained admission identity", id="decision-mismatch"),
+    pytest.param("missing-architect", "successful Architect", id="missing-architect"),
+    pytest.param("wrong-role", "successful Architect", id="wrong-provenance-role"),
+    pytest.param("failed-architect", "successful Architect", id="unsuccessful-architect"),
+    pytest.param("plan-digest", "plan digest", id="plan-digest-mismatch"),
+    pytest.param("plan-run", "plan digest", id="plan-run-mismatch"),
+    pytest.param("recipe", "unadmitted recipe", id="recipe-mismatch"),
+])
+def test_persisted_target_cross_record_corruption_is_rejected(tmp_path, mutation, match):
+    raw = _run_with_target_history().model_dump(mode="json")
+    if mutation == "legacy-schema":
+        raw["schema_version"] = "1.1"
+    elif mutation == "missing-admission":
+        raw["workflow_admission"] = None
+    elif mutation == "different-project":
+        raw["project_id"] = "8fd5f40b-37dd-4ab3-8f7d-938a30fe3d46"
+    elif mutation in {"work-revision", "spec-revision", "decision"}:
+        field = {"work-revision": "work_item_revision", "spec-revision": "specification_revision",
+                 "decision": "workflow_admission_decision_id"}[mutation]
+        handoff = raw["artifact_target_handoff"]
+        contract = handoff["contracts"][0]
+        contract[field] = "different-revision"
+        contract.pop("contract_id")
+        replacement = ArtifactTargetContract.model_validate(contract)
+        handoff["contracts"] = [replacement.model_dump(mode="json")]
+        handoff["active_contract_id"] = replacement.contract_id
+        handoff["reconciliations"][0]["contract_id"] = replacement.contract_id
+    elif mutation == "missing-architect":
+        raw["execution_record"]["node_executions"] = []
+    elif mutation == "wrong-role":
+        raw["execution_record"]["node_executions"][0]["role"] = "driver"
+    elif mutation == "failed-architect":
+        raw["execution_record"]["node_executions"][0]["outcome"] = "rejected"
+    elif mutation == "plan-digest":
+        raw["execution_record"]["node_executions"][0]["artifact_provenance"][0]["sha256"] = "d" * 64
+    elif mutation == "plan-run":
+        raw["execution_record"]["node_executions"][0]["artifact_provenance"][0]["originating_run_id"] = "other-run"
+    elif mutation == "recipe":
+        raw["artifact_target_handoff"]["reconciliations"][0]["recipe_version"] = "9.0"
+    path = tmp_path / "corrupt.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(ValidationError, match=match):
+        load_state(path)

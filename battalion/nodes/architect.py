@@ -18,6 +18,7 @@ from typing import Any, Callable
 from pydantic import ValidationError
 
 from battalion.artifact_targets import ArchitectHandoffCandidate
+from battalion.execution import record_architect_handoff
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.llm.response import extract_content
 from battalion.nodes.errors import RoleContractViolation, WriteScopeMisconfigured
@@ -190,6 +191,7 @@ def run_architect(
     rendered_plan = render_plan(candidate)
 
     write_tools["plan.md"].write("plan.md", rendered_plan)
+    record_architect_handoff(candidate)
 
     return state.model_copy(update={
         "phase": "driver",

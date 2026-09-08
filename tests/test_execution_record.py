@@ -124,7 +124,7 @@ def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph
 
 
 def test_execution_record_format_is_versioned_and_validated():
-    assert ExecutionRecord().schema_version == "1.8"
+    assert ExecutionRecord().schema_version == "1.9"
     assert ExecutionRecord(schema_version="1.0").schema_version == "1.0"
     assert ExecutionRecord(schema_version="1.1").schema_version == "1.1"
     assert ExecutionRecord(schema_version="1.2").schema_version == "1.2"
@@ -133,6 +133,7 @@ def test_execution_record_format_is_versioned_and_validated():
     assert ExecutionRecord(schema_version="1.5").schema_version == "1.5"
     assert ExecutionRecord(schema_version="1.6").schema_version == "1.6"
     assert ExecutionRecord(schema_version="1.7").schema_version == "1.7"
+    assert ExecutionRecord(schema_version="1.8").schema_version == "1.8"
     with pytest.raises(ValidationError):
         ExecutionRecord(schema_version="2.0")
 
@@ -327,3 +328,7 @@ def test_input_references_are_bounded():
             "ended_at": "2026-08-13T00:00:01Z",
             "outcome": "succeeded",
         })
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

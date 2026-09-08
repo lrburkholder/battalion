@@ -104,7 +104,7 @@ BTN-55 applies the same cost-policy boundary to this optional backend.
 
 ### BTN-54 resolved inference identity and diversity provenance
 
-Each newly completed LLM call writes execution-record schema `1.8` evidence
+Each newly completed LLM call writes execution-record schema `1.9` evidence
 that separates Battalion's `requested_model` from an explicitly reported
 `response_model`, plus configured `backend`, non-secret `endpoint_url`, and
 `inference_location`. Router evidence is retained only when emitted by the
@@ -222,11 +222,13 @@ Fields per ticket/run (draft — to be refined during Architect phase):
   optional Tactician assessment, Actor-authorized decision, exact selected
   recipe/version, completed stage/completion evidence, and append-only upgrade
   state. Cross-record inconsistencies fail validation; see ADR-0039.)
-- `artifact_target_handoff` (accepted post-v2 contract; runtime delivery
-  pending. A later schema stores a separately versioned sibling record with
-  immutable target contracts, deterministic reconciliation, Actor-attributed
-  corrections, supersession history, and the active contract identity. It
-  cross-validates but never rewrites `workflow_admission`; see ADR-0038.)
+- `artifact_target_handoff` (BTN-195 branch persistence foundation on schema
+  `1.2`: an optional, separately versioned sibling record with immutable target
+  contracts, reconciliation results, Actor-attributed correction records,
+  supersession history, and an explicit active contract identity. Persisted
+  references cross-validate but never rewrite `workflow_admission`. Deterministic
+  reconciliation and source collection feed the mandatory pre-Driver gate;
+  client intake remains pending; see ADR-0038.)
 
 New-run construction belongs to the shared application boundary. It generates
 the canonical run UUID and project marker before execution; graph nodes cannot
@@ -245,6 +247,100 @@ the retry before potentially long specification context. Nested values are
 frozen under aggregate schema version `1.0`, with exact phase names from
 `WorkflowStage`. Construction does not resolve filesystem paths, persist the
 handoff, grant write authority, or activate the later Driver gate.
+
+BTN-195 branch migration note: `RunState` schema `1.2` can retain handoff record
+version `1.0` alongside unchanged admission evidence. Contract supersession,
+reconciliation and action IDs, disposition/reason consistency, project and
+admission revisions, recipe references, and supplied Architect execution/plan
+provenance are validated on construction and load. Schema `1.0`/`1.1` remains
+readable with no fabricated handoff, and cannot claim the new record. An absent
+active reference stays absent even when contracts are retained. These storage
+checks do not authorize human actions or establish current filesystem safety;
+application construction and the production start/resume gate are not yet wired.
+
+The BTN-195 reconciliation layer accepts explicit current evidence and read-only
+path inspection. It returns typed `ready`/`clarification-required` records with
+stable reasons and retained evidence references. It requires targets for each
+selected Driver phase and rejects assignments outside the exact registered
+recipe. Full recipes require matching Architect execution/plan evidence;
+compact recipes require matching exact targets from current authoritative
+work-item/specification sources. Structural scopes retain phase override and
+single-file/directory semantics. Resolved targets cannot escape the project,
+alias protected metadata, collide under project case policy, or name directories.
+Previous reconciliation snapshots pin contract, recipe, source, scope, and path
+policy; a changed snapshot requires clarification rather than substitution.
+Source revision collection is application-owned; this pure function alone does
+not authorize or dispatch Driver.
+
+Architect now retains its validated candidate on execution-record schema `1.9`
+after the scoped plan write. The `seal_architect_target_handoff` application
+operation loads the latest eligible execution, verifies project identity, reads
+the scoped plan digest, reconciles explicit current evidence and persisted scope,
+and saves the handoff under RunState `1.2`. It never parses plan prose into targets.
+A post-write manual/budget pause can retain usable candidate evidence without
+resolving that interrupt. Initial sealing refuses prior Driver attempts, stale
+Architect selection, terminal Runs, replacement contracts, and approval of a
+recorded clarification. Identical replays do not rewrite state. The graph now uses
+the same observation policy to seal/revalidate before every Driver attempt.
+
+New admitted Git Runs capture `project_source_snapshot` under RunState `1.2`
+before role execution. Policy `git-visible-source-v1` fingerprints HEAD plus
+tracked and nonignored untracked file contents and path metadata, excluding root
+`.battalion` data. It stores digests, not source contents or absolute root paths.
+Collection is bounded to 10,000 files, 32 MiB per file, and 512 MiB total;
+unsupported non-file entries, escaping links, and exceeded bounds fail closed.
+Sealing recollects source and accepts differences only when exact scoped-write
+receipts from completed attempts explain them. Changed HEAD, deletions, metadata
+changes, and unrelated edits require clarification. Caller evidence cannot
+replace the captured baseline. Legacy and non-Git Runs without a baseline remain
+readable but cannot seal by capturing source after Architect execution.
+
+BTN-195 branch execution now requires explicit current target evidence at Driver
+entry. Missing evidence raises a typed admission failure before capture, budget,
+context, or tool setup; it does not log a seventh interrupt. A new reconciliation
+is checkpointed before either rejection or Driver attempt creation. Initial full
+contracts are sealed from the latest retained Architect candidate. Existing
+contracts are revalidated without replacement, including on RED/GREEN retries
+and resume. Runtime path comparison conservatively rejects case collisions on
+all platforms. Every admitted Driver attempt records `artifact_target_contract_id`
+at creation and completion; an unstarted recovered attempt keeps that same ID.
+Current evidence is passed through transport-neutral `StartRun`/`ResumeRun`.
+`ResumeRun.artifact_target_contract_id` names the exact ready contract for a
+Driver-checkpoint resolution. The applied human action retains that ID and its
+Actor attribution. Resume revalidates current evidence before saving the action
+and resolution together; failure consumes neither. Action replay must retain the
+original Actor, text, and contract ID, including recovery after authorization was
+saved but before graph entry. A later contract cannot inherit earlier checkpoint
+authorization. Client evidence intake remains pending. Generic Driver-checkpoint resolution and
+unavailable intake therefore fail closed.
+
+`seal_compact_target_handoff` constructs a compact contract only from exact
+authoritative work-item/specification targets, with matching current source
+references and the admitted revisions. It retains both revision provenances,
+fabricates no Architect execution or plan, and uses the same source/scope/path
+reconciliation and worker guard as full sealing. Missing or advisory-only paths,
+stale references, conflicting targets, collisions, and unknown recipes fail
+closed. Initial sealing precedes Driver and cannot replace human actions.
+Contract readiness does not enable recipe execution: both start and resume reject
+compact or upgraded recipes through the existing full-workflow executor. Compact
+dispatch requires its own stage/completion handling, including semantic review
+and human acceptance; no compact assurance requirement is skipped by sealing.
+
+`change_artifact_target_handoff` applies an active-human Actor's exact request
+while no worker or competing action is active. It compares the expected history
+tip and uses a stable action ID. Approval requires a replacement contract that
+supersedes that tip and passes fresh reconciliation against the unchanged source
+baseline and existing scope. Invalid requests save neither approval nor partial
+history. Identical replay returns current state without writes or dispatch;
+changed Actor/action/contract/reason conflicts with the original request.
+Approval preserves historical attempts, admission, and prior contract records.
+If a prior Driver checkpoint was already resolved, correction at a Driver boundary
+opens a new manual checkpoint for the replacement instead of inheriting approval.
+Return-to-Architect clears the active contract and prepares Architect without
+dispatch; approval then requires a new completed candidate. Cancellation clears
+the active contract and blocks further role execution or resume. These actions
+do not rebase changed source/specification/admission identities; that requires a
+new admitted Run. Compact workflows require explicit upgrade before Architect.
 
 Before any Driver attempt begins, Battalion requires one current, validated
 `ArtifactTargetContract`. The contract is application-owned execution evidence,
@@ -413,8 +509,8 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.7`; persisted
-`1.0` through `1.6` records remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.9`; persisted
+`1.0` through `1.8` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
@@ -439,6 +535,20 @@ contents into `RunState`. Input references are likewise bounded pointers to
 persisted state or workspace artifacts. The record is part of `RunState`, so
 normal JSON save/load and graph pause/resume preserve the same evidence without
 a second persistence or resumption path.
+
+Version `1.9` adds the bounded `architect_handoff_candidate` as semantic output
+evidence distinct from artifact provenance. It is captured only after a validated
+Architect response has been written through its scoped plan tool. Older execution
+schemas cannot claim this field, and loading older records never reconstructs
+it from `plan.md`. Initial sealed targets must match this retained candidate.
+Version `1.9` also retains up to 100 `verified_scoped_writes` per attempt: path,
+digest, and originating Run/execution identity. Capture hashes each successful
+scoped-tool write and retains its receipt only if the bytes still match at attempt
+completion. These receipts are distinct from observed artifact changes; only
+successful attempts or post-write manual/budget pauses can explain source changes.
+Driver executions also retain `artifact_target_contract_id`; RunState checks that
+the referenced historical contract admitted the phase and had ready evidence
+before the attempt started. Earlier executions remain explicit unlinked history.
 
 Version `1.2` adds bounded operator handoffs; explicit role prompt contract,
 template hash, model-configuration identity, and Battalion revision evidence;
@@ -595,6 +705,17 @@ source roots. Context is bounded before each LLM call: RED receives existing
 implementation context, GREEN receives accepted RED tests, and Refactorer
 receives the passing file set.
 
+On the BTN-195 branch, Driver context additionally begins with the active sealed
+contract ID and a canonical JSON table of target IDs, exact project-relative paths,
+and intended operations assigned to its current phase. This table takes precedence
+over path suggestions in the explanatory plan, including a superseded generated
+plan table after human correction. It does not grant write permission or replace
+structural scopes and role policy. The complete table is bounded by the contract
+schema (at most 100 targets, 200-character IDs, and 1,000-character paths) and is
+never truncated; the remaining explanatory context retains its separate
+32,000-character allowance. Consequently a large contract increases total Driver
+input size rather than silently dropping required target evidence.
+
 For a graph execution with GREEN artifact provenance, Refactorer receives the
 latest successful GREEN Driver's production artifact paths and may write only
 those paths. Its scope remains a structural ceiling, but artifact provenance is
@@ -615,9 +736,9 @@ warranted.
 | 5 | Infra failure | Node crash, malformed state, malformed or contract-violating role output, or LiteLLM call fails after retries | Separate handling path — not folded into triggers 1 or 3; surfaces as a distinct failure state, not a judgment escalation |
 | 6 | Manual checkpoint | User declares a checkpoint on the ticket/run config (e.g. "pause after Architect") independent of any system-detected condition | Graph pauses unconditionally at the declared point, regardless of whether any other trigger fired |
 
-ADR-0024 accepts a post-v1 extension of trigger #5 for runtime inference
-identity or zero-cost policy contradictions. That extension is not shipped
-until BTN-54 and BTN-55 implement and validate it.
+ADR-0024's extension of trigger #5 for runtime inference identity or zero-cost
+policy contradictions is implemented by BTN-54 and BTN-55 as described above.
+It uses the existing infrastructure-failure path, not a seventh interrupt.
 
 Deliberately deferred: severity-based ("critical finding") triggers. BTN-47
 must determine whether this belongs in existing Reviewer and interrupt policy
