@@ -1,5 +1,7 @@
 """Focused tests for the BTN-30 application command/query boundary."""
 
+from support.state import make_run_state
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
@@ -12,6 +14,7 @@ from battalion.application import (
     ResumeRun,
     RunAlreadyExists,
     RunIdentityChanged,
+    RunRecoveryUnsafe,
     RunNotFound,
     StartRun,
     StartWorkItemRun,
@@ -31,7 +34,8 @@ from battalion.integrations.configuration import (
     TransportKind,
 )
 from battalion.integrations.runtime import AdapterRegistration, IntegrationRuntime
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.role_results import DriverReasonCode, RoleExecutionResult, RoleResultKind
+from battalion.state.models import ExecutionRecord, NodeExecution, RunState, RunStatus
 from battalion.work import WorkItem, WorkItemProvenance
 
 
@@ -93,16 +97,13 @@ def make_state(
     run_id: str = "run-BTN-30-test",
     status: RunStatus = RunStatus.NOT_STARTED,
 ) -> RunState:
-    return RunState(
-        schema_version="1.0",
+    return make_run_state(
         run_id=run_id,
-        ticket_id="BTN-30-test",
-        spec="Application boundary test",
+        ticket_id='BTN-30-test',
+        spec='Application boundary test',
         status=status,
-        phase="architect",
-        write_scope={"architect": ["plan.md"], "driver": ["src/"]},
-        retry_bound=2,
-        budget=Budget(limit=10),
+        write_scope={'architect': ['plan.md'], 'driver': ['src/']},
+        budget_limit=10,
     )
 
 
@@ -173,7 +174,7 @@ def test_start_run_returns_typed_identity_and_persists_graph_result(tmp_path):
         )
 
     result = start_run(
-        StartRun(initial_state=initial, config=BattalionConfig()),
+        StartRun(initial_state=initial, config=BattalionConfig(reviewer_test_timeout_seconds=17)),
         state_dir=tmp_path,
         _execute=execute,
     )
@@ -185,6 +186,7 @@ def test_start_run_returns_typed_identity_and_persists_graph_result(tmp_path):
     assert result.state_path.exists()
     assert captured["initial_state"] is initial
     assert captured["llm_configs"] == BattalionConfig().models
+    assert captured["reviewer_test_timeout_seconds"] == 17
 
 
 def test_graph_execution_cannot_replace_canonical_run_identity(tmp_path):
@@ -244,13 +246,14 @@ def test_resume_run_loads_canonical_state_and_persists_result(tmp_path):
     result = resume_run(
         ResumeRun(
             run_id=paused.run_id,
-            config=BattalionConfig(base_dir=str(tmp_path)),
+            config=BattalionConfig(base_dir=str(tmp_path), reviewer_test_timeout_seconds=23),
         ),
         state_dir=tmp_path,
         _execute=execute,
     )
 
     assert captured["state"].interrupt_log == paused.interrupt_log
+    assert captured["reviewer_test_timeout_seconds"] == 23
     assert captured["state"].human_action_log[-1].kind == "interrupt-resolution"
     assert captured["state"].human_action_log[-1].target == "legacy-pause"
     assert result.warning is None
@@ -274,6 +277,56 @@ def test_resume_run_reports_non_paused_status_without_changing_policy(tmp_path):
     )
 
     assert result.warning == "Run status is 'done', not 'awaiting-human'. Resuming anyway."
+
+
+def test_resume_run_records_human_resolution_for_typed_blocked_result(tmp_path):
+    state = make_state(status=RunStatus.BLOCKED).model_copy(
+        update={"phase": "driver_green"}
+    )
+    now = datetime.now(timezone.utc)
+    blocked = NodeExecution(
+        execution_id="node-blocked",
+        role="driver",
+        phase="driver_green",
+        model_identity="test-model",
+        started_at=now,
+        ended_at=now,
+        outcome="succeeded",
+        role_result=RoleExecutionResult(
+            kind=RoleResultKind.BLOCKED,
+            reason_code=DriverReasonCode.MISSING_CONTEXT,
+            summary="The interface contract was not supplied.",
+        ),
+    )
+    state = state.model_copy(update={
+        "resume_target": "driver_green",
+        "execution_record": ExecutionRecord(node_executions=[blocked]),
+    })
+    (tmp_path / f"{state.run_id}.json").write_text(
+        state.model_dump_json(), encoding="utf-8"
+    )
+    captured = {}
+
+    def execute(**kwargs):
+        captured.update(kwargs)
+        return kwargs["state"].model_copy(
+            update={"status": RunStatus.DONE, "phase": "done"}
+        )
+
+    result = resume_run(
+        ResumeRun(
+            run_id=state.run_id,
+            config=BattalionConfig(base_dir=str(tmp_path)),
+            resolution="The interface contract is now supplied in the ticket.",
+        ),
+        state_dir=tmp_path,
+        _execute=execute,
+    )
+
+    action = captured["state"].human_action_log[-1]
+    assert result.warning is None
+    assert action.target == "role-result:node-blocked"
+    assert action.detail == "The interface contract is now supplied in the ticket."
 
 
 def test_inspect_run_returns_state_version_and_derived_costs(tmp_path):
@@ -322,7 +375,7 @@ def test_node_checkpoint_preserves_progress_if_worker_crashes(tmp_path):
         kwargs["on_state_checkpoint"](progressed)
         raise RuntimeError("simulated worker crash")
 
-    with pytest.raises(RuntimeError, match="simulated worker crash"):
+    with pytest.raises(RunRecoveryUnsafe, match="No safe replay cursor"):
         start_run(
             StartRun(initial_state=initial, config=BattalionConfig()),
             state_dir=tmp_path,

@@ -1,18 +1,18 @@
-"""CLI integration tests for battalion.cli (BTN-9)."""
+"""CLI run/resume commands and configuration forwarding."""
 
-import json
+
 import re
-import tempfile
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
-
-import pytest
 from typer.testing import CliRunner
-
-from battalion.cli import app, _state_path
-from battalion.state.models import RunState, RunStatus, Budget
+from battalion.cli import app
+from battalion.state.models import Budget, RunState, RunStatus
 from battalion.state.persistence import save_state
+from support.cli import (
+    make_paused_state,
+)
 
 
 runner = CliRunner()
@@ -33,27 +33,6 @@ def test_project_installs_the_battalion_console_script() -> None:
     assert project["project"]["scripts"]["battalion"] == "battalion.cli:main"
 
 
-def make_paused_state(run_id: str, phase: str = "driver_red") -> RunState:
-    """Create a state that's paused at an interrupt."""
-    return RunState(
-        schema_version="1.0",
-        run_id=run_id,
-        ticket_id="BTN-9-test",
-        status=RunStatus.AWAITING_HUMAN,
-        phase=phase,
-        write_scope={
-            "architect": ["plan.md"],
-            "driver": ["src/"],
-            "reviewer": [],
-        },
-        retry_bound=2,
-        budget=Budget(limit=100, used=10),
-        reviewer_rejection_history=[],
-        interrupt_log=[],
-        manual_checkpoints=[],
-    )
-
-
 def test_cli_help_uses_console_safe_separator() -> None:
     """Public help must remain legible on legacy Windows code pages."""
     result = runner.invoke(app, ["--help"])
@@ -62,6 +41,8 @@ def test_cli_help_uses_console_safe_separator() -> None:
     assert "Battalion SDLC Orchestrator - run, resume" in result.output
     assert "--trace-output" in _compact_help(runner.invoke(app, ["run", "--help"]).output)
     assert "--trace-output" in _compact_help(runner.invoke(app, ["resume", "--help"]).output)
+    from battalion.cli import TROUBLESHOOTING_URL
+    assert TROUBLESHOOTING_URL in _compact_help(result.output)
 
 
 def test_run_creates_state_file(tmp_path, monkeypatch):
@@ -99,37 +80,6 @@ def test_run_creates_state_file(tmp_path, monkeypatch):
     assert loaded.run_alias.startswith("BTN-9-test-")
     assert loaded.project_id is not None
     assert loaded.status == RunStatus.DONE
-
-
-def test_run_appends_node_associated_trace_output(tmp_path, monkeypatch):
-    import battalion.application as application_module
-
-    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
-        kwargs["on_node_event"]({"type": "node_start", "node": "architect"})
-        kwargs["on_token"]({"type": "reasoning", "content": "plan carefully"})
-        kwargs["on_token"]({"type": "token", "content": "# Plan"})
-        kwargs["on_node_event"]({"type": "node_end", "node": "architect", "phase": "done"})
-        return initial_state.model_copy(update={"status": RunStatus.DONE, "phase": "done"})
-
-    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
-    spec_file = tmp_path / "spec.md"
-    spec_file.write_text("# Test Spec", encoding="utf-8")
-    trace_path = tmp_path / "traces" / "run.jsonl"
-
-    with monkeypatch.context() as m:
-        m.chdir(tmp_path)
-        result = runner.invoke(
-            app,
-            ["run", "BTN-9-test", "--spec", str(spec_file), "--trace-output", str(trace_path)],
-        )
-
-    assert result.exit_code == 0
-    assert f"Trace output: {trace_path.resolve()}" in result.output
-    events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
-    assert [(event["node"], event["kind"], event["content"]) for event in events] == [
-        ("architect", "reasoning", "plan carefully"),
-        ("architect", "token", "# Plan"),
-    ]
 
 
 def test_repeated_ticket_runs_get_distinct_canonical_ids(tmp_path, monkeypatch):
@@ -193,117 +143,11 @@ def test_resume_loads_and_continues(tmp_path, monkeypatch):
     assert loaded.budget.used == 15
 
 
-def test_resume_appends_node_associated_trace_output(tmp_path, monkeypatch):
-    import battalion.application as application_module
-
-    def mock_resume_ticket(state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
-        kwargs["on_node_event"]({"type": "node_start", "node": "driver_green"})
-        kwargs["on_token"]({"type": "reasoning", "content": "implement now"})
-        kwargs["on_node_event"]({"type": "node_end", "node": "driver_green", "phase": "done"})
-        return state.model_copy(update={"status": RunStatus.DONE, "phase": "done"})
-
-    monkeypatch.setattr(application_module, "resume_ticket", mock_resume_ticket)
-    state_dir = tmp_path / ".battalion" / "state"
-    state_dir.mkdir(parents=True)
-    save_state(make_paused_state("run-BTN-9-test"), state_dir / "run-BTN-9-test.json")
-    trace_path = tmp_path / "traces" / "resume.jsonl"
-
-    with monkeypatch.context() as m:
-        m.chdir(tmp_path)
-        result = runner.invoke(
-            app,
-            ["resume", "run-BTN-9-test", "--trace-output", str(trace_path)],
-        )
-
-    assert result.exit_code == 0
-    events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
-    assert [(event["node"], event["kind"], event["content"]) for event in events] == [
-        ("driver_green", "reasoning", "implement now"),
-    ]
-
-
 def test_resume_missing_state_file(tmp_path, monkeypatch):
     """Test that resume fails with missing state file."""
     with monkeypatch.context() as m:
         m.chdir(tmp_path)
         result = runner.invoke(app, ["resume", "run-nonexistent"])
-    
-    assert result.exit_code != 0
-    assert "No state file found" in result.output
-
-
-def test_status_json_output(tmp_path, monkeypatch):
-    """Test that `battalion status` outputs JSON by default."""
-    # Create a state file
-    state_dir = tmp_path / ".battalion" / "state"
-    state_dir.mkdir(parents=True)
-    state = RunState(
-        schema_version="1.0",
-        run_id="run-BTN-9-test",
-        ticket_id="BTN-9-test",
-        status=RunStatus.IN_PROGRESS,
-        phase="driver_red",
-        write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-        retry_bound=2,
-        budget=Budget(limit=100, used=25),
-        reviewer_rejection_history=[],
-        interrupt_log=[],
-        manual_checkpoints=["reviewer"],
-    )
-    save_state(state, state_dir / "run-BTN-9-test.json")
-    
-    with monkeypatch.context() as m:
-        m.chdir(tmp_path)
-        result = runner.invoke(app, ["status", "run-BTN-9-test"])
-    
-    assert result.exit_code == 0
-    
-    # Parse as JSON
-    output = json.loads(result.output)
-    assert output["run_id"] == "run-BTN-9-test"
-    assert output["status"] == "in-progress"
-    assert output["phase"] == "driver_red"
-    assert output["budget"]["used"] == 25
-    assert output["budget"]["limit"] == 100
-
-
-def test_status_human_flag(tmp_path, monkeypatch):
-    """Test that `battalion status --human` outputs human-readable text."""
-    state_dir = tmp_path / ".battalion" / "state"
-    state_dir.mkdir(parents=True)
-    state = RunState(
-        schema_version="1.0",
-        run_id="run-BTN-9-test",
-        ticket_id="BTN-9-test",
-        status=RunStatus.AWAITING_HUMAN,
-        phase="awaiting_human",
-        write_scope={"architect": ["plan.md"], "driver": ["src/"], "reviewer": []},
-        retry_bound=2,
-        budget=Budget(limit=100, used=50),
-        reviewer_rejection_history=[],
-        interrupt_log=[],
-        manual_checkpoints=["driver", "reviewer"],
-    )
-    save_state(state, state_dir / "run-BTN-9-test.json")
-    
-    with monkeypatch.context() as m:
-        m.chdir(tmp_path)
-        result = runner.invoke(app, ["status", "run-BTN-9-test", "--human"])
-    
-    assert result.exit_code == 0
-    assert "Run ID:      run-BTN-9-test" in result.output
-    assert "Ticket:      BTN-9-test" in result.output
-    assert "Status:      awaiting-human" in result.output
-    assert "Phase:       awaiting_human" in result.output
-    assert "Budget:      50 / 100" in result.output
-    assert "Checkpoints: driver, reviewer" in result.output
-
-
-def test_status_missing_state_file(tmp_path, monkeypatch):
-    """Test that status fails with missing state file."""
-    with monkeypatch.context() as m:
-        m.chdir(tmp_path)
-        result = runner.invoke(app, ["status", "run-nonexistent"])
     
     assert result.exit_code != 0
     assert "No state file found" in result.output
@@ -349,41 +193,6 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
     assert "Run paused" in result.output
     assert "Invalid API Key" in result.output
     assert "Resume when ready: battalion resume " in result.output
-
-
-def test_run_describes_role_output_failure_without_calling_it_a_provider_error(tmp_path, monkeypatch):
-    import battalion.application as application_module
-    from battalion.interrupts.triggers import TRIGGER_INFRA_FAILURE
-    from battalion.state.models import InterruptLogEntry
-    from datetime import datetime, timezone
-
-    def mock_run_ticket(initial_state, llm_configs, base_dir, prompts_dir, max_turns=50, **kwargs):
-        return initial_state.model_copy(update={
-            "status": RunStatus.AWAITING_HUMAN,
-            "phase": "awaiting_human",
-            "interrupt_log": [InterruptLogEntry(
-                trigger=TRIGGER_INFRA_FAILURE,
-                timestamp=datetime.now(timezone.utc),
-                resolution=None,
-                context={
-                    "failure_kind": "role-output",
-                    "error": "GREEN mode must not produce test files",
-                },
-            )],
-        })
-
-    monkeypatch.setattr(application_module, "run_ticket", mock_run_ticket)
-    spec_file = tmp_path / "spec.md"
-    spec_file.write_text("# Test Spec")
-
-    with monkeypatch.context() as m:
-        m.chdir(tmp_path)
-        result = runner.invoke(app, ["run", "BTN-129-test", "--spec", str(spec_file)])
-
-    assert result.exit_code == 0
-    assert "role response violated Battalion's output contract" in result.output
-    assert "Validation error: GREEN mode must not produce test files" in result.output
-    assert "Provider error:" not in result.output
 
 
 def test_run_with_config_file(tmp_path, monkeypatch):

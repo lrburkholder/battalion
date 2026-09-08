@@ -4,7 +4,7 @@ Refactorer is structurally identical to Driver (same file output format and
 scope enforcement). It accepts an explicit phase scope and preserves the
 legacy shared Driver scope per ADR-0008/ADR-0013.
 """
-from datetime import datetime, timezone
+from support.execution import make_node_execution
 
 import pytest
 
@@ -20,12 +20,13 @@ from battalion.execution import ExecutionCapture
 from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.llm.litellm_client import InfraFailure, NodeLLMConfig, call_llm
 from battalion.scope.tool_binding import ScopeViolationError
-from battalion.state.models import ArtifactProvenance, ExecutionRecord, NodeExecution, RunStatus
+from battalion.state.models import ArtifactProvenance, ExecutionRecord, RunStatus
 
 
 # --- Fixtures / Helpers ---
 
-from conftest import make_run_state
+from support.state import make_run_state
+from support.responses import files_response, no_change_response, litellm_response
 
 
 def make_state(write_scope=None, **overrides):
@@ -38,28 +39,12 @@ def make_state(write_scope=None, **overrides):
     return make_run_state(**fields)
 
 
-def files_response(files: dict) -> dict:
-    import json
-    return {"choices": [{"message": {"content": json.dumps({"files": files})}}]}
-
-
-def no_change_response(reason: str = "The implementation is already clear.") -> dict:
-    import json
-    return {"choices": [{"message": {"content": json.dumps({
-        "outcome": "no-change", "files": {}, "reason": reason,
-    })}}]}
-
-
 def state_with_green_artifacts(*paths: str):
-    now = datetime.now(timezone.utc)
-    execution = NodeExecution(
+    execution = make_node_execution(
         execution_id="node-green",
         role="driver",
         phase="driver_green",
         model_identity="test-model",
-        started_at=now,
-        ended_at=now,
-        outcome="succeeded",
         artifact_provenance=[
             ArtifactProvenance(
                 path=path,
@@ -73,50 +58,23 @@ def state_with_green_artifacts(*paths: str):
     return make_state(execution_record=ExecutionRecord(node_executions=[execution]))
 
 
-def fenced_files_response(files: dict) -> dict:
-    import json
-    body = json.dumps({"files": files})
-    return {"choices": [{"message": {"content": f"```json\n{body}\n```"}}]}
-
-
 # --- extract_files tests ---
 
-def test_extract_files_parses_plain_json():
-    resp = files_response({"src/module.py": "def x(): pass"})
+@pytest.mark.parametrize("fenced", [False, True], ids=["plain", "markdown-fenced"])
+def test_extract_files_parses_json(fenced):
+    resp = files_response({"src/module.py": "def x(): pass"}, fenced=fenced)
     assert extract_files(resp) == {"src/module.py": "def x(): pass"}
 
 
-def test_extract_files_parses_markdown_fenced_json():
-    resp = fenced_files_response({"src/module.py": "def x(): pass"})
-    assert extract_files(resp) == {"src/module.py": "def x(): pass"}
-
-
-def test_extract_files_rejects_invalid_json():
-    resp = {"choices": [{"message": {"content": "not json at all"}}]}
-    with pytest.raises(MalformedRefactorerOutput):
-        extract_files(resp)
-
-
-def test_extract_files_rejects_missing_files_key():
-    resp = {"choices": [{"message": {"content": '{"not_files": {}}'}}]}
-    with pytest.raises(MalformedRefactorerOutput):
-        extract_files(resp)
-
-
-def test_extract_files_rejects_non_dict_files_value():
-    resp = {"choices": [{"message": {"content": '{"files": ["not", "a", "dict"]}'}}]}
-    with pytest.raises(MalformedRefactorerOutput):
-        extract_files(resp)
-
-
-def test_extract_files_rejects_non_string_content():
-    resp = {"choices": [{"message": {"content": '{"files": {"module.py": 123}}'}}]}
-    with pytest.raises(MalformedRefactorerOutput):
-        extract_files(resp)
-
-
-def test_extract_files_rejects_empty_string_path():
-    resp = {"choices": [{"message": {"content": '{"files": {"": "content"}}'}}]}
+@pytest.mark.parametrize("content", [
+    pytest.param("not json at all", id="invalid-json"),
+    pytest.param('{"not_files": {}}', id="missing-files-key"),
+    pytest.param('{"files": ["not", "a", "dict"]}', id="non-dict-files"),
+    pytest.param('{"files": {"module.py": 123}}', id="non-string-content"),
+    pytest.param('{"files": {"": "content"}}', id="empty-path"),
+])
+def test_extract_files_rejects_malformed_output(content):
+    resp = litellm_response(content)
     with pytest.raises(MalformedRefactorerOutput):
         extract_files(resp)
 

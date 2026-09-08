@@ -1,4 +1,4 @@
-"""Pure policy for the post-merge canonical-ticket transition."""
+"""Pure policy for Battalion canonical-ticket lifecycle transitions."""
 
 from __future__ import annotations
 
@@ -10,10 +10,15 @@ MULTI_MARKER = re.compile(
     r"^Battalion-tickets:\s*(?P<numbers>#[1-9][0-9]*(?:\s*,\s*#[1-9][0-9]*)+)\s*$"
 )
 DECLARATION_PREFIX = re.compile(r"^Battalion-tickets?:")
+GITHUB_CLOSING_REFERENCE = re.compile(
+    r"\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\b"
+    r"\s*:?\s*#(?P<number>[1-9][0-9]*)\b",
+    re.IGNORECASE,
+)
 
 
 class TicketLifecycleError(ValueError):
-    """The merged pull request is not eligible for an automated transition."""
+    """The pull request is not eligible for the requested lifecycle transition."""
 
 
 def linked_issue_numbers(body: str | None) -> tuple[int, ...]:
@@ -60,6 +65,28 @@ def linked_issue_number(body: str | None) -> int:
     if len(numbers) != 1:
         raise TicketLifecycleError("ticket declaration contains more than one Issue")
     return numbers[0]
+
+
+def ensure_no_declared_auto_close(body: str | None) -> tuple[int, ...]:
+    """Reject GitHub auto-close keywords targeting Battalion-declared Issues."""
+
+    numbers = linked_issue_numbers(body)
+    declared = set(numbers)
+    conflicting = sorted(
+        {
+            int(match.group("number"))
+            for match in GITHUB_CLOSING_REFERENCE.finditer(body or "")
+            if int(match.group("number")) in declared
+        }
+    )
+    if conflicting:
+        refs = ", ".join(f"#{number}" for number in conflicting)
+        raise TicketLifecycleError(
+            "Battalion owns closure for declared ticket(s) "
+            f"{refs}; remove GitHub auto-close keywords such as Closes/Fixes/Resolves "
+            "and keep the Battalion-ticket declaration"
+        )
+    return numbers
 
 
 def ensure_in_review(labels: set[str]) -> None:

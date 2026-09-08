@@ -10,15 +10,31 @@ from typing import Iterator, TextIO
 from uuid import UUID
 
 import typer
+from pydantic import ValidationError
 
+from battalion.admission_presentation import (
+    render_workflow_admission,
+    render_workflow_admission_history,
+    workflow_admission_payload,
+)
+from battalion.disclosure import DATA_HANDLING_URL
 from battalion.application import (
     ApplicationError,
+    AssessWorkflowAdmission,
+    CreateAdmittedRun,
+    DecideWorkflowAdmission,
     InspectRun,
+    InspectWorkflowAdmission,
     ResumeRun,
     RunAlreadyExists,
     StartRun,
+    WorkflowAdmissionRunInspection,
+    assess_workflow_admission,
+    create_admitted_run,
     create_initial_state,
+    decide_workflow_admission,
     inspect_run,
+    inspect_workflow_admission,
     resume_run,
     start_run,
     state_path,
@@ -28,28 +44,57 @@ from battalion.interrupts.triggers import (
     TRIGGER_INFRA_FAILURE,
     TRIGGER_MANUAL_CHECKPOINT,
     TRIGGER_ROLE_EDIT,
+    TRIGGER_ROLE_ESCALATION,
     TRIGGER_SAME_ROOT_CAUSE,
     TRIGGER_SCOPE_VIOLATION,
     get_trigger_name,
 )
 from battalion.progress import ProgressDisplay
 from battalion.state.models import RunState, RunStatus
+from battalion.recovery import assess_recovery
 from battalion.config import load_config, DEFAULT_CONFIG_PATH
 from battalion.llm.litellm_client import ModelDiversityError
 from battalion.setup import (
+    InferenceConfigurationError,
+    parse_role_options,
     ConnectivityCheckFailed,
     MissingApiKey,
     ProviderNotDetected,
     run_setup,
 )
+from battalion.tactician import TacticianAssessment
+from battalion.workflow_admission import WorkflowAdmissionEvidence
+from battalion.workflow_admission_decisions import WorkflowAdmissionDisposition
+
+TROUBLESHOOTING_URL = "https://lrburkholder.github.io/battalion/docs/troubleshooting.html"
+INTERRUPT_GUIDES = {
+    TRIGGER_INFRA_FAILURE: "infra-failure",
+    TRIGGER_SCOPE_VIOLATION: "authority-stop",
+    TRIGGER_ROLE_EDIT: "authority-stop",
+    TRIGGER_BUDGET_EXCEEDED: "human-checkpoints",
+    TRIGGER_MANUAL_CHECKPOINT: "human-checkpoints",
+    TRIGGER_SAME_ROOT_CAUSE: "reviewer-tests",
+    TRIGGER_ROLE_ESCALATION: "role-output",
+}
 
 app = typer.Typer(
     name="battalion",
-    help="Battalion SDLC Orchestrator - run, resume, and check status of tickets.",
+    help=("Battalion SDLC Orchestrator - run, resume, and check status of tickets. "
+          f"Troubleshooting: {TROUBLESHOOTING_URL}"),
     add_completion=False,
 )
 
 STATE_DIR = Path(".battalion/state")
+
+
+def _print_troubleshooting(state: RunState) -> None:
+    if assess_recovery(state) is not None:
+        anchor = "resume-recovery"
+    elif state.interrupt_log:
+        anchor = INTERRUPT_GUIDES.get(state.interrupt_log[-1].trigger, "run-stopped")
+    else:
+        anchor = "run-stopped"
+    typer.echo(f"Troubleshooting: {TROUBLESHOOTING_URL}#{anchor}")
 
 
 def _state_path(run_id: str) -> Path:
@@ -63,6 +108,11 @@ def _open_trace_output(path: str | None) -> Iterator[tuple[TextIO | None, Path |
     if path is None:
         yield None, None
         return
+    typer.echo(
+        "Sensitive trace export: raw model content/reasoning is appended without "
+        f"redaction. Review before sharing. Data handling: {DATA_HANDLING_URL}",
+        err=True,
+    )
     target = Path(path).expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8", newline="\n", buffering=1) as stream:
@@ -74,6 +124,7 @@ def _print_status(
     human: bool = False,
     costs: bool = False,
     cost_summary: dict[str, object] | None = None,
+    workflow_admission: WorkflowAdmissionRunInspection | None = None,
 ) -> None:
     """Print run status as JSON or human-readable."""
     if human:
@@ -85,6 +136,11 @@ def _print_status(
         typer.echo(f"Status:      {state.status.value}")
         typer.echo(f"Phase:       {state.phase}")
         typer.echo(f"Budget:      {state.budget.used} / {state.budget.limit}")
+        typer.echo(f"Cost policy: {state.cost_policy.value}")
+        recovery = assess_recovery(state)
+        if recovery is not None:
+            typer.echo(f"Recovery:    {recovery.disposition}")
+            typer.echo(recovery.message)
         if state.manual_checkpoints:
             typer.echo(f"Checkpoints: {', '.join(state.manual_checkpoints)}")
         if state.interrupt_log:
@@ -93,6 +149,23 @@ def _print_status(
                 typer.echo(f"  {i}. {entry.trigger} @ {entry.timestamp.isoformat()}")
                 if entry.resolution:
                     typer.echo(f"     Resolution: {entry.resolution}")
+        role_results = [
+            execution for execution in state.execution_record.node_executions
+            if execution.role_result is not None
+        ]
+        if role_results:
+            typer.echo("\nRole results:")
+            for execution in role_results:
+                result = execution.role_result
+                detail = result.reason_code.value if result.reason_code else None
+                if result.summary:
+                    detail = f"{detail}; {result.summary}" if detail else result.summary
+                typer.echo(
+                    f"  {execution.phase}: {result.kind.value}"
+                    + (f" ({detail})" if detail else "")
+                )
+        if workflow_admission is not None:
+            typer.echo("\n" + render_workflow_admission_history(workflow_admission))
         if costs:
             summary = cost_summary or {}
             typer.echo("\nLLM costs:")
@@ -122,6 +195,10 @@ def _print_status(
                 f"{summary['streamed_content_characters']} content chars, "
                 f"{known}"
             )
+        if recovery is not None or state.status in {
+            RunStatus.AWAITING_HUMAN, RunStatus.BLOCKED, RunStatus.FAILED_INFRA,
+        }:
+            _print_troubleshooting(state)
     else:
         if costs:
             typer.echo(json.dumps(cost_summary or {}, indent=2))
@@ -142,18 +219,9 @@ def _describe_interrupt(entry) -> str:
 
     if trigger == TRIGGER_INFRA_FAILURE:
         error = context.get("error")
-        if context.get("failure_kind") == "role-output":
-            if error:
-                return (
-                    f"{label}: a role response violated Battalion's output contract.\n"
-                    f"   Validation error: {error}\n"
-                    "   Restore or correct the role/model, then resume for a "
-                    "human-authorized retry with this feedback."
-                )
-            return f"{label}: a role response violated Battalion's output contract."
         if error:
-            return f"{label}: the LLM call failed after all retries.\n   Provider error: {error}"
-        return f"{label}: the LLM call failed after all retries."
+            return f"{label}: execution failed.\n   Recorded error: {error}"
+        return f"{label}: execution failed; inspect the saved attempt and interrupt context."
     if trigger == TRIGGER_SCOPE_VIOLATION:
         error = context.get("error")
         if error:
@@ -175,11 +243,17 @@ def _describe_interrupt(entry) -> str:
 
 def _print_pause_reason(state: RunState, run_id: str) -> None:
     """After a run/resume pauses, print why it paused and how to continue."""
+    recovery = assess_recovery(state)
+    if recovery is not None:
+        typer.echo(f"Recovery: {recovery.disposition}. {recovery.message}")
+        _print_troubleshooting(state)
+        return
     if state.status != RunStatus.AWAITING_HUMAN or not state.interrupt_log:
         return
     entry = state.interrupt_log[-1]
     typer.echo("\nRun paused - awaiting human review.")
     typer.echo(f"  {_describe_interrupt(entry)}")
+    _print_troubleshooting(state)
     typer.echo(f"  Resume when ready: battalion resume {run_id}")
 
 
@@ -190,6 +264,142 @@ def _load_spec_text(spec_path: str) -> str:
         return path.read_text(encoding="utf-8")
     # If not a file, treat as literal spec text
     return spec_path
+
+
+def _load_admission_evidence(path: Path) -> WorkflowAdmissionEvidence:
+    return WorkflowAdmissionEvidence.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _load_tactician_assessment(path: Path | None) -> TacticianAssessment | None:
+    if path is None:
+        return None
+    return TacticianAssessment.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+@app.command()
+def admit(
+    ticket_id: str = typer.Argument(..., help="Ticket ID for an admitted Run"),
+    spec: str = typer.Option(..., "--spec", "-s", help="Path to spec file or spec text"),
+    evidence: Path = typer.Option(
+        ..., "--evidence", exists=True, dir_okay=False, readable=True,
+        help="WorkflowAdmissionEvidence JSON file",
+    ),
+    tactician_assessment: Path | None = typer.Option(
+        None, "--tactician-assessment", exists=True, dir_okay=False, readable=True,
+        help="Optional advisory TacticianAssessment JSON file",
+    ),
+    decision: WorkflowAdmissionDisposition | None = typer.Option(
+        None,
+        "--decision",
+        help="Authorized choice: full, compact, clarification, or cancelled",
+    ),
+    annotation: str | None = typer.Option(
+        None,
+        "--annotation",
+        help="Human rationale, including any disagreement with Tactician",
+    ),
+    actor_id: UUID | None = typer.Option(
+        None, "--actor-id", help="Durable Actor ID; defaults to the local human Actor",
+    ),
+    config: str | None = typer.Option(
+        None, "--config", "-c", help="Path to battalion.config.yaml",
+    ),
+    base_dir: str = typer.Option(".", "--base-dir", help="Project root"),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit stable JSON and never prompt for a decision",
+    ),
+):
+    """Inspect admission evidence and optionally record an authorized decision.
+
+    Omitting ``--decision`` is read-only in both human and JSON modes. This is
+    deliberate for scripts: Battalion never turns absent input into approval.
+    """
+
+    try:
+        cfg = load_config(config, {"base_dir": base_dir})
+        supplied_evidence = _load_admission_evidence(evidence)
+        supplied_tactician = _load_tactician_assessment(tactician_assessment)
+        assessment = assess_workflow_admission(
+            AssessWorkflowAdmission(evidence=supplied_evidence)
+        )
+        inspection = inspect_workflow_admission(
+            InspectWorkflowAdmission(
+                assessment=assessment,
+                evidence=supplied_evidence,
+                tactician_assessment=supplied_tactician,
+            )
+        )
+        output: dict[str, object] = {
+            "inspection": workflow_admission_payload(inspection),
+            "decision": None,
+            "run": None,
+        }
+        if decision is not None:
+            if decision in {
+                WorkflowAdmissionDisposition.FULL,
+                WorkflowAdmissionDisposition.COMPACT,
+            }:
+                result = create_admitted_run(
+                    CreateAdmittedRun(
+                        ticket_id=ticket_id,
+                        spec=_load_spec_text(spec),
+                        config=cfg,
+                        assessment=assessment,
+                        evidence=supplied_evidence,
+                        disposition=decision,
+                        actor_id=actor_id,
+                        tactician_assessment=supplied_tactician,
+                        annotation=annotation,
+                    ),
+                    state_dir=STATE_DIR,
+                )
+                assert result.state.workflow_admission is not None
+                output["decision"] = result.state.workflow_admission.decision.model_dump(
+                    mode="json"
+                )
+                output["run"] = {
+                    "run_id": result.run_id,
+                    "run_alias": result.run_alias,
+                    "state_version": result.state_version,
+                    "state_path": str(result.state_path),
+                }
+            else:
+                result = decide_workflow_admission(
+                    DecideWorkflowAdmission(
+                        project_root=cfg.base_dir,
+                        assessment=assessment,
+                        evidence=supplied_evidence,
+                        disposition=decision,
+                        actor_id=actor_id,
+                        tactician_assessment=supplied_tactician,
+                        annotation=annotation,
+                    )
+                )
+                output["decision"] = result.decision.model_dump(mode="json")
+    except (ApplicationError, OSError, ValidationError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"error": {"message": str(exc)}}), err=True)
+        else:
+            typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if json_output:
+        typer.echo(json.dumps(output, indent=2))
+        return
+    typer.echo(render_workflow_admission(inspection))
+    if decision is None:
+        typer.echo("\nNo decision recorded. Use --decision to authorize an action.")
+    elif output["run"] is None:
+        typer.echo(
+            f"\nDecision authorized: {decision.value}; no executable Run created."
+        )
+    else:
+        run = output["run"]
+        assert isinstance(run, dict)
+        typer.echo(
+            f"\nDecision recorded: {decision.value}; created Run {run['run_id']} "
+            f"at {run['state_path']}."
+        )
 
 
 @app.command()
@@ -208,7 +418,7 @@ def run(
     trace_output: str | None = typer.Option(
         None,
         "--trace-output",
-        help="Append raw token/reasoning observations to this JSONL file",
+        help=f"Append sensitive raw token/reasoning JSONL without redaction. Read {DATA_HANDLING_URL}",
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Authorize overwrite if a canonical ID already exists"),
 ):
@@ -232,11 +442,10 @@ def run(
     # Load spec text
     spec_text = _load_spec_text(spec)
     
-    initial_state = create_initial_state(ticket_id, spec_text, cfg)
-    run_id = initial_state.run_id
-    
-    typer.echo(f"Starting run: {initial_state.run_alias} ({run_id})")
     try:
+        initial_state = create_initial_state(ticket_id, spec_text, cfg)
+        run_id = initial_state.run_id
+        typer.echo(f"Starting run: {initial_state.run_alias} ({run_id})")
         with _open_trace_output(trace_output) as (trace_stream, trace_path):
             if trace_path is not None:
                 typer.echo(f"Trace output: {trace_path}")
@@ -275,7 +484,7 @@ def resume(
     trace_output: str | None = typer.Option(
         None,
         "--trace-output",
-        help="Append raw token/reasoning observations to this JSONL file",
+        help=f"Append sensitive raw token/reasoning JSONL without redaction. Read {DATA_HANDLING_URL}",
     ),
     actor_id: UUID | None = typer.Option(
         None,
@@ -284,6 +493,9 @@ def resume(
     ),
     resolution: str = typer.Option(
         "authorized resume", "--resolution", help="Durable resolution for the latest interrupt"
+    ),
+    action_id: str | None = typer.Option(
+        None, "--action-id", help="Stable request ID for idempotent resume replay",
     ),
 ):
     """Resume a paused/interrupted run from saved state."""
@@ -301,6 +513,7 @@ def resume(
                         config=cfg,
                         actor_id=actor_id,
                         resolution=resolution,
+                        action_id=action_id,
                     ),
                     state_dir=STATE_DIR,
                     on_node_event=display.handle_event,
@@ -337,6 +550,7 @@ def status(
         human=human,
         costs=costs,
         cost_summary=result.costs,
+        workflow_admission=result.workflow_admission,
     )
 
 
@@ -356,7 +570,18 @@ def setup(
     model_driver: str | None = typer.Option(None, "--model-driver"),
     model_reviewer: str | None = typer.Option(None, "--model-reviewer"),
     model_refactorer: str | None = typer.Option(None, "--model-refactorer"),
-    validate: bool = typer.Option(True, "--validate/--no-validate", help="Run live connectivity checks before saving"),
+    validate: bool = typer.Option(True, "--validate/--no-validate", help=f"Run live connectivity checks before saving. Data handling: {DATA_HANDLING_URL}"),
+    endpoint: list[str] = typer.Option([], "--endpoint", help="ROLE=URL base endpoint; repeat per role."),
+    inference_location: list[str] = typer.Option([], "--inference-location", help="ROLE=local|remote|unknown; operator classification, not verified locality."),
+    canonical_model_family: list[str] = typer.Option([], "--canonical-model-family", help="ROLE=FAMILY; required for endpoint-configured Driver and Reviewer."),
+    api_key_env: list[str] = typer.Option([], "--api-key-env", help="ROLE=ENV_VAR; credential variable name, never its value."),
+    keyless: list[str] = typer.Option([], "--keyless", help="ROLE=true|false|auto; authentication setting independent of inference location."),
+    backend: list[str] = typer.Option([], "--backend", help="ROLE=NAME; non-secret server identifier."),
+    cost_policy: str | None = typer.Option(None, "--cost-policy", help="local-only, free-only, or paid-capable (default)."),
+    cost_classification: list[str] = typer.Option([], "--cost-classification", help="ROLE=local|verified-free|paid|unknown."),
+    classification_source: list[str] = typer.Option([], "--classification-source", help="ROLE=SOURCE; bounded non-secret verification source."),
+    classification_observed_at: list[str] = typer.Option([], "--classification-observed-at", help="ROLE=ISO-8601 timestamp with timezone."),
+    classification_expires_at: list[str] = typer.Option([], "--classification-expires-at", help="ROLE=ISO-8601 timestamp with timezone."),
 ):
     """Configure LLM providers and validate connectivity, writing battalion.config.yaml."""
     overrides = {
@@ -368,11 +593,24 @@ def setup(
     interactive = sys.stdin.isatty()
     try:
         written = run_setup(
+            node_overrides=parse_role_options({
+                "endpoint_url": endpoint,
+                "inference_location": inference_location,
+                "canonical_model_family": canonical_model_family,
+                "api_key_env": api_key_env,
+                "keyless": keyless,
+                "backend": backend,
+                "cost_classification": cost_classification,
+                "classification_source": classification_source,
+                "classification_observed_at": classification_observed_at,
+                "classification_expires_at": classification_expires_at,
+            }),
             config_path=config or DEFAULT_CONFIG_PATH,
             model_overrides=overrides,
             validate=validate,
             prompt=_prompt_value if interactive else None,
             echo=typer.echo,
+            cost_policy=cost_policy,
         )
     except ProviderNotDetected as exc:
         typer.echo(f"Error: {exc}", err=True)
@@ -383,13 +621,61 @@ def setup(
     except ConnectivityCheckFailed as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
-    except ModelDiversityError as exc:
+    except (ModelDiversityError, InferenceConfigurationError) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
 
     typer.echo(f"Setup complete. Config written to: {config or DEFAULT_CONFIG_PATH}")
     for node in ("architect", "driver", "reviewer", "refactorer"):
         typer.echo(f"  {node}: {written[node]['model']}")
+
+
+@app.command("history")
+def history_command(
+    text: str = typer.Argument("", help="Case-insensitive literal substring to find in saved evidence."),
+    project: Path = typer.Option(Path("."), "--project", help="Initialized Battalion project."),
+    filters: list[str] = typer.Option([], "--filter", help="Exact field=value filter; repeat for AND. Use field=null for unknown."),
+    limit: int = typer.Option(100, min=1, max=1000),
+    offset: int = typer.Option(0, min=0),
+    dimension: str | None = typer.Option(None, "--analytics", help="Aggregate all matches by role and this inference-identity field."),
+    rebuild: bool = typer.Option(False, "--rebuild", help="Explicitly authorize replacing modified/corrupt derived projection data."),
+    date_from: str | None = typer.Option(None, help="Inclusive attempt start bound, ISO 8601 with timezone."),
+    date_to: str | None = typer.Option(None, help="Inclusive attempt start bound, ISO 8601 with timezone."),
+    cost_min: str | None = typer.Option(None, help="Minimum observed attempt subtotal for the selected currency/source."),
+    cost_max: str | None = typer.Option(None, help="Maximum observed attempt subtotal for the selected currency/source."),
+    cost_currency: str | None = typer.Option(None, help="Three-letter uppercase currency; requires --cost-source."),
+    cost_source: str | None = typer.Option(None, help="provider-reported or estimated; requires --cost-currency."),
+) -> None:
+    """Search Run history or compare descriptive model-role evidence as JSON."""
+    from battalion.application import query_history
+    from battalion.history import HistoryQuery
+    from datetime import datetime
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        parsed = {}
+        for item in filters:
+            name, separator, value = item.partition("=")
+            if not separator or name in parsed:
+                raise ValueError("Filters must be unique field=value pairs")
+            parsed[name] = None if value == "null" else value
+        query = HistoryQuery(
+            text, parsed, limit, offset,
+            date_from=datetime.fromisoformat(date_from) if date_from is not None else None,
+            date_to=datetime.fromisoformat(date_to) if date_to is not None else None,
+            cost_min=Decimal(cost_min) if cost_min is not None else None,
+            cost_max=Decimal(cost_max) if cost_max is not None else None,
+            cost_currency=cost_currency, cost_source=cost_source,
+        )
+        result = query_history(project, query,
+                               dimension=dimension, rebuild=rebuild)
+    except InvalidOperation as exc:
+        typer.echo("Error: Cost bounds must be decimal numbers", err=True)
+        raise typer.Exit(1) from exc
+    except (ApplicationError, ValueError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 def main() -> None:

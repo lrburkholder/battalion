@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 import io
 import json
 from dataclasses import replace
@@ -22,8 +24,14 @@ from battalion.application import (
     start_worker,
 )
 from battalion.config import BattalionConfig
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunState, RunStatus
 from battalion.state.persistence import load_state
+from battalion.workflow_admission import (
+    AdmissionEvidenceCondition,
+    AdmissionEvidenceReference,
+    AdmissionEvidenceSource,
+    WorkflowAdmissionEvidence,
+)
 from battalion.workers import (
     WorkerRecord,
     WorkerStatus,
@@ -40,14 +48,11 @@ class FakeProcess:
 
 
 def make_state(run_id: str) -> RunState:
-    return RunState(
-        schema_version="1.0",
+    return make_run_state(
         run_id=run_id,
-        ticket_id="BTN-31-test",
-        status=RunStatus.NOT_STARTED,
-        phase="architect",
-        retry_bound=2,
-        budget=Budget(limit=10),
+        ticket_id='BTN-31-test',
+        write_scope={},
+        budget_limit=10,
     )
 
 
@@ -285,6 +290,56 @@ def test_worker_entrypoint_executes_application_boundary_and_records_completion(
     assert captured["command"].initial_state == state
     assert captured["command"].overwrite is True
     assert _read_record(worker_dir / "entrypoint-run.json").status == WorkerStatus.SUCCEEDED
+
+
+def test_resume_worker_preserves_refreshed_admission_evidence(tmp_path, monkeypatch):
+    worker_dir = tmp_path / "workers"
+    record = WorkerRecord(
+        run_id="resume-admitted-run",
+        state_version="1.1",
+        worker_id="resume-worker",
+        operation="resume",
+        status=WorkerStatus.STARTING,
+        pid=7102,
+        started_at="2026-09-01T00:00:00+00:00",
+        updated_at="2026-09-01T00:00:00+00:00",
+        state_path=str(tmp_path / "state" / "resume-admitted-run.json"),
+    )
+    _write_record(worker_dir / "resume-admitted-run.json", record)
+    evidence = WorkflowAdmissionEvidence(
+        work_item_revision="work-item@2",
+        evidence_references=(
+            AdmissionEvidenceReference(
+                evidence_id="work-item",
+                source=AdmissionEvidenceSource.WORK_ITEM,
+                source_revision="work-item@2",
+                condition=AdmissionEvidenceCondition.PRESENT,
+                authoritative=True,
+            ),
+        ),
+    )
+    captured = {}
+
+    def resume(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+
+    monkeypatch.setattr("battalion.application.resume_run", resume)
+    request = {
+        "operation": "resume",
+        "run_id": record.run_id,
+        "worker_id": record.worker_id,
+        "state": None,
+        "config": BattalionConfig().model_dump(mode="json"),
+        "state_dir": str(tmp_path / "state"),
+        "worker_dir": str(worker_dir),
+        "resume_admission_evidence": evidence.model_dump(mode="json"),
+    }
+
+    exit_code = _worker_main(io.BytesIO(json.dumps(request).encode("utf-8")))
+
+    assert exit_code == 0
+    assert captured["command"].current_admission_evidence == evidence
 
 
 def test_malformed_worker_record_is_a_typed_application_failure(tmp_path):

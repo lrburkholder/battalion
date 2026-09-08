@@ -12,7 +12,7 @@ types.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -35,7 +35,10 @@ from battalion.actors import (
     unlink_external_identity as _unlink_external_identity,
 )
 from battalion.config import BattalionConfig
+from battalion.llm.cost_policy import InferencePolicyError, cost_policy_context, validate_cost_policy
+from battalion.scope.tool_binding import WriteScopeMisconfigured, validate_write_scope
 from battalion.execution import summarize_costs
+from battalion.history import HistoryQuery
 from battalion.identity import (
     IdentityError,
     ProjectIdentity,
@@ -71,16 +74,66 @@ from battalion.observation import (
     ObservationSource,
     RunObservationPublisher,
 )
+from battalion.role_results import RoleResultKind
+from battalion.role_results import RoleExecutionResult
+from battalion.recovery import RecoveryAssessment, UnsafeRecoveryError, assess_recovery
 from battalion.state.models import (
     Budget,
+    GraphProgress,
     HumanActionRecord,
     HumanIntervention,
     InterventionKind,
     InterventionTarget,
+    ProgressStage,
+    ResumeIntent,
     RunState,
     RunStatus,
 )
 from battalion.state.persistence import load_state, save_state
+from battalion.workflow_recipes import (
+    DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    WorkflowRecipe,
+    WorkflowRecipeRegistry,
+    WorkflowStage,
+)
+from battalion.workflow_execution import (
+    WorkflowCompletionEvidence,
+    WorkflowExecutionState,
+    WorkflowStageEvidence,
+    WorkflowUpgradeTrigger,
+    record_workflow_stage as _record_workflow_stage,
+    start_workflow_execution as _start_workflow_execution,
+    upgrade_workflow_execution as _upgrade_workflow_execution,
+    upgrade_for_driver_result as _upgrade_for_driver_result,
+    record_workflow_completion as _record_workflow_completion,
+    workflow_is_complete as _workflow_is_complete,
+)
+from battalion.workflow_admission import (
+    AdmissionEvidenceSource,
+    DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    WorkflowAdmissionAssessment,
+    WorkflowAdmissionEvidence,
+    WorkflowAdmissionOutcome,
+    WorkflowAdmissionPolicy,
+    assess_workflow_admission as _assess_workflow_admission,
+)
+from battalion.workflow_admission_decisions import (
+    WorkflowAdmissionDecision,
+    WorkflowAdmissionDisposition,
+)
+from battalion.workflow_admission_state import (
+    InconsistentPersistedWorkflowAdmission,
+    StalePersistedWorkflowAdmission,
+    UnknownPersistedWorkflowRecipe,
+    WorkflowAdmissionRunRecord,
+    validate_persisted_workflow_recipes,
+    validate_workflow_admission_resume,
+)
+from battalion.tactician import (
+    TacticianAssessment,
+    TacticianAssessmentInput,
+    run_tactician as _run_tactician,
+)
 from battalion.workers import (
     DEFAULT_WORKER_DIR,
     WorkerRecord,
@@ -115,6 +168,21 @@ def resume_ticket(*args, **kwargs):
 
 class ApplicationError(Exception):
     """Base class for expected failures exposed to presentation clients."""
+
+
+class InvalidWriteScope(ApplicationError):
+    """The project-relative authority declarations cannot safely be bound."""
+
+
+class InvalidInferencePolicy(ApplicationError):
+    """The configured targets cannot be admitted under the selected policy."""
+
+
+def _validate_write_scope(write_scope: dict[str, list[str]], base_dir: str | Path) -> None:
+    try:
+        validate_write_scope(write_scope, base_dir)
+    except WriteScopeMisconfigured as exc:
+        raise InvalidWriteScope(str(exc)) from exc
 
 
 class InvalidRunId(ApplicationError):
@@ -186,12 +254,41 @@ class HumanActionRejected(ApplicationError):
     """Raised when a requested human action violates durable authority policy."""
 
 
+class WorkflowAdmissionRejected(ApplicationError):
+    """Raised when a human workflow-admission choice is not currently valid."""
+
+
+class StaleWorkflowAdmission(WorkflowAdmissionRejected):
+    """Raised when an assessment no longer matches the supplied current evidence/policy."""
+
+
+class WorkflowAdmissionResumeRejected(WorkflowAdmissionRejected):
+    """Raised when persisted admission state cannot safely resume."""
+
+
 class CandidateReviewFailed(ApplicationError):
     """Raised when candidate review cannot complete through the canonical workflow."""
 
 
 class RunIdentityChanged(IdentityApplicationError):
     """Raised when graph execution attempts to replace canonical identity."""
+
+
+class RunExecutionFailed(ApplicationError):
+    """Execution stopped; the saved checkpoint remains the sole authority."""
+
+    def __init__(self, run_id: str, recovery: RecoveryAssessment) -> None:
+        self.run_id = run_id
+        self.recovery = recovery
+        super().__init__(f"Run {run_id}: {recovery.disposition}. {recovery.message}")
+
+
+class RunRecoverable(RunExecutionFailed):
+    """Retry is safe from the retained checkpoint or authorization intent."""
+
+
+class RunRecoveryUnsafe(RunExecutionFailed):
+    """No automatic replay is permitted with an unknown execution outcome."""
 
 
 class WorkerApplicationError(ApplicationError):
@@ -249,6 +346,8 @@ class ResumeRun:
     config: BattalionConfig
     actor_id: UUID | None = None
     resolution: str = "authorized resume"
+    action_id: str | None = None
+    current_admission_evidence: WorkflowAdmissionEvidence | None = None
 
 
 @dataclass(frozen=True)
@@ -261,6 +360,7 @@ class QueueIntervention:
     text: str
     project_root: str | Path = "."
     actor_id: UUID | None = None
+    action_id: str = field(default_factory=lambda: f"action-{uuid4()}")
 
 
 @dataclass(frozen=True)
@@ -282,6 +382,13 @@ class InspectRun:
 
 
 @dataclass(frozen=True)
+class InspectRunWorkflowAdmission:
+    """Read the durable admission and upgrade evidence for one Run."""
+
+    run_id: str
+
+
+@dataclass(frozen=True)
 class InspectProject:
     """Read-only request for a project's saved-run catalog."""
 
@@ -293,6 +400,166 @@ class InspectIntel:
     """Read-only request for accepted Intel and immutable Recon candidates."""
 
     project_root: str | Path
+
+
+@dataclass(frozen=True)
+class ListWorkflowRecipes:
+    """Read-only request for Battalion-owned registered workflow recipes."""
+
+
+@dataclass(frozen=True)
+class InspectWorkflowRecipe:
+    """Read one exact versioned recipe without graph or storage access."""
+
+    recipe_id: str
+    recipe_version: str
+
+
+@dataclass(frozen=True)
+class StartWorkflowExecution:
+    """Initialize execution from one exact admitted WorkflowRecipe."""
+
+    recipe_id: str
+    recipe_version: str
+
+
+@dataclass(frozen=True)
+class RecordWorkflowStage:
+    """Retain behavioral or review evidence for one selected-recipe stage."""
+
+    execution: WorkflowExecutionState
+    evidence: WorkflowStageEvidence
+
+
+@dataclass(frozen=True)
+class RecordWorkflowCompletion:
+    """Retain required related-review or human-acceptance evidence."""
+
+    execution: WorkflowExecutionState
+    evidence: WorkflowCompletionEvidence
+
+
+@dataclass(frozen=True)
+class InspectWorkflowCompletion:
+    """Determine whether a recipe has all its required execution evidence."""
+
+    execution: WorkflowExecutionState
+
+
+@dataclass(frozen=True)
+class UpgradeWorkflowExecution:
+    """Apply the irreversible compact-to-stronger-workflow policy."""
+
+    execution: WorkflowExecutionState
+    trigger: WorkflowUpgradeTrigger
+    reason: str
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class UpgradeWorkflowForDriverResult:
+    """Apply deterministic compact policy to one validated Driver outcome."""
+
+    execution: WorkflowExecutionState
+    result: RoleExecutionResult
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RecordAdmittedWorkflowStage:
+    """Durably retain one stage result in an admitted Run."""
+
+    run_id: str
+    evidence: WorkflowStageEvidence
+
+
+@dataclass(frozen=True)
+class RecordAdmittedWorkflowCompletion:
+    """Durably retain one ordered completion requirement in an admitted Run."""
+
+    run_id: str
+    evidence: WorkflowCompletionEvidence
+
+
+@dataclass(frozen=True)
+class UpgradeAdmittedWorkflow:
+    """Durably apply the upgrade-only ratchet to an admitted Run."""
+
+    run_id: str
+    trigger: WorkflowUpgradeTrigger
+    reason: str
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class UpgradeAdmittedWorkflowForDriverResult:
+    """Durably apply deterministic upgrade policy from one Driver result."""
+
+    run_id: str
+    result: RoleExecutionResult
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AssessWorkflowAdmission:
+    """Create a deterministic pre-admission assessment from bounded evidence."""
+
+    evidence: WorkflowAdmissionEvidence
+
+
+@dataclass(frozen=True)
+class AssessTactician:
+    """Request an advisory assessment for deterministic admission uncertainty."""
+
+    assessment_input: TacticianAssessmentInput
+    config: BattalionConfig
+
+
+@dataclass(frozen=True)
+class InspectWorkflowAdmissionPolicy:
+    """Read the versioned deterministic admission policy without executing it."""
+
+
+@dataclass(frozen=True)
+class InspectWorkflowAdmission:
+    """Inspect current admission evidence and the choices it can support."""
+
+    assessment: WorkflowAdmissionAssessment
+    evidence: WorkflowAdmissionEvidence
+    tactician_assessment: TacticianAssessment | None = None
+
+
+@dataclass(frozen=True)
+class DecideWorkflowAdmission:
+    """Record an authorized human choice from current admission evidence."""
+
+    project_root: str | Path
+    assessment: WorkflowAdmissionAssessment
+    evidence: WorkflowAdmissionEvidence
+    disposition: WorkflowAdmissionDisposition
+    actor_id: UUID | None = None
+    tactician_assessment: TacticianAssessment | None = None
+    recipe_id: str | None = None
+    recipe_version: str | None = None
+    annotation: str | None = None
+
+
+@dataclass(frozen=True)
+class CreateAdmittedRun:
+    """Authorize and durably create one Run from current admission evidence."""
+
+    ticket_id: str
+    spec: str
+    config: BattalionConfig
+    assessment: WorkflowAdmissionAssessment
+    evidence: WorkflowAdmissionEvidence
+    disposition: WorkflowAdmissionDisposition
+    actor_id: UUID | None = None
+    tactician_assessment: TacticianAssessment | None = None
+    recipe_id: str | None = None
+    recipe_version: str | None = None
+    annotation: str | None = None
+    work_item: WorkItem | None = None
 
 
 @dataclass(frozen=True)
@@ -395,6 +662,10 @@ class RunOperationResult:
     state: RunState
     warning: str | None = None
 
+    @property
+    def recovery(self) -> RecoveryAssessment | None:
+        return assess_recovery(self.state)
+
 
 @dataclass(frozen=True)
 class RunInspection:
@@ -406,6 +677,11 @@ class RunInspection:
     state_path: Path
     state: RunState
     costs: dict[str, object]
+    workflow_admission: WorkflowAdmissionRunInspection | None = None
+
+    @property
+    def recovery(self) -> RecoveryAssessment | None:
+        return assess_recovery(self.state)
 
 
 @dataclass(frozen=True)
@@ -454,6 +730,36 @@ class ExternalIdentityResolution:
 
 
 @dataclass(frozen=True)
+class WorkflowAdmissionInspection:
+    """Current decision surface derived from pre-admission evidence only."""
+
+    assessment: WorkflowAdmissionAssessment
+    tactician_assessment: TacticianAssessment | None
+    available_dispositions: tuple[WorkflowAdmissionDisposition, ...]
+    available_recipes: tuple[WorkflowRecipe, ...]
+    compact_unavailable_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class WorkflowAdmissionDecisionResult:
+    """An authorized admission choice and any exact recipe it selected."""
+
+    decision: WorkflowAdmissionDecision
+    recipe: WorkflowRecipe | None
+
+
+@dataclass(frozen=True)
+class WorkflowAdmissionRunInspection:
+    """Typed history projection for admitted and pre-admission legacy Runs."""
+
+    run_id: str
+    state_path: Path
+    availability: Literal["available", "legacy", "unknown-recipe"]
+    record: WorkflowAdmissionRunRecord | None
+    limitation: str | None = None
+
+
+@dataclass(frozen=True)
 class HumanActionResult:
     """Durable run state produced by an authorized human action."""
 
@@ -498,6 +804,11 @@ def create_initial_state(
     work_item: WorkItem | None = None,
 ) -> RunState:
     """Create one canonical new-run state through the application boundary."""
+    _validate_write_scope(config.write_scope, config.base_dir)
+    try:
+        validate_cost_policy(config.models, config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
     try:
         project = load_project_identity(config.base_dir, create=True)
         _resolve_human_actor(config.base_dir, None)
@@ -517,6 +828,7 @@ def create_initial_state(
         write_scope=config.write_scope,
         retry_bound=2,
         budget=Budget(limit=config.budget_limit, used=0),
+        cost_policy=config.cost_policy,
         reviewer_rejection_history=[],
         interrupt_log=[],
         manual_checkpoints=config.manual_checkpoints,
@@ -564,6 +876,91 @@ def start_work_item_run(
     )
 
 
+def _execute_graph(
+    execute: Callable[..., RunState | dict[str, Any]],
+    *, run_id: str, path: Path, **kwargs: Any,
+) -> RunState:
+    """Translate failure using disk, never save the stale invocation input."""
+    try:
+        result = RunState.model_validate(execute(**kwargs))
+        if result.run_id != run_id:
+            raise RunIdentityChanged(f"Run identity changed from {run_id} to {result.run_id}.")
+        return result
+    except ApplicationError:
+        raise
+    except WriteScopeMisconfigured as exc:
+        raise InvalidWriteScope(str(exc)) from exc
+    except Exception as exc:
+        state = _load_run(run_id, path.parent)
+        recovery = assess_recovery(state)
+        if isinstance(exc, UnsafeRecoveryError):
+            recovery = RecoveryAssessment(
+                "terminal", state.graph_progress.stage if state.graph_progress else None, str(exc),
+            )
+        if recovery is None:
+            recovery = RecoveryAssessment(
+                "recoverable" if state.status is RunStatus.AWAITING_HUMAN else "terminal",
+                state.graph_progress.stage if state.graph_progress else None,
+                "Inspect the saved run and resolve its interrupt before resuming."
+                if state.status is RunStatus.AWAITING_HUMAN else
+                "No safe replay cursor is available. Inspect the saved run and workspace "
+                "before starting a new run.",
+            )
+        error = RunRecoverable if recovery.disposition == "recoverable" else RunRecoveryUnsafe
+        raise error(run_id, recovery) from exc
+
+
+def _prepare_resume(
+    state: RunState, command: ResumeRun, actor: Actor,
+) -> tuple[RunState, bool, str | None]:
+    """Validate replay or atomically pair a new decision with its resume intent."""
+    intent = state.resume_intent
+    identifier = command.action_id
+    if identifier is None and intent is not None and not intent.completed:
+        identifier = intent.action_id
+    if identifier is not None:
+        previous = next((a for a in state.human_action_log if a.action_id == identifier), None)
+        if previous is not None:
+            if (previous.kind != "interrupt-resolution" or previous.actor_id != actor.actor_id
+                    or previous.detail != command.resolution.strip()):
+                raise HumanActionRejected("Resume action ID conflicts with its original authorization")
+            pending = intent is not None and intent.action_id == identifier and not intent.completed
+            if not pending:
+                return state, True, None
+            return state, False, None
+    recovery = assess_recovery(state)
+    if recovery is not None and recovery.disposition == "terminal":
+        raise RunRecoveryUnsafe(state.run_id, recovery)
+    correction_progress = None
+    if state.status is RunStatus.AWAITING_HUMAN:
+        state = _resolve_latest_interrupt(
+            state, actor=actor, resolution=command.resolution, action_id=identifier,
+        )
+        progress = state.graph_progress
+        interrupt = state.interrupt_log[-1] if state.interrupt_log else None
+        if (interrupt is not None and interrupt.trigger == "budget-exceeded" and progress is not None
+                and progress.correction_context is not None
+                and progress.next_node == interrupt.context.get("next_phase")):
+            # Authorizing a budget continuation must not erase the correction
+            # instructions or grant a fresh automatic retry allowance.
+            correction_progress = progress
+    elif (state.status is RunStatus.BLOCKED and state.phase != "recursion_limit_exceeded"
+          and _latest_blocked_role_result(state) is not None):
+        state = _resolve_blocked_role_result(
+            state, actor=actor, resolution=command.resolution, action_id=identifier,
+        )
+    else:
+        return state, False, (
+            recovery.message if recovery else
+            f"Run status is '{state.status.value}', not 'awaiting-human'. Resuming anyway."
+        )
+    return state.model_copy(update={
+        "resume_intent": ResumeIntent(action_id=state.human_action_log[-1].action_id),
+        "graph_progress": correction_progress,
+        "resume_target": None,
+    }), False, None
+
+
 def start_run(
     command: StartRun,
     *,
@@ -576,11 +973,23 @@ def start_run(
 ) -> RunOperationResult:
     """Execute a new run through the graph and persist its resulting state."""
     initial_state = command.initial_state
+    if initial_state.cost_policy is not command.config.cost_policy:
+        raise InvalidInferencePolicy("Initial state cost policy does not match the active configuration")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
+    _validate_write_scope(initial_state.write_scope, command.config.base_dir)
     path = state_path(initial_state.run_id, state_dir)
     if path.exists() and not command.overwrite:
         raise RunAlreadyExists(initial_state.run_id, path)
 
     _register_canonical_run(initial_state, command.config, path)
+    save_state(initial_state.model_copy(update={
+        "graph_progress": GraphProgress(
+            stage=ProgressStage.BEFORE_ATTEMPT, next_node="architect",
+        ),
+    }), path)
 
     execute = _execute or run_ticket
     publisher = (
@@ -594,21 +1003,24 @@ def start_run(
 
     def checkpoint(state: RunState | dict[str, Any]) -> None:
         validated = RunState.model_validate(state)
+        if validated.run_id != initial_state.run_id:
+            raise RunIdentityChanged("Graph checkpoint attempted to change run identity")
         save_state(validated, path)
         if publisher is not None:
             publisher.handle_checkpoint(validated)
 
-    final_state = RunState.model_validate(
-        execute(
+    with cost_policy_context(command.config.cost_policy):
+        final_state = _execute_graph(
+            execute, run_id=initial_state.run_id, path=path,
             initial_state=initial_state,
             llm_configs=command.config.models,
             base_dir=command.config.base_dir,
             prompts_dir=command.config.prompts_dir,
+            reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
             on_node_event=node_callback,
             on_token=token_callback,
             on_state_checkpoint=checkpoint,
         )
-    )
     if final_state.run_id != initial_state.run_id:
         raise RunIdentityChanged(
             f"Run identity changed from {initial_state.run_id} to {final_state.run_id}."
@@ -628,6 +1040,8 @@ def resume_run(
     command: ResumeRun,
     *,
     state_dir: str | Path = DEFAULT_STATE_DIR,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
     integration_runtime: IntegrationRuntime | None = None,
     on_node_event: EventCallback | None = None,
     on_token: EventCallback | None = None,
@@ -636,22 +1050,33 @@ def resume_run(
 ) -> RunOperationResult:
     """Load, resume through the canonical graph behavior, and save one run."""
     state = _load_run(command.run_id, state_dir)
+    if state.cost_policy is not command.config.cost_policy:
+        raise InvalidInferencePolicy("Resume configuration cannot change a run's durable cost policy")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
+    if state.workflow_admission is not None:
+        _validate_admitted_resume(
+            state.workflow_admission,
+            current_evidence=command.current_admission_evidence,
+            policy=policy,
+            registry=registry,
+        )
+    _validate_write_scope(state.write_scope, command.config.base_dir)
     actor = _resolve_human_actor(command.config.base_dir, command.actor_id)
-    warning = None
-    if state.status == RunStatus.AWAITING_HUMAN:
-        state = _resolve_latest_interrupt(
-            state,
-            actor=actor,
-            resolution=command.resolution,
+    state, replayed, warning = _prepare_resume(state, command, actor)
+    path = state_path(command.run_id, state_dir)
+    if replayed:
+        return RunOperationResult(
+            state.run_id, state.run_alias, state.schema_version, path, state,
         )
-        save_state(state, state_path(command.run_id, state_dir))
-    else:
-        warning = (
-            f"Run status is '{state.status.value}', not 'awaiting-human'. Resuming anyway."
-        )
+    recovery = assess_recovery(state)
+    if recovery is not None and recovery.disposition == "terminal":
+        raise RunRecoveryUnsafe(state.run_id, recovery)
+    save_state(state, path)
 
     execute = _execute or resume_ticket
-    path = state_path(command.run_id, state_dir)
     publisher = (
         RunObservationPublisher(state.run_id, on_observation)
         if on_observation is not None
@@ -663,21 +1088,24 @@ def resume_run(
 
     def checkpoint(checkpoint_state: RunState | dict[str, Any]) -> None:
         validated = RunState.model_validate(checkpoint_state)
+        if validated.run_id != state.run_id:
+            raise RunIdentityChanged("Graph checkpoint attempted to change run identity")
         save_state(validated, path)
         if publisher is not None:
             publisher.handle_checkpoint(validated)
 
-    final_state = RunState.model_validate(
-        execute(
+    with cost_policy_context(command.config.cost_policy):
+        final_state = _execute_graph(
+            execute, run_id=state.run_id, path=path,
             state=state,
             llm_configs=command.config.models,
             base_dir=command.config.base_dir,
             prompts_dir=command.config.prompts_dir,
+            reviewer_test_timeout_seconds=command.config.reviewer_test_timeout_seconds,
             on_node_event=node_callback,
             on_token=token_callback,
             on_state_checkpoint=checkpoint,
         )
-    )
     if final_state.run_id != state.run_id:
         raise RunIdentityChanged(
             f"Run identity changed from {state.run_id} to {final_state.run_id}."
@@ -732,18 +1160,105 @@ def _publish_durable_outbound_events(
             continue
 
 
+def _validate_admitted_resume(
+    record: WorkflowAdmissionRunRecord,
+    *,
+    current_evidence: WorkflowAdmissionEvidence | None,
+    policy: WorkflowAdmissionPolicy,
+    registry: WorkflowRecipeRegistry,
+) -> WorkflowExecutionState:
+    """Translate persisted admission failures at the application boundary."""
+
+    try:
+        execution = validate_workflow_admission_resume(
+            record,
+            registry=registry,
+            policy=policy,
+            current_evidence=current_evidence,
+        )
+    except StalePersistedWorkflowAdmission as exc:
+        raise StaleWorkflowAdmission(str(exc)) from exc
+    except UnknownPersistedWorkflowRecipe as exc:
+        raise WorkflowAdmissionResumeRejected(str(exc)) from exc
+    except InconsistentPersistedWorkflowAdmission as exc:
+        raise WorkflowAdmissionResumeRejected(str(exc)) from exc
+    if execution.upgrade_target is not None:
+        target = execution.upgrade_target.value
+        raise WorkflowAdmissionResumeRejected(
+            f"the admitted workflow upgraded to {target!r}; its persisted continuation "
+            "requires recipe-specific stronger handling, not the v1 resume graph"
+        )
+    elif execution.recipe_id != "full-implementation-run":
+        raise WorkflowAdmissionResumeRejected(
+            "the persisted compact recipe cannot be resumed through the full-workflow graph"
+        )
+    return execution
+
+
 def inspect_run(
     query: InspectRun, *, state_dir: str | Path = DEFAULT_STATE_DIR
 ) -> RunInspection:
     """Load authoritative state and derive its current cost projection."""
     state = _load_run(query.run_id, state_dir)
+    path = state_path(query.run_id, state_dir)
     return RunInspection(
         run_id=state.run_id,
         run_alias=state.run_alias,
         state_version=state.schema_version,
-        state_path=state_path(query.run_id, state_dir),
+        state_path=path,
         state=state,
         costs=summarize_costs(state.execution_record),
+        workflow_admission=_workflow_admission_run_inspection(
+            state, path, registry=DEFAULT_WORKFLOW_RECIPE_REGISTRY
+        ),
+    )
+
+
+def inspect_run_workflow_admission(
+    query: InspectRunWorkflowAdmission,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowAdmissionRunInspection:
+    """Expose durable admission and upgrade history without storage access."""
+
+    state = _load_run(query.run_id, state_dir)
+    path = state_path(query.run_id, state_dir)
+    return _workflow_admission_run_inspection(state, path, registry=registry)
+
+
+def _workflow_admission_run_inspection(
+    state: RunState,
+    path: Path,
+    *,
+    registry: WorkflowRecipeRegistry,
+) -> WorkflowAdmissionRunInspection:
+    """Build the shared durable admission projection from validated state."""
+
+    record = state.workflow_admission
+    if record is None:
+        return WorkflowAdmissionRunInspection(
+            run_id=state.run_id,
+            state_path=path,
+            availability="legacy",
+            record=None,
+            limitation="Run predates durable workflow admission.",
+        )
+    try:
+        validate_persisted_workflow_recipes(record, registry=registry)
+    except UnknownPersistedWorkflowRecipe as exc:
+        return WorkflowAdmissionRunInspection(
+            run_id=state.run_id,
+            state_path=path,
+            availability="unknown-recipe",
+            record=record,
+            limitation=str(exc),
+        )
+    return WorkflowAdmissionRunInspection(
+        run_id=state.run_id,
+        state_path=path,
+        availability="available",
+        record=record,
     )
 
 
@@ -757,10 +1272,64 @@ def inspect_project(query: InspectProject) -> ProjectInspection:
         raise ProjectReadFailed(root, exc) from exc
 
     entries = _discover_desktop_runs(root, catalog)
-    runs = tuple(
-        _inspect_catalog_entry(root, entry, identity) for entry in entries
-    )
+    runs = tuple(_inspect_catalog_entry(root, entry, identity) for entry in entries)
     return ProjectInspection(project_root=root, identity=identity, runs=runs)
+
+
+def query_history(
+    project_root: str | Path,
+    query: HistoryQuery | None = None,
+    *,
+    dimension: str | None = None,
+    rebuild: bool = False,
+) -> dict:
+    """Search/aggregate canonical project evidence through a disposable index.
+
+    Rebuild is explicit authorization to replace unrecognized projection bytes.
+    Malformed and inaccessible canonical sources remain visible as limitations.
+    """
+    from hashlib import sha256
+    import json
+    import sqlite3
+
+    from battalion.history import IDENTITY_FIELDS, aggregate_attempts, link_intel, project_run
+    from battalion.history_store import HistoryStore
+
+    query = query or HistoryQuery()
+    if dimension is not None and dimension not in IDENTITY_FIELDS:
+        raise ApplicationError(f"Dimension must be one of: {', '.join(IDENTITY_FIELDS)}")
+    project = inspect_project(InspectProject(project_root=project_root))
+    rows = []
+    limitations = []
+    for run in project.runs:
+        if run.inspection is None:
+            limitations.append({"run_id": run.catalog_entry.run_id,
+                                "availability": run.availability, "detail": run.limitation})
+        else:
+            rows.extend(project_run(run.inspection.state, str(run.inspection.state_path)))
+    try:
+        intel = inspect_intel(InspectIntel(project_root=project_root))
+    except IntelReadFailed as exc:
+        limitations.append({"availability": "intel-unavailable", "detail": str(exc)})
+    else:
+        link_intel(rows, (*intel.accepted, *intel.candidates))
+    rows.sort(key=lambda row: (row["ticket_id"], row["run_id"]))
+    fingerprint = sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
+    store = HistoryStore(project.project_root / ".battalion" / "projections" / "history.sqlite")
+    if any(not path.resolve().is_relative_to(project.project_root)
+           for path in (store.path, store.receipt)):
+        raise ApplicationError("History projection paths must remain inside the project")
+    try:
+        with store.locked():
+            store.refresh(rows, fingerprint, replace=rebuild)
+            total, matches = store.search(query, paginate=dimension is None)
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        raise ApplicationError(f"History projection: {exc}") from exc
+    result = aggregate_attempts(matches, dimension) if dimension else {
+        "total": total, "limit": query.limit, "offset": query.offset, "results": matches,
+    }
+    return {**result, "selection": query.selection(),
+            "limitations": limitations, "projection_path": str(store.path)}
 
 
 def establish_local_actor(command: BootstrapLocalActor) -> ActorInspection:
@@ -852,6 +1421,542 @@ def inspect_intel(query: InspectIntel) -> IntelInspection:
     )
 
 
+def list_workflow_recipes(
+    query: ListWorkflowRecipes,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> tuple[WorkflowRecipe, ...]:
+    """Enumerate finite policy artifacts through the application boundary."""
+    del query
+    return registry.list()
+
+
+def inspect_workflow_recipe(
+    query: InspectWorkflowRecipe,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowRecipe:
+    """Inspect exact registered recipe semantics without selecting a graph."""
+    return registry.resolve(query.recipe_id, query.recipe_version)
+
+
+def start_workflow_execution(
+    command: StartWorkflowExecution,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Initialize exact registered recipe semantics through application policy."""
+    return _start_workflow_execution(registry.resolve(command.recipe_id, command.recipe_version))
+
+
+def record_workflow_stage(
+    command: RecordWorkflowStage,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Record stage evidence without presentation or graph mutation."""
+    return _record_workflow_stage(command.execution, command.evidence, registry=registry)
+
+
+def record_workflow_completion(
+    command: RecordWorkflowCompletion,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Record a bounded completion requirement through application policy."""
+    return _record_workflow_completion(command.execution, command.evidence, registry=registry)
+
+
+def workflow_is_complete(
+    query: InspectWorkflowCompletion,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> bool:
+    """Inspect completion without graph dispatch or persistence access."""
+    return _workflow_is_complete(query.execution, registry=registry)
+
+
+def upgrade_workflow_execution(
+    command: UpgradeWorkflowExecution,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Apply deterministic upgrade policy through the shared application boundary."""
+    return _upgrade_workflow_execution(
+        command.execution,
+        trigger=command.trigger,
+        reason=command.reason,
+        evidence_ids=command.evidence_ids,
+        registry=registry,
+    )
+
+
+def upgrade_workflow_for_driver_result(
+    command: UpgradeWorkflowForDriverResult,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowExecutionState:
+    """Consume a typed Driver outcome without letting it select workflow policy."""
+    return _upgrade_for_driver_result(
+        command.execution,
+        command.result,
+        evidence_ids=command.evidence_ids,
+        registry=registry,
+    )
+
+
+def record_admitted_workflow_stage(
+    command: RecordAdmittedWorkflowStage,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Apply one recipe stage transition and atomically save its evidence."""
+
+    return _persist_admitted_workflow_execution(
+        command.run_id,
+        state_dir=state_dir,
+        registry=registry,
+        transition=lambda execution: _record_workflow_stage(
+            execution, command.evidence, registry=registry
+        ),
+    )
+
+
+def record_admitted_workflow_completion(
+    command: RecordAdmittedWorkflowCompletion,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Apply one ordered completion transition and save its evidence."""
+
+    return _persist_admitted_workflow_execution(
+        command.run_id,
+        state_dir=state_dir,
+        registry=registry,
+        transition=lambda execution: _record_workflow_completion(
+            execution, command.evidence, registry=registry
+        ),
+    )
+
+
+def upgrade_admitted_workflow(
+    command: UpgradeAdmittedWorkflow,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Persist the first irreversible compact-to-stronger transition."""
+
+    return _persist_admitted_workflow_execution(
+        command.run_id,
+        state_dir=state_dir,
+        registry=registry,
+        transition=lambda execution: _upgrade_workflow_execution(
+            execution,
+            trigger=command.trigger,
+            reason=command.reason,
+            evidence_ids=command.evidence_ids,
+            registry=registry,
+        ),
+    )
+
+
+def upgrade_admitted_workflow_for_driver_result(
+    command: UpgradeAdmittedWorkflowForDriverResult,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Persist deterministic compact ratchet policy from a Driver result."""
+
+    return _persist_admitted_workflow_execution(
+        command.run_id,
+        state_dir=state_dir,
+        registry=registry,
+        transition=lambda execution: _upgrade_for_driver_result(
+            execution,
+            command.result,
+            evidence_ids=command.evidence_ids,
+            registry=registry,
+        ),
+    )
+
+
+def _persist_admitted_workflow_execution(
+    run_id: str,
+    *,
+    state_dir: str | Path,
+    registry: WorkflowRecipeRegistry,
+    transition: Callable[[WorkflowExecutionState], WorkflowExecutionState],
+) -> RunOperationResult:
+    """Load, validate, transition, and save one admission-owned execution record."""
+
+    state = _load_run(run_id, state_dir)
+    record = state.workflow_admission
+    if record is None:
+        raise WorkflowAdmissionRejected(
+            "legacy Run has no durable workflow admission to update"
+        )
+    recovery = assess_recovery(state)
+    if state.status is RunStatus.DONE or (
+        recovery is not None and recovery.disposition == "terminal"
+    ):
+        raise WorkflowAdmissionRejected(
+            "terminal Run admission and execution evidence is immutable"
+        )
+    try:
+        validate_persisted_workflow_recipes(record, registry=registry)
+    except UnknownPersistedWorkflowRecipe as exc:
+        raise WorkflowAdmissionRejected(str(exc)) from exc
+    execution = transition(record.execution)
+    updated_record = WorkflowAdmissionRunRecord.model_validate(
+        record.model_copy(update={"execution": execution}).model_dump()
+    )
+    updated_state = RunState.model_validate(
+        state.model_copy(update={"workflow_admission": updated_record}).model_dump()
+    )
+    path = state_path(run_id, state_dir)
+    save_state(updated_state, path)
+    return RunOperationResult(
+        run_id=updated_state.run_id,
+        run_alias=updated_state.run_alias,
+        state_version=updated_state.schema_version,
+        state_path=path,
+        state=updated_state,
+    )
+
+
+def assess_workflow_admission(
+    command: AssessWorkflowAdmission,
+    *,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+) -> WorkflowAdmissionAssessment:
+    """Assess admission evidence through the application boundary, without model IO."""
+    return _assess_workflow_admission(command.evidence, policy=policy)
+
+
+def assess_tactician(
+    command: AssessTactician,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    call_llm_fn: Callable[..., Any] | None = None,
+) -> TacticianAssessment:
+    """Run Tactician through normal model resolution, never graph dispatch.
+
+    The ``tactician`` configuration is optional and inherits ``default`` when
+    absent.  The role cannot select a model itself; provider failure leaves no
+    assessment capable of authorizing compact execution.
+    """
+    llm_config = (
+        command.config.models.get("tactician")
+        or command.config.models.get("default")
+    )
+    if llm_config is None:
+        raise ApplicationError("No Tactician or default model is configured")
+    try:
+        validate_cost_policy(command.config.models, command.config.cost_policy)
+    except InferencePolicyError as exc:
+        raise InvalidInferencePolicy(str(exc)) from exc
+    kwargs: dict[str, Any] = {"registry": registry}
+    if call_llm_fn is not None:
+        kwargs["call_llm_fn"] = call_llm_fn
+    with cost_policy_context(command.config.cost_policy):
+        return _run_tactician(command.assessment_input, llm_config, **kwargs)
+
+
+def inspect_workflow_admission_policy(
+    query: InspectWorkflowAdmissionPolicy,
+    *,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+) -> WorkflowAdmissionPolicy:
+    """Inspect admission policy without graph, persistence, provider, or model access."""
+    del query
+    return policy
+
+
+def inspect_workflow_admission(
+    query: InspectWorkflowAdmission,
+    *,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> WorkflowAdmissionInspection:
+    """Inspect the current human decision surface without authorizing a choice."""
+    assessment = _require_current_workflow_assessment(
+        query.assessment, query.evidence, policy
+    )
+    _validate_tactician_assessment(assessment, query.tactician_assessment)
+    compact_reason = _compact_unavailable_reason(assessment, query.tactician_assessment)
+    choices = [
+        WorkflowAdmissionDisposition.FULL,
+        WorkflowAdmissionDisposition.CLARIFICATION,
+        WorkflowAdmissionDisposition.CANCELLED,
+    ]
+    if compact_reason is None:
+        choices.insert(1, WorkflowAdmissionDisposition.COMPACT)
+    recipe_ids = [policy.full_recipe_id]
+    if WorkflowAdmissionDisposition.COMPACT in choices:
+        recipe_ids = [*policy.compact_recipe_ids, *recipe_ids]
+    recipes = tuple(
+        recipe
+        for recipe_id in recipe_ids
+        for recipe in registry.versions(recipe_id)
+    )
+    return WorkflowAdmissionInspection(
+        assessment=assessment,
+        tactician_assessment=query.tactician_assessment,
+        available_dispositions=tuple(choices),
+        available_recipes=recipes,
+        compact_unavailable_reason=compact_reason,
+    )
+
+
+def decide_workflow_admission(
+    command: DecideWorkflowAdmission,
+    *,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    _clock: Callable[[], datetime] | None = None,
+    _decision_id: str | None = None,
+) -> WorkflowAdmissionDecisionResult:
+    """Authorize and record one human workflow choice without graph dispatch."""
+    assessment = _require_current_workflow_assessment(
+        command.assessment, command.evidence, policy
+    )
+    _validate_tactician_assessment(assessment, command.tactician_assessment)
+    actor = _resolve_human_actor(command.project_root, command.actor_id)
+    recipe = _recipe_for_admission_choice(command, assessment, policy, registry)
+    risk_flags = set(assessment.hard_risk_flags)
+    if command.tactician_assessment is not None:
+        risk_flags.update(command.tactician_assessment.risk_flags)
+    occurred_at = (_clock or (lambda: datetime.now(timezone.utc)))()
+    try:
+        decision = WorkflowAdmissionDecision(
+            decision_id=_decision_id or f"admission-{uuid4()}",
+            disposition=command.disposition,
+            admission_assessment_id=assessment.assessment_id,
+            tactician_assessment_id=(
+                command.tactician_assessment.assessment_id
+                if command.tactician_assessment is not None
+                else None
+            ),
+            selected_recipe_id=recipe.recipe_id if recipe is not None else None,
+            selected_recipe_version=recipe.recipe_version if recipe is not None else None,
+            approving_actor_id=actor.actor_id,
+            approving_actor_display_name=actor.display_name,
+            occurred_at=occurred_at,
+            work_item_revision=assessment.work_item_revision,
+            specification_revision=assessment.specification_revision,
+            policy_id=assessment.policy_id,
+            policy_version=assessment.policy_version,
+            admitted_risk_flags=tuple(risk_flags),
+            annotation=command.annotation,
+        )
+    except ValueError as exc:
+        raise WorkflowAdmissionRejected(str(exc)) from exc
+    return WorkflowAdmissionDecisionResult(decision=decision, recipe=recipe)
+
+
+def create_admitted_run(
+    command: CreateAdmittedRun,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    _clock: Callable[[], datetime] | None = None,
+    _decision_id: str | None = None,
+) -> RunOperationResult:
+    """Authorize, link, catalog, and persist an admitted Run before execution."""
+
+    decision_result = decide_workflow_admission(
+        DecideWorkflowAdmission(
+            project_root=command.config.base_dir,
+            assessment=command.assessment,
+            evidence=command.evidence,
+            disposition=command.disposition,
+            actor_id=command.actor_id,
+            tactician_assessment=command.tactician_assessment,
+            recipe_id=command.recipe_id,
+            recipe_version=command.recipe_version,
+            annotation=command.annotation,
+        ),
+        policy=policy,
+        registry=registry,
+        _clock=_clock,
+        _decision_id=_decision_id,
+    )
+    recipe = decision_result.recipe
+    if recipe is None:
+        raise WorkflowAdmissionRejected(
+            "clarification or cancellation does not create an executable Run"
+        )
+    initial = create_initial_state(
+        command.ticket_id,
+        command.spec,
+        command.config,
+        work_item=command.work_item,
+    )
+    first_stage = recipe.stages[0]
+    if first_stage is WorkflowStage.ARCHITECTURE:
+        initial_phase = "architect"
+    elif first_stage is WorkflowStage.DRIVER_RED:
+        initial_phase = "driver_red"
+    else:
+        raise WorkflowAdmissionRejected(
+            f"workflow recipe {recipe.recipe_id!r} starts at unsupported stage "
+            f"{first_stage.value!r}"
+        )
+    record = WorkflowAdmissionRunRecord(
+        assessment=command.assessment,
+        tactician_assessment=command.tactician_assessment,
+        decision=decision_result.decision,
+        execution=_start_workflow_execution(recipe),
+    )
+    state = RunState.model_validate(
+        initial.model_copy(
+            update={
+                "schema_version": "1.1",
+                "phase": initial_phase,
+                "workflow_admission": record,
+            }
+        ).model_dump()
+    )
+    path = state_path(state.run_id, state_dir)
+    if path.exists():
+        raise RunAlreadyExists(state.run_id, path)
+    _register_canonical_run(state, command.config, path)
+    save_state(state, path)
+    return RunOperationResult(
+        run_id=state.run_id,
+        run_alias=state.run_alias,
+        state_version=state.schema_version,
+        state_path=path,
+        state=state,
+    )
+
+
+def _require_current_workflow_assessment(
+    supplied: WorkflowAdmissionAssessment,
+    evidence: WorkflowAdmissionEvidence,
+    policy: WorkflowAdmissionPolicy,
+) -> WorkflowAdmissionAssessment:
+    """Fail closed when current evidence or policy differs from the assessment."""
+    current = _assess_workflow_admission(evidence, policy=policy)
+    if supplied != current:
+        raise StaleWorkflowAdmission(
+            "Admission assessment is stale or does not match current evidence and policy; "
+            "reassess before choosing a workflow"
+        )
+    return current
+
+
+def _validate_tactician_assessment(
+    assessment: WorkflowAdmissionAssessment,
+    tactician_assessment: TacticianAssessment | None,
+) -> None:
+    """Ensure advisory evidence belongs to the current uncertain admission input."""
+    if tactician_assessment is None:
+        return
+    if assessment.outcome is not WorkflowAdmissionOutcome.UNCERTAIN:
+        raise WorkflowAdmissionRejected(
+            "Tactician evidence is valid only for an uncertain deterministic admission"
+        )
+    references = {
+        reference.evidence_id: reference for reference in assessment.evidence_references
+    }
+    for reference in tactician_assessment.input_evidence_references:
+        current = references.get(reference.evidence_id)
+        if current is None or (
+            current.source is not reference.source
+            or current.source_revision != reference.source_revision
+        ):
+            raise WorkflowAdmissionRejected(
+                "Tactician evidence does not match the current admission assessment"
+            )
+    if not any(
+        reference.source is AdmissionEvidenceSource.WORK_ITEM
+        and reference.source_revision == assessment.work_item_revision
+        for reference in tactician_assessment.input_evidence_references
+    ):
+        raise WorkflowAdmissionRejected(
+            "Tactician evidence must include the assessed work-item revision"
+        )
+    if assessment.specification_revision is not None and not any(
+        reference.source is AdmissionEvidenceSource.SPECIFICATION
+        and reference.source_revision == assessment.specification_revision
+        for reference in tactician_assessment.input_evidence_references
+    ):
+        raise WorkflowAdmissionRejected(
+            "Tactician evidence must include the assessed specification revision"
+        )
+
+
+def _compact_unavailable_reason(
+    assessment: WorkflowAdmissionAssessment,
+    tactician_assessment: TacticianAssessment | None,
+) -> str | None:
+    if assessment.outcome is WorkflowAdmissionOutcome.FULL_REQUIRED:
+        return "Deterministic admission requires the full workflow"
+    if (
+        assessment.outcome is WorkflowAdmissionOutcome.UNCERTAIN
+        and tactician_assessment is None
+    ):
+        return (
+            "Uncertain admission requires a Tactician assessment before compact may be chosen"
+        )
+    return None
+
+
+def _recipe_for_admission_choice(
+    command: DecideWorkflowAdmission,
+    assessment: WorkflowAdmissionAssessment,
+    policy: WorkflowAdmissionPolicy,
+    registry: WorkflowRecipeRegistry,
+) -> WorkflowRecipe | None:
+    """Resolve an exact registered recipe only for a valid execution choice."""
+    if command.disposition in {
+        WorkflowAdmissionDisposition.CLARIFICATION,
+        WorkflowAdmissionDisposition.CANCELLED,
+    }:
+        if command.recipe_id is not None or command.recipe_version is not None:
+            raise WorkflowAdmissionRejected(
+                "Clarification and cancellation cannot select an execution recipe"
+            )
+        return None
+    if command.disposition is WorkflowAdmissionDisposition.FULL:
+        expected_recipe_id = policy.full_recipe_id
+        if command.recipe_id is not None and command.recipe_id != expected_recipe_id:
+            raise WorkflowAdmissionRejected(
+                "Full admission must select the policy's full workflow recipe"
+            )
+        recipe_id = expected_recipe_id
+    else:
+        reason = _compact_unavailable_reason(assessment, command.tactician_assessment)
+        if reason is not None:
+            raise WorkflowAdmissionRejected(reason)
+        if command.recipe_id is None:
+            if len(policy.compact_recipe_ids) != 1:
+                raise WorkflowAdmissionRejected(
+                    "Compact admission requires an explicit recipe when policy offers multiple recipes"
+                )
+            recipe_id = policy.compact_recipe_ids[0]
+        else:
+            recipe_id = command.recipe_id
+        if recipe_id not in policy.compact_recipe_ids:
+            raise WorkflowAdmissionRejected(
+                "Compact admission must select a policy-declared compact recipe"
+            )
+    try:
+        return (
+            registry.resolve(recipe_id, command.recipe_version)
+            if command.recipe_version is not None
+            else registry.resolve_unversioned(recipe_id)
+        )
+    except ValueError as exc:
+        raise WorkflowAdmissionRejected(str(exc)) from exc
+
+
 def _actor_inspection(registry: ActorRegistry) -> ActorInspection:
     local = next(
         (actor for actor in registry.actors if actor.actor_id == registry.local_actor_id),
@@ -921,7 +2026,15 @@ def _persist_intervention(
     state = _load_run(command.run_id, state_dir)
     actor = _resolve_human_actor(command.project_root, command.actor_id)
     occurred_at = (clock or (lambda: datetime.now(timezone.utc)))()
-    identifier = action_id or f"action-{uuid4()}"
+    identifier = action_id or command.action_id
+    previous = next((a for a in state.human_action_log if a.action_id == identifier), None)
+    if previous is not None:
+        if (previous.actor_id != actor.actor_id or previous.kind != command.kind
+                or previous.target != command.target or previous.detail != command.text):
+            raise HumanActionRejected("Intervention action ID conflicts with its original request")
+        return HumanActionResult(
+            action=previous, state=state, state_path=state_path(command.run_id, state_dir),
+        )
     try:
         kind = InterventionKind(command.kind)
         target = InterventionTarget(command.target)
@@ -1022,10 +2135,13 @@ def start_worker(
     *,
     state_dir: str | Path = DEFAULT_STATE_DIR,
     worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    policy: WorkflowAdmissionPolicy = DEFAULT_WORKFLOW_ADMISSION_POLICY,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
 ) -> WorkerRecord:
     """Start one isolated process without exposing process handles to clients."""
     operation = command.command
     if isinstance(operation, StartRun):
+        _validate_write_scope(operation.initial_state.write_scope, operation.config.base_dir)
         run_id = operation.initial_state.run_id
         path = state_path(run_id, state_dir)
         if path.exists() and not operation.overwrite:
@@ -1050,17 +2166,21 @@ def start_worker(
 
     state_path(operation.run_id, state_dir)  # validate before using it as a filename
     state = _load_run(operation.run_id, state_dir)
+    if state.workflow_admission is not None:
+        _validate_admitted_resume(
+            state.workflow_admission,
+            current_evidence=operation.current_admission_evidence,
+            policy=policy,
+            registry=registry,
+        )
+    _validate_write_scope(state.write_scope, operation.config.base_dir)
     actor = _resolve_human_actor(operation.config.base_dir, operation.actor_id)
     if not operation.resolution.strip():
         raise HumanActionRejected("Interrupt resolution must not be empty")
-    if state.status is RunStatus.AWAITING_HUMAN:
-        # Validate the durable resolution target before starting a process;
-        # the worker performs and persists the actual state transition.
-        _resolve_latest_interrupt(
-            state,
-            actor=actor,
-            resolution=operation.resolution,
-        )
+    prepared, _, _ = _prepare_resume(state, operation, actor)
+    recovery = assess_recovery(prepared)
+    if recovery is not None and recovery.disposition == "terminal":
+        raise RunRecoveryUnsafe(state.run_id, recovery)
     try:
         return launch_worker(
             operation="resume",
@@ -1072,6 +2192,12 @@ def start_worker(
             worker_dir=worker_dir,
             resume_actor_id=actor.actor_id,
             resume_resolution=operation.resolution,
+            resume_action_id=(
+                operation.action_id or
+                (prepared.resume_intent.action_id
+                 if prepared.resume_intent and not prepared.resume_intent.completed else None)
+            ),
+            resume_admission_evidence=operation.current_admission_evidence,
         )
     except _WorkerAlreadyActive as exc:
         raise WorkerAlreadyActive(str(exc)) from exc
@@ -1191,6 +2317,54 @@ def _resolve_latest_interrupt(
     })
 
 
+def _latest_blocked_role_result(state: RunState):
+    """Return the latest typed blocked attempt, if this is a BTN-133 pause."""
+    for execution in reversed(state.execution_record.node_executions):
+        if (
+            execution.role_result is not None
+            and execution.role_result.kind is RoleResultKind.BLOCKED
+        ):
+            return execution
+    return None
+
+
+def _resolve_blocked_role_result(
+    state: RunState,
+    *,
+    actor: Actor,
+    resolution: str,
+    occurred_at: datetime | None = None,
+    action_id: str | None = None,
+) -> RunState:
+    """Record a human confirmation before retrying a typed blocked attempt."""
+    blocked = _latest_blocked_role_result(state)
+    if blocked is None:
+        raise HumanActionRejected("The blocked run has no typed role result")
+    if not resolution.strip():
+        raise HumanActionRejected("Blocked-result resolution must not be empty")
+    timestamp = occurred_at or datetime.now(timezone.utc)
+    identifier = action_id or f"action-{uuid4()}"
+    try:
+        action = HumanActionRecord(
+            action_id=identifier,
+            kind="interrupt-resolution",
+            actor=actor.display_name,
+            actor_id=actor.actor_id,
+            occurred_at=timestamp,
+            target=f"role-result:{blocked.execution_id}",
+            disposition="applied",
+            detail=resolution.strip(),
+            resulting_state_version=state.schema_version,
+            resulting_status=state.status,
+            resulting_phase=state.phase,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HumanActionRejected(str(exc)) from exc
+    return state.model_copy(update={
+        "human_action_log": [*state.human_action_log, action],
+    })
+
+
 def _load_run(run_id: str, state_dir: str | Path) -> RunState:
     path = state_path(run_id, state_dir)
     if not path.exists():
@@ -1202,7 +2376,11 @@ def _load_run(run_id: str, state_dir: str | Path) -> RunState:
 
 
 def _inspect_catalog_entry(
-    project_root: Path, entry: RunCatalogEntry, identity: ProjectIdentity
+    project_root: Path,
+    entry: RunCatalogEntry,
+    identity: ProjectIdentity,
+    *,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
 ) -> ProjectRunInspection:
     path = Path(entry.state_path)
     if not path.is_absolute():
@@ -1249,6 +2427,9 @@ def _inspect_catalog_entry(
             state_path=path,
             state=state,
             costs=summarize_costs(state.execution_record),
+            workflow_admission=_workflow_admission_run_inspection(
+                state, path, registry=registry
+            ),
         ),
     )
 

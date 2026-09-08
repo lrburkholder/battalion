@@ -25,7 +25,7 @@ from battalion.integrations.runtime import (
     TransportResponse,
 )
 from battalion.state.models import RunStatus
-from conftest import make_run_state
+from support.state import make_run_state
 
 
 NOW = datetime(2026, 8, 27, 12, 0, 0, tzinfo=timezone.utc)

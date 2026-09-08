@@ -1,24 +1,24 @@
 """Tests for battalion.state.persistence — local JSON save/load (BTN-1)."""
+from support.state import make_run_state
+
 import json
 
 import pytest
 from pydantic import ValidationError
 
-from battalion.state.models import Budget, InterruptLogEntry, RunState, RunStatus
+from battalion.state.models import InterruptLogEntry, RunState, RunStatus
 from battalion.state.persistence import load_state, save_state
 
 
 def make_state():
-    return RunState(
-        schema_version="1.0",
-        run_id="run-001",
-        ticket_id="BTN-1",
-        spec="Persist this specification across invocations.",
+    return make_run_state(
+        run_id='run-001',
+        ticket_id='BTN-1',
+        spec='Persist this specification across invocations.',
         status=RunStatus.IN_PROGRESS,
-        phase="driver",
-        write_scope={"driver": ["src/"]},
-        retry_bound=2,
-        budget=Budget(limit=100, used=5),
+        phase='driver',
+        write_scope={'driver': ['src/']},
+        budget_used=5,
     )
 
 

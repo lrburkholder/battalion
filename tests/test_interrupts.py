@@ -37,18 +37,12 @@ from battalion.interrupts.triggers import (
 from battalion.llm.litellm_client import InfraFailure
 from battalion.nodes.errors import RoleOutputError
 from battalion.scope.tool_binding import ScopeViolationError
-from battalion.state.models import (
-    Budget,
-    CheckpointType,
-    RejectionRecord,
-    RunState,
-    RunStatus,
-)
+from battalion.state.models import CheckpointType, RejectionRecord, RunState, RunStatus
 
 
 # --- Fixtures ---
 
-from conftest import make_run_state
+from support.state import make_run_state
 
 def make_state(
     budget_used: int = 0,
@@ -310,19 +304,6 @@ class TestTrigger6ManualCheckpoint:
 # =============================================================================
 
 class TestCheckAnyTrigger:
-    def test_role_output_failure_has_distinct_durable_context(self):
-        fired, trigger_id, context = check_any_trigger(
-            make_state(),
-            error=RoleOutputError("GREEN mode must not produce test files"),
-        )
-
-        assert fired is True
-        assert trigger_id == TRIGGER_INFRA_FAILURE
-        assert context == {
-            "error": "GREEN mode must not produce test files",
-            "failure_kind": "role-output",
-        }
-
     def test_manual_checkpoint_highest_priority(self):
         """Manual checkpoint (trigger #6) should take precedence over all others."""
         state = make_state(

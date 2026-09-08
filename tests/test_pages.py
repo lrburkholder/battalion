@@ -46,7 +46,7 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "plan.md",
             "spec.md",
             "docs/adrs/index.md",
-                *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 32)},
+            *{f"docs/adrs/adr{number:04d}.md" for number in range(1, 41)},
             "docs/rfcs/rfc0004.md",
             "docs/operator/workflow.md",
             "docs/operator/screens.md",
@@ -54,12 +54,22 @@ def test_pages_builder_stages_only_approved_content() -> None:
             "docs/rfcs/rfc0005.md",
             "docs/rfcs/rfc0006.md",
             "docs/rfcs/rfc0007.md",
+            "docs/rfcs/rfc0012.md",
+            "docs/rfcs/rfc0013.md",
+            "docs/rfcs/rfc0014.md",
+            "docs/rfcs/rfc0022.md",
             "benchmarks/desktop/index.md",
             "benchmarks/desktop/tauri/findings.md",
             "benchmarks/desktop/pyside6/findings.md",
             "benchmarks/desktop/electron/findings.md",
             "docs/status.md",
             "docs/release.md",
+            "docs/getting-started.md",
+            "docs/data-handling.md",
+            "docs/troubleshooting.md",
+            "docs/contributing.md",
+            "docs/uat/cli.md",
+            "docs/uat/desktop.md",
         }
         assert all(
             not ({"recon", "intel", "ui"} & set(Path(path).parts))
@@ -103,6 +113,28 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "assets/screenshots/battalion-work.png" in index
         assert "docs/operator/workflow.html" in index
         assert "docs/release.html" in index
+        assert 'href="docs/getting-started.html"' in index
+        assert "'/docs/getting-started.html' | relative_url" in layout
+        assert 'href="docs/data-handling.html"' in index
+        assert "'/docs/data-handling.html' | relative_url" in layout
+        disclosure = (output / "docs/data-handling.md").read_text(encoding="utf-8")
+        assert "(troubleshooting.html#state-backup)" in disclosure
+        assert "(operator/workflow.html)" in disclosure
+        assert "(uat/cli.html#data-handling)" in disclosure
+        assert "(uat/desktop.html#data-handling)" in disclosure
+        assert 'href="docs/troubleshooting.html"' in index
+        assert "'/docs/troubleshooting.html' | relative_url" in layout
+        troubleshooting = (output / "docs/troubleshooting.md").read_text(encoding="utf-8")
+        assert "(operator/workflow.html)" in troubleshooting
+        assert "(uat/cli.html)" in troubleshooting
+        assert "(uat/desktop.html)" in troubleshooting
+        guide = (output / "docs/getting-started.md").read_text(encoding="utf-8")
+        assert "(data-handling.html)" in guide
+        assert "(data-handling.html#credentials)" in guide
+        assert "(uat/cli.html)" in guide
+        assert "(uat/desktop.html)" in guide
+        assert "(operator/workflow.html)" in guide
+        assert "(troubleshooting.html)" in guide
         assert "Roadmap ≠ shipped behavior" in index
         assert "assets/favicon.ico" in layout
         assert "assets/mark-transparent.svg" in layout
@@ -128,6 +160,10 @@ def test_pages_builder_prepares_markdown_for_jekyll() -> None:
         assert "adr0029.html" in adr_index
         assert "adr0030.html" in adr_index
         assert "adr0031.html" in adr_index
+        assert "adr0036.html" in adr_index
+        assert "adr0038.html" in adr_index
+        assert "adr0039.html" in adr_index
+        assert "adr0040.html" in adr_index
         status_page = (output / "docs" / "status.md").read_text(encoding="utf-8")
         assert "BEGIN GENERATED:backlog-delivery" in status_page
         assert "### Milestone overview" in status_page
@@ -231,10 +267,15 @@ def test_pages_workflow_limits_deployment_permissions() -> None:
             encoding="utf-8"
         )
     )
+    lifecycle_workflow = yaml.safe_load(
+        (REPOSITORY_ROOT / ".github" / "workflows" / "ticket-lifecycle.yml").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert workflow["permissions"] == {"contents": "read"}
     assert workflow[True]["workflow_run"] == {
-        "workflows": ["Complete merged Battalion ticket"],
+        "workflows": [lifecycle_workflow["name"]],
         "types": ["completed"],
     }
     assert workflow["jobs"]["build"]["permissions"] == {

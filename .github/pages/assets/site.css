@@ -41,7 +41,7 @@ code { font-family: "IBM Plex Mono", Consolas, monospace; }
   backdrop-filter: blur(16px);
 }
 .brand { display: flex; align-items: center; gap: 11px; color: var(--text); font-family: "IBM Plex Mono", Consolas, monospace; font-weight: 700; letter-spacing: .08em; text-decoration: none; }
-.site-header nav { display: flex; align-items: center; gap: 22px; }
+.site-header nav { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 22px; }
 .site-header nav a { color: var(--muted); font-size: .9rem; text-decoration: none; }
 .site-header nav a:hover { color: var(--text); }
 .site-header .nav-cta { padding: 6px 12px; border: 1px solid var(--line); border-radius: 2px; }

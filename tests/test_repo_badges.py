@@ -25,10 +25,10 @@ class TestReadmeBadges:
         return README_PATH.read_text(encoding="utf-8")
 
     def test_readme_begins_with_badge_row(self, readme_content: str) -> None:
-        """The README begins with a compact badge row."""
+        """The README begins with a title followed by a compact badge row."""
         lines = readme_content.splitlines()
-        # After the title, the next non-empty line should start the badge row
-        assert lines[0] == "# battalion"
+        # The badge contract requires a top-level title, not a particular title casing.
+        assert lines[0].startswith("# ")
         # Skip empty lines after title
         badge_line_idx = None
         for i, line in enumerate(lines[1:], start=1):
@@ -70,11 +70,11 @@ class TestReadmeBadges:
         """Every badge has meaningful alt text."""
         badge_pattern = r'\[!\[([^\]]+)\]\([^)]+\)\]'
         badges = re.findall(badge_pattern, readme_content)
-        
+
         # Each badge should have non-empty alt text
         for alt_text in badges:
             assert len(alt_text.strip()) > 0, f"Empty alt text found in badge"
-        
+
         # Verify we have the expected badges
         expected_keywords = ["Test", "Python", "License", "Documentation"]
         found_badges = [alt for alt in badges if any(kw.lower() in alt.lower() for kw in expected_keywords)]
@@ -87,11 +87,11 @@ class TestReadmeBadges:
         # Get the first 10 lines (title + badge row + empty line)
         header_lines = lines[:10]
         header_content = "\n".join(header_lines)
-        
+
         # Find all badge markdown in the header section only
         badge_pattern = r'\[!\[[^\]]*\]\(([^)]+)\)\]'
         links = re.findall(badge_pattern, header_content)
-        
+
         for link in links:
             # Check if it's a URL
             if link.startswith("http://") or link.startswith("https://"):
@@ -186,7 +186,7 @@ class TestBadgeRendering:
                 break
             elif in_badge_section:
                 badge_lines.append(line)
-        
+
         # Badges should be on 1-4 lines max for compactness
         assert len(badge_lines) <= 4, f"Badge row spans {len(badge_lines)} lines, should be compact"
 

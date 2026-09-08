@@ -47,9 +47,20 @@ jobs:
       - name: Build Python distribution artifacts
         run: |
           python -m build --sdist --wheel
+          python scripts/verify_prompt_artifacts.py "dist/*.whl" "dist/*.tar.gz"
           python scripts/release.py write-metadata --tag "${{ github.ref_name }}" --revision "$(git rev-parse "${{ github.ref_name }}^{commit}")" --output dist/python-release-metadata.json
           cd dist
           sha256sum battalion-* python-release-metadata.json > battalion-python-SHA256SUMS.txt
+
+      - name: Smoke-test the installed wheel outside the source checkout
+        shell: bash
+        run: |
+          smoke_root="$RUNNER_TEMP/battalion-wheel-smoke"
+          python -m venv "$smoke_root"
+          "$smoke_root/bin/python" -m pip install "$GITHUB_WORKSPACE"/dist/*.whl
+          cd "$RUNNER_TEMP"
+          env -u PYTHONPATH "$smoke_root/bin/battalion" --help
+          env -u PYTHONPATH "$smoke_root/bin/python" -m battalion.prompts.smoke
 
       - name: Upload Python release artifacts
         uses: actions/upload-artifact@v6
@@ -85,6 +96,9 @@ jobs:
           python -m pip install -e ".[desktop]"
           python scripts/release.py validate-tag --tag "${{ github.ref_name }}"
           python scripts/build_desktop.py --component all
+          $worker = Get-Item "dist/desktop/worker/worker_entry.dist/BattalionWorker.exe"
+          & $worker.FullName --smoke-role-prompts
+          if ($LASTEXITCODE -ne 0) { throw "Packaged worker prompt smoke test failed" }
           $artifact = "dist/battalion-desktop-windows-x64-v${{ needs.validate-and-package-python.outputs.version }}.zip"
           Compress-Archive -Path dist/desktop/* -DestinationPath $artifact
           $hash = (Get-FileHash -Algorithm SHA256 $artifact).Hash.ToLower()

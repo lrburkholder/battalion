@@ -1,0 +1,30 @@
+name: PR ticket metadata
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Battalion ticket metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Validate PR ticket metadata
+        run: python scripts/validate_pr_ticket_metadata.py

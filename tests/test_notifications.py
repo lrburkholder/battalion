@@ -28,7 +28,7 @@ from battalion.notifications import (
     NotificationRequest,
     NotificationRouter,
 )
-from conftest import make_run_state
+from support.state import make_run_state
 
 
 class DeliveryRejected(IntegrationError):

@@ -45,6 +45,26 @@ def test_node_error_line_printed_in_non_interactive_mode():
     assert "[error] Architect - producing plan.md: boom" in buf.getvalue()
 
 
+def test_role_contract_correction_is_visible_without_claiming_a_write():
+    buf = io.StringIO()
+    display = ProgressDisplay(stream=buf)
+
+    display.handle_event({"type": "node_start", "node": "driver_green"})
+    display.handle_event({
+        "type": "role_contract_correction",
+        "node": "driver_green",
+        "reason_code": "driver-mode-artifact",
+        "offending_paths": ["tests/test_widget.py"],
+        "mutation_applied": False,
+        "attempt_number": 1,
+    })
+
+    output = buf.getvalue()
+    assert "[caught] Driver (GREEN)" in output
+    assert "prohibited output was not written" in output
+    assert "Correcting and retrying the same role" in output
+
+
 def test_token_events_suppressed_when_show_stream_false():
     buf = io.StringIO()
     display = ProgressDisplay(stream=buf, show_stream=False)
@@ -110,39 +130,16 @@ def test_completed_interactive_node_is_preserved_in_terminal_history():
     assert display._trace == []
 
 
-def test_live_panel_stays_compact_while_retaining_the_full_node_trace():
+def test_live_panel_bounds_its_view_without_discarding_the_node_trace():
     display = ProgressDisplay(stream=io.StringIO(), show_stream=True)
     display.handle_token({"type": "token", "content": "begin "})
     display.handle_token({"type": "token", "content": "x" * 2_000})
 
-    live = display._render()
+    visible, notice = display._trace_for_live_panel()
 
-    assert "live tail" not in str(live)
+    assert notice is not None
+    assert visible.endswith("x" * 100)
     assert "".join(display._trace).startswith("begin ")
-
-
-def test_completed_file_output_renders_decoded_source_not_escaped_json():
-    class LiveStub:
-        def refresh(self):
-            pass
-
-    buf = io.StringIO()
-    display = ProgressDisplay(stream=buf, show_stream=True)
-    display._interactive = True
-    display._live = LiveStub()
-
-    display.handle_event({"type": "node_start", "node": "driver_green"})
-    display.handle_token({
-        "type": "token",
-        "content": '{"files":{"src/greeting.py":"def greet(name: str):\\n    return f\\"Hello, {name}!\\"\\n"}}',
-    })
-    display.handle_event({"type": "node_end", "node": "driver_green", "phase": "reviewer"})
-
-    output = buf.getvalue()
-    assert "Output file: src/greeting.py" in output
-    assert "def greet(name: str):" in output
-    assert "return f\"Hello, {name}!\"" in output
-    assert '\\n    return' not in output
 
 
 def test_trace_output_records_node_associated_token_and_reasoning_events():

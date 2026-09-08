@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -24,21 +26,20 @@ from battalion.observation import (
     RunObservationPublisher,
     ordered_unique_events,
 )
-from battalion.state.models import Budget, RunState, RunStatus
+from battalion.state.models import RunState, RunStatus
 
 
 NOW = datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)
 
 
 def make_state(run_id: str, *, phase: str = "architect") -> RunState:
-    return RunState(
-        schema_version="1.0",
+    return make_run_state(
         run_id=run_id,
-        ticket_id="BTN-36",
+        ticket_id='BTN-36',
         status=RunStatus.IN_PROGRESS,
         phase=phase,
-        retry_bound=2,
-        budget=Budget(limit=10),
+        write_scope={},
+        budget_limit=10,
     )
 
 

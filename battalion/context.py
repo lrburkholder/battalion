@@ -6,7 +6,7 @@ from typing import Literal, Sequence
 
 from battalion.actors import format_actor_attribution
 from battalion.intel.models import AcceptedInstinct
-from battalion.state.models import CheckpointType, InterventionDisposition, RunState
+from battalion.state.models import InterventionDisposition, RunState
 
 MAX_CONTEXT_CHARS = 32_000
 MAX_FILE_CHARS = 8_000
@@ -48,7 +48,7 @@ def _driver_files(
             keys = ["driver"]
     scopes = {scope for key in keys for scope in state.write_scope.get(key, [])}
     for scope in sorted(scopes):
-        root = (base / scope).resolve()
+        root = (base / scope.replace("\\", "/")).resolve()
         if not root.is_relative_to(base) or not root.exists():
             continue
         paths = root.rglob("*") if root.is_dir() else (root,)
@@ -162,58 +162,18 @@ def _human_intervention_context(
     )
 
 
-def _role_output_repair_context(state: RunState, target: str) -> str | None:
-    """Return the latest applicable, durable role-output correction.
-
-    A role-contract violation pauses for human review; it must not trigger an
-    unobserved extra provider call.  When the operator chooses to resume the
-    same role, however, the next attempt needs the mechanical validation error
-    that caused the pause.  The interrupt record is the authoritative source
-    for that feedback and confirms that no rejected batch was written.
-    """
-    for interrupt in reversed(state.interrupt_log):
-        context = interrupt.context or {}
-        if (
-            context.get("failure_kind") == "role-output"
-            and context.get("next_phase") == target
-            and isinstance(context.get("error"), str)
-        ):
-            return (
-                "Your previous response was rejected before any files were written. "
-                "Correct this validation error and return only an output that satisfies "
-                f"your role contract:\n{context['error']}"
-            )
-    return None
-
-
-def _reviewer_feedback_context(
-    state: RunState, checkpoint: CheckpointType
-) -> str | None:
-    """Return the latest rejection cause for the role retrying this checkpoint.
-
-    Reviewer deliberately stores a concise, normalized root cause instead of
-    forwarding an unbounded raw test log.  A retry without that cause merely
-    repeats the same prompt and wastes a bounded Driver/Refactorer turn.
-    Checkpoint matching prevents a RED rejection from leaking into GREEN or
-    Refactorer work.
-    """
-    for rejection in reversed(state.reviewer_rejection_history):
-        if rejection.checkpoint == checkpoint:
-            return (
-                f"The previous {checkpoint.value} review rejected this attempt "
-                f"(cycle {rejection.cycle_number}). Correct this root cause: "
-                f"{rejection.cause}"
-            )
-    return None
-
-
 def architect_context(
     state: RunState,
     *,
     instincts: Sequence[AcceptedInstinct] = (),
     node_execution_id: str | None = None,
+    automatic_correction: str | None = None,
 ) -> str:
     sections = _base_sections(state, instincts)
+    if automatic_correction is not None:
+        # Correction must precede potentially long specification/Instinct
+        # material so the global context bound cannot silently discard it.
+        sections.insert(1, ("Battalion automatic correction", automatic_correction))
     intervention = _human_intervention_context(
         state, "architect", node_execution_id
     )
@@ -229,6 +189,7 @@ def driver_context(
     *,
     instincts: Sequence[AcceptedInstinct] = (),
     node_execution_id: str | None = None,
+    automatic_correction: str | None = None,
 ) -> str:
     selection = "implementation" if mode == "red" else "tests"
     file_kind = "Existing implementation" if mode == "red" else "Accepted RED tests"
@@ -238,17 +199,8 @@ def driver_context(
     )
     if intervention is not None:
         sections.append(("Human intervention", intervention))
-    repair = _role_output_repair_context(state, f"driver_{mode}")
-    if repair is not None:
-        sections.append(("Previous output validation failure", repair))
-    checkpoint = (
-        CheckpointType.RED_CHECK
-        if mode == "red"
-        else CheckpointType.GREEN_CHECK
-    )
-    reviewer_feedback = _reviewer_feedback_context(state, checkpoint)
-    if reviewer_feedback is not None:
-        sections.append(("Reviewer feedback", reviewer_feedback))
+    if automatic_correction is not None:
+        sections.append(("Battalion automatic correction", automatic_correction))
     sections.append(("Approved plan", _plan_text(base_dir)))
     sections.extend(
         (f"{file_kind}: {relative}", content)
@@ -270,14 +222,6 @@ def refactorer_context(
     )
     if intervention is not None:
         sections.append(("Human intervention", intervention))
-    repair = _role_output_repair_context(state, "refactorer")
-    if repair is not None:
-        sections.append(("Previous output validation failure", repair))
-    reviewer_feedback = _reviewer_feedback_context(
-        state, CheckpointType.REFACTOR_CHECK
-    )
-    if reviewer_feedback is not None:
-        sections.append(("Reviewer feedback", reviewer_feedback))
     authorized_paths = refactorer_authorized_paths(state)
     if authorized_paths:
         authorization = (

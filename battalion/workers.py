@@ -25,6 +25,7 @@ from uuid import UUID, uuid4
 from battalion.config import BattalionConfig
 from battalion.state.models import RunState, RunStatus
 from battalion.state.persistence import save_state
+from battalion.workflow_admission import WorkflowAdmissionEvidence
 
 
 DEFAULT_WORKER_DIR = Path(".battalion/workers")
@@ -126,6 +127,8 @@ def launch_worker(
     worker_dir: str | Path = DEFAULT_WORKER_DIR,
     resume_actor_id: UUID | None = None,
     resume_resolution: str | None = None,
+    resume_action_id: str | None = None,
+    resume_admission_evidence: WorkflowAdmissionEvidence | None = None,
 ) -> WorkerRecord:
     """Launch one detached Python worker after durably reserving ``run_id``."""
     if operation not in {"start", "resume"}:
@@ -189,6 +192,12 @@ def launch_worker(
         "worker_dir": str(directory),
         "resume_actor_id": str(resume_actor_id) if resume_actor_id is not None else None,
         "resume_resolution": resume_resolution,
+        "resume_action_id": resume_action_id,
+        "resume_admission_evidence": (
+            resume_admission_evidence.model_dump(mode="json")
+            if resume_admission_evidence is not None
+            else None
+        ),
     }
     try:
         process = _spawn_process()
@@ -329,6 +338,14 @@ def _worker_main(stdin: BinaryIO) -> int:
                         else None
                     ),
                     resolution=request.get("resume_resolution") or "authorized resume",
+                    action_id=request.get("resume_action_id"),
+                    current_admission_evidence=(
+                        WorkflowAdmissionEvidence.model_validate(
+                            request["resume_admission_evidence"]
+                        )
+                        if request.get("resume_admission_evidence") is not None
+                        else None
+                    ),
                 ),
                 state_dir=request["state_dir"],
             )

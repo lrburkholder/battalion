@@ -37,15 +37,108 @@ run automatically.
   research is limited to carefully bounded, human-authorized proposals; the
   dogfooding model is "used to build Battalion's next work," not autonomous
   self-editing.
+- Dynamic workflow admission or graph dispatch remains outside the v1 graph.
+  BTN-138 provides a finite,
+  versioned `WorkflowRecipe` policy vocabulary and BTN-139 provides an
+  inspectable deterministic evidence assessment for post-v2 work. BTN-141 adds
+  a pre-execution, Actor-authorized human decision contract, BTN-142 adds the
+  compact execution/upgrade policy, and BTN-143 adds durable admission/Run
+  linkage and resume validation. None alters the v1 graph or allows
+  model-produced node lists; recipe-specific dispatch remains separately
+  scoped under RFC-0012.
 
-## Accepted Post-v1 Inference Contract (delivery pending)
+## Accepted Post-v1 Inference Contract (branch delivery)
 
 [RFC-0005](docs/rfcs/rfc0005.md) and
 [ADR-0024](docs/adrs/adr0024.md) accept an endpoint-aware inference identity
-and cost policy without changing the shipped v1 runtime. BTN-52 through BTN-55
-deliver the contract; until those tickets complete, the existing LiteLLM
-model-string configuration, BTN-14 string comparison, and BTN-35 call evidence
-remain the implemented behavior.
+and cost policy without changing the original v1 runtime contract. BTN-52
+through BTN-55 deliver the implementation on feature branches. Until these
+changes merge, the existing LiteLLM model-string configuration and BTN-35 call
+evidence remain the shipped baseline.
+
+### BTN-52 configuration and setup
+
+`NodeLLMConfig` retains `model`, `temperature`, `max_retries`, and non-secret
+`extra_params`, and adds `endpoint_url`, `backend`, `inference_location`
+(`local`, `remote`, `unknown`), `canonical_model_family`, `api_key_env`, and
+optional `keyless`. LiteLLM remains the transport boundary; endpoint fields are
+forwarded identically for setup, streaming, and non-streaming calls. Legacy
+`extra_params.api_base` migrates to `endpoint_url`. A model-only override retains
+transport settings but clears a changed model's prior family assertion.
+
+Setup preserves complete configurations, including additional configured roles,
+and validates each distinct model/endpoint/credential-reference/request-settings
+combination before saving. No failed check overwrites the existing file.
+`--no-validate` omits live checks, not configuration or credential checks.
+Bearer tokens remain in environment variables and are resolved at the call
+boundary. Keyless targets do not receive ambient cloud credentials. Authenticated
+custom endpoints require explicit credential references. Persisted endpoint URLs
+must be HTTP(S) without user info, queries, or fragments; inline secrets and
+target-changing fallback/provider overrides in extra parameters are rejected.
+
+Endpoint-configured Driver and Reviewer must declare distinct concrete canonical
+families. Equal families or equal requested identities are rejected regardless
+of provider or endpoint differences; opaque auto/profile/smart/fusion requests
+are rejected. Plain model configurations retain requested-identity compatibility
+with the provider prefix removed. Family and location declarations are operator
+assertions, not runtime evidence; setup connectivity does not prove same-host
+inference or zero cost. BTN-54 records runtime identity contradictions, and
+BTN-55 admits zero-cost policies from explicit current classification evidence.
+
+### BTN-53 optional FreeLLMAPI backend
+
+FreeLLMAPI is configured as an optional `backend: freellmapi` target through
+the same OpenAI-compatible LiteLLM path as other custom endpoints. Its bearer
+credential is an `api_key_env` reference. During validated setup, Battalion
+checks the authenticated `/v1/models` catalog for each distinct FreeLLMAPI
+target before its normal minimal completion; discovery, authentication,
+unavailable models, and unavailable capacity fail before saving or through the
+existing infrastructure-failure boundary. The bearer is not persisted.
+
+All role selections remain data-driven. Driver and Reviewer require distinct
+concrete canonical families and cannot use auto, profile, fusion, smart, or
+equivalent virtual routes. Battalion neither imports nor delegates role,
+workflow, graph, prompt, cost, or routing policy to FreeLLMAPI. Resolved route
+evidence and runtime identity contradiction detection are recorded by BTN-54;
+BTN-55 applies the same cost-policy boundary to this optional backend.
+
+### BTN-54 resolved inference identity and diversity provenance
+
+Each newly completed LLM call writes execution-record schema `1.8` evidence
+that separates Battalion's `requested_model` from an explicitly reported
+`response_model`, plus configured `backend`, non-secret `endpoint_url`, and
+`inference_location`. Router evidence is retained only when emitted by the
+response or stream, including `X-Routed-Via` and `X-Routed-Model`; missing
+response and router metadata remains unavailable. Historical execution records
+through schema `1.7` stay readable, with these new fields absent rather than
+retrofitted from display strings.
+
+For Driver and Reviewer, an exact collision between independently reported
+effective response/router model identities is durable contradiction evidence.
+Battalion invalidates the current output or verdict and pauses through existing
+infrastructure interrupt condition 5. It does not attempt to infer a provider,
+endpoint, or canonical family from a model display string. A configured local
+location is recorded with its loopback endpoint and backend, but remains a
+configuration classification—not proof that a proxy's upstream inference is
+same-host. BTN-55 owns verified locality and zero-cost policy admission.
+
+### BTN-55 zero-cost policy enforcement (branch implementation)
+
+`cost_policy` is durable Run configuration and is selectable as `local-only`,
+`free-only`, or the backwards-compatible `paid-capable` default. Before any
+graph execution, every configured inference target—including optional roles—is
+admitted against current non-secret classification evidence. `local-only`
+requires a sourced current local classification and `free-only` additionally
+permits sourced current `verified-free` classifications; paid, unknown, and
+expired evidence fail closed.
+
+Each LLM call retains the active policy with its BTN-35 cost evidence. A
+provider-reported non-zero cost under either zero-cost policy is recorded, then
+raises the existing typed infrastructure-failure path and pauses the Run. It is
+not retried. Configuration rejects target-changing LiteLLM fallback settings,
+and resuming a Run cannot substitute a different durable cost policy.
+
+### Identity and policy delivery contract
 
 The accepted identity separates the Battalion-requested model, resolved or
 response model, provider, backend and non-secret endpoint, inference location,
@@ -99,9 +192,7 @@ Fields per ticket/run (draft — to be refined during Architect phase):
 - `reviewer_rejection_history` (list of {cause, cycle_number, checkpoint} —
   root-cause tracked for interrupt trigger #1. checkpoint (added in v1.1,
   BTN-12) scopes cycle_number to be per-checkpoint-type (red-check,
-  green-check, refactor-check), not ticket-wide. The latest cause for a
-  rejected checkpoint is supplied as bounded feedback only to the corrective
-  role's next attempt; raw test logs remain Reviewer-only — see
+  green-check, refactor-check), not ticket-wide — see
   `docs/adrs/adr0009.md`.)
 - `retry_bound` (configurable per ticket, per open decision)
 - `budget` (tracked per graph run, not per node)
@@ -126,6 +217,16 @@ Fields per ticket/run (draft — to be refined during Architect phase):
   operation references, timestamps, bounded detail text, and optional SHA-256
   request digests; never secrets or external payload contents — see
   ADR-0029)
+- `workflow_admission` (optional on legacy schema `1.0`; schema `1.1` stores a
+  separately versioned record containing the deterministic assessment,
+  optional Tactician assessment, Actor-authorized decision, exact selected
+  recipe/version, completed stage/completion evidence, and append-only upgrade
+  state. Cross-record inconsistencies fail validation; see ADR-0039.)
+- `artifact_target_handoff` (accepted post-v2 contract; runtime delivery
+  pending. A later schema stores a separately versioned sibling record with
+  immutable target contracts, deterministic reconciliation, Actor-attributed
+  corrections, supersession history, and the active contract identity. It
+  cross-validates but never rewrites `workflow_admission`; see ADR-0038.)
 
 New-run construction belongs to the shared application boundary. It generates
 the canonical run UUID and project marker before execution; graph nodes cannot
@@ -133,6 +234,86 @@ replace that identity. `.battalion/runs.json` is a project-scoped, rebuildable
 catalog whose references use canonical run IDs. Moving a repository with its
 `.battalion` directory preserves project identity. Legacy files are discovered
 under their original IDs without rewriting historical provenance (ADR-0020).
+
+## Accepted Post-v2 Artifact-Target Handoff (delivery pending)
+
+Branch implementation note (BTN-194): the construction layer exists in
+`battalion.artifact_targets`, and Architect validates the typed candidate before
+its scoped `plan.md` write. Invalid candidates use the existing bounded
+role-contract correction/escalation path; correction evidence is injected into
+the retry before potentially long specification context. Nested values are
+frozen under aggregate schema version `1.0`, with exact phase names from
+`WorkflowStage`. Construction does not resolve filesystem paths, persist the
+handoff, grant write authority, or activate the later Driver gate.
+
+Before any Driver attempt begins, Battalion requires one current, validated
+`ArtifactTargetContract`. The contract is application-owned execution evidence,
+not a prompt, project capability, graph definition, or write-scope declaration.
+It may only narrow the role's independently authorized structural write scope.
+Architect output, admission, Tactician advice, and human correction cannot widen
+that authority.
+
+Contract version `1.0` records a stable SHA-256 identity over canonical content,
+the project/work-item/specification/project-source revisions, exact workflow-
+admission decision, Architect execution and `plan.md` digest when applicable,
+superseded contract, evidence references, and a canonical target list. Each
+target has a stable target ID, one exact project-relative file path, evidence
+references, and assignments naming the intended owner role, workflow phase, and
+operation (`create`, `modify`, or `delete`).
+
+Paths use `/` separators. Absolute, drive/UNC, empty, dot-segment, parent-
+traversing, glob, NUL-containing, Battalion-state, VCS-metadata, and project-
+escaping symlink paths are invalid. Normalization precedes identity calculation;
+duplicate target IDs, normalized paths, assignments, and case-only collisions
+under the project path policy fail validation.
+
+For a full recipe, Architect returns a typed candidate with bounded plan
+Markdown, target definitions, and implementation steps that reference target
+IDs instead of restating paths. Validation occurs before the existing scoped
+`plan.md` write. The rendered plan includes the canonical target table but
+remains explanatory; free-form prose and raw model reasoning are never
+authoritative target evidence. For a compact recipe without Architect, exact
+targets must come from authoritative revision-pinned work-item/specification
+evidence. Bounded-scope admission evidence or Tactician advice cannot invent
+them.
+
+Deterministic reconciliation checks revisions, selected recipe and phases,
+path policy, structural write scope, and contradiction/staleness evidence. Its
+result is `ready` or `clarification-required` with stable reasons. Missing,
+ambiguous, duplicate, unsafe, stale, or internally contradictory targets block
+Driver. A consistent contract adds no mandatory Tactician call or human pause.
+When correction is required, an active human Actor must approve an exact new
+contract, return the work to Architect/clarification, or cancel. The new
+identity supersedes rather than rewrites earlier evidence.
+
+A configured manual `driver` checkpoint resolves against the exact current
+contract identity; generic resolution prose cannot authorize changed targets.
+The artifact-target gate is application admission, not a seventh v1 interrupt.
+The graph cannot dispatch Driver without current gate evidence, and
+presentation clients cannot manufacture it.
+
+The handoff persists as a separately versioned `ArtifactTargetHandoffRecord`
+beside BTN-143's immutable `WorkflowAdmissionRunRecord`. Each Driver attempt
+references the contract under which it began. Resume revalidates the persisted
+contract and revisions without silently substituting a newer contract; legacy
+schema `1.1` Runs remain readable but cannot claim target evidence they never
+recorded. Shared application queries and transport-neutral projections expose
+active and superseded identities, targets, assignments, revisions, evidence,
+reconciliation reasons, and human corrections to CLI and desktop without log
+or `plan.md` parsing.
+
+Credential-free acceptance uses the observed greeting case: a deterministic
+Architect fixture maps logical target `greeting-test` to
+`src/test_greeting.py` while an implementation step tries to redefine it as
+`test_greeting.py`. Validation must write no plan, create no Driver attempt, and
+show both conflicting paths. A human correction creates a new contract for
+`src/test_greeting.py`; save/load/resume and human/JSON inspection retain both
+identities and bind the next Driver attempt to the corrected one. BTN-129 owns
+the original live CLI UAT evidence; the fixture does not rewrite that historical
+Run into a pass. Runtime delivery proceeds in dependency order through BTN-194
+(contracts and Architect handoff), BTN-195 (persistence and enforcement),
+BTN-196 (CLI/desktop presentation), and BTN-197 (credential-free end-to-end
+acceptance).
 
 ### Actor identity and local provenance
 
@@ -171,6 +352,9 @@ default local trust root on first use without authentication infrastructure.
 Interrupt resolution is persisted before resume and records the human Actor
 ID, immutable display snapshot, time, interrupt target, resolution,
 disposition, and resulting durable state.
+Resolution and a `resume_intent` linking that exact
+action are saved atomically. Until a completed attempt has a durable outcome,
+replaying resume reuses this intent instead of creating another human decision.
 CLI and desktop clients submit the same `ResumeRun` application command; graph
 resume inference and execution remain canonical.
 
@@ -188,6 +372,40 @@ not supplied to later attempts or other roles. A crash before association
 leaves the item queued; a crash after association preserves the receiving
 attempt identity (ADR-0023).
 
+BTN-165 registers the unfinished `NodeExecution` and its intervention delivery
+in the same atomic state replacement. The graph then checkpoints
+`attempt-started` before role execution. Recovery before that boundary reuses
+the same attempt ID and requires the original prompt/model configuration;
+after that boundary, absent a saved outcome, execution may have caused writes
+or provider charges and must not be automatically replayed. Completed outcomes
+are checkpointed before completion observations, with their exact graph
+successor, and then marked `outcome-checkpointed` by the graph wrapper.
+The durable `graph_progress` contract distinguishes
+`interrupted-before-attempt`, `attempt-created`, `attempt-started`,
+`attempt-completed`, and `outcome-checkpointed`. A saved resume intent without
+a graph cursor also explicitly represents authorization before attempt creation.
+Correction context and its consumed retry allowance survive recovery; an
+intervention remains exclusive to its originally receiving attempt.
+
+Resume/intervention clients may supply a stable `action_id`. Replays retain
+original actor, timestamp, target, and decision evidence; conflicting ID reuse
+is rejected. A completed resume action replay is a read of current durable
+state, not authorization to resolve a later interrupt. Without an ID, only a
+pending resume intent is implicitly reused. The CLI exposes `--action-id`.
+These IDs identify requests; repeating identical intervention text with a new
+ID is a new human action.
+
+Recursion-limit handling retains the latest checkpoint and its exact next
+node. An existing typed block keeps its phase and blocked-result authorization
+requirement even if the terminal graph node cannot execute within the limit.
+Unexpected graph exceptions never save invocation input over newer
+durable progress. Application results/inspection expose typed recovery
+assessments; execution failures become `RunRecoverable` or `RunRecoveryUnsafe`.
+CLI and desktop explain whether replay is safe. An unknown started-attempt
+outcome is terminal for automatic recovery: inspect the workspace and execution
+record, then start a new run from the reviewed workspace. No manual JSON edits,
+automatic write rollback, or exactly-once provider calls are promised.
+
 Recon candidate accept, edit-and-accept, and reject operations remain outside
 `RunState`. Application commands delegate to the audited Intel workflow, which
 leaves candidate Markdown immutable and creates separate accepted Intel and
@@ -195,13 +413,16 @@ append-only review-decision evidence.
 
 ### Durable execution record
 
-`execution_record.schema_version` is `1.3` (BTN-129); persisted `1.0` through
-`1.2` records remain readable. Each role-node attempt appends one
+`execution_record.schema_version` is `1.7`; persisted
+`1.0` through `1.6` records remain readable. Each role-node attempt appends one
 record containing a stable execution identifier, role and graph phase, model
 identity, start/end timestamps, outcome, bounded input references, and an
 output reference or Reviewer verdict. Reviewer records link the clean-tree
 test outcome and acceptance decision. Tool activity, interrupts, and produced
 artifact provenance carry or reference the originating node execution.
+An unfinished attempt has outcome `in-progress` and no end timestamp. Its
+completed evidence replaces that entry under the same execution ID; legacy
+completed evidence is not rewritten.
 
 Each successful LiteLLM completion also records a bounded call identifier,
 provider-reported model, and input/output token counts on its originating node
@@ -231,6 +452,41 @@ reconstructability.
 Version `1.3` adds bounded counts of streamed reasoning and content characters
 for each node attempt. These counts support model/phase comparison without
 persisting raw provider reasoning or creating a second trace store.
+
+Version `1.4` distinguishes an accepted role outcome from a rejected model
+candidate. A typed pre-write role-contract violation records its reason,
+offending paths where safe, correction attempt number, no-mutation guarantee,
+and retry or escalation disposition. Battalion supplies one deterministic
+automatic correction retry to the same role and phase; it consumes the normal
+Run budget. An exhausted budget pauses before creating the correction attempt,
+including after recovery from the rejected candidate's checkpoint. The budget
+interrupt targets that same role/phase and retains the correction context and
+consumed retry allowance. Human-authorized continuation permits that attempt
+without resetting the Run budget or granting another automatic retry.
+A repeated violation pauses through the established human-interrupt
+path. This never weakens scoped-write or other authority-violation handling.
+
+Version `1.5` adds an optional, versioned `role_result` to node execution
+evidence. Driver RED/GREEN may record `completed-with-change`, `blocked`, or
+`escalated`; Refactorer also records `completed-with-no-change` when its
+existing explicit no-op contract applies. Battalion validates role/mode policy,
+bounded reason codes, evidence references against the input evidence supplied
+to that node attempt, and observed artifacts before it constructs this record.
+A blocked result preserves the incomplete stage and
+ends the current run until a human records that the missing condition has been
+addressed; an escalated result enters the existing durable human-resolution
+boundary. Neither route advances through the normal success edge, and malformed
+or prohibited output remains a deterministic failure.
+
+Version `1.6` adds optional `test_execution` evidence to Reviewer attempts:
+the exact command, temporary working-directory identity, exit classification,
+return code, collected-test/failure/error counts when available, duration,
+configured timeout, cancellation/timeout disposition, and process-tree cleanup
+result. Each stdout/stderr stream retains at most 64 KiB with observed-byte and
+truncation metadata. Invalid harness outcomes have an `unavailable` review
+verdict rather than a fabricated test failure or rejection cause. Legacy
+records retain their old inferred outcomes and expose process evidence as
+unavailable. New Reviewer snapshot hashes describe only materialized inputs.
 
 ### Instinct data contract
 
@@ -339,15 +595,6 @@ source roots. Context is bounded before each LLM call: RED receives existing
 implementation context, GREEN receives accepted RED tests, and Refactorer
 receives the passing file set.
 
-GREEN must return production files only. To tolerate models that serialize a
-workspace snapshot, Battalion removes a returned test entry only when it maps
-to an accepted RED artifact whose current on-disk digest still matches its RED
-provenance and whose text differs only by CRLF versus LF or one final newline.
-The entry is never written and is recorded as a role-output-filter activity.
-Any changed, unknown, unsafe, or otherwise returned test file remains a typed
-role-output failure; Battalion never broadly trims whitespace to make an echo
-match.
-
 For a graph execution with GREEN artifact provenance, Refactorer receives the
 latest successful GREEN Driver's production artifact paths and may write only
 those paths. Its scope remains a structural ceiling, but artifact provenance is
@@ -387,6 +634,27 @@ Driver RED uses `driver_red`, Driver GREEN uses `driver_green`, and Refactorer
 uses `refactorer`. A phase receives tools bound only to that entry; Reviewer
 receives none. An explicitly empty phase entry grants no write authority.
 
+Every configured directory and single-file root is a
+project-relative authority declaration, not an arbitrary filesystem path.
+Before tools are exposed, normalize both separator styles and prove that each
+root resolves strictly within the resolved project base using native path
+semantics (including Windows case and drive behavior). Reject absolute roots
+even when inside the project, parent components, drive-relative/alternate-drive
+and device paths, Windows path aliases, and symlink/junction escapes. No v1
+role/mode permits a root resolving to the project itself. Internal links may
+resolve to a contained root; binding pins that resolved authority and checks it
+again on use, including single-file tools.
+
+Invalid declarations raise `WriteScopeMisconfigured`; application start/resume
+and worker boundaries expose `InvalidWriteScope` before mutation or execution.
+Validate the complete declaration, including inactive phases, and the saved
+Run's scopes on resume. Do not replace invalid scopes with defaults, retry them
+as model-output corrections, or consume budget for them. This is a configuration
+failure, not a new interrupt condition. A later bound-path redirection is an
+audited `ScopeViolationError` using existing interrupt #2. Role-specific test-file
+rules, Architect's single `plan.md` output, and Refactorer artifact provenance
+restrictions still apply after containment validation.
+
 For backward compatibility, a missing phase entry falls back to `driver`, whose
 default is `["src/"]`. One-root output is relative to that root. Multi-root
 output must prefix each path with a declared root. Absolute paths, traversal,
@@ -399,6 +667,72 @@ so test discovery is not coupled to a `src/` directory. For example, Battalion
 itself can use `driver_red: ["tests/"]`, `driver_green: ["battalion/"]`, and
 `refactorer: ["battalion/"]` without granting repository-wide write access.
 See ADR-0013.
+
+### Reviewer test execution
+
+Reviewer runs `python -m pytest -q` with built-in JUnit output from a disposable
+copy of the configured project root. A passing exit (0) requires positive test
+counts and no failures/errors; a test-failure exit (1) requires collected tests,
+positive failure counts, and no harness errors. Only the latter can satisfy
+RED_CHECK. GREEN_CHECK and REFACTOR_CHECK require the former. The opposite valid
+result is a normal Reviewer rejection; no tests (5), collection/usage/internal
+errors (2–4), setup/teardown errors, unsupported exit codes, missing/malformed
+JUnit output, launch failure, timeout, and cancellation never authorize progress.
+They take typed infrastructure interrupt #5, retain evidence, make no
+rejection-cause LLM call, and resume at the same Reviewer checkpoint. JUnit
+parsing is capped at 8 MiB; larger output is an inspectable malformed result.
+
+The RED prompt requires missing-behavior failures inside collected tests. If
+creating a module or symbol is the requested behavior, import it inside the
+test function, not at module scope or in fixtures. This preserves RED's
+test-only write authority without treating collection failures as acceptance.
+
+`reviewer_test_timeout_seconds` in project configuration defaults to 300 and
+must be greater than zero and at most 3600. The bound applies to all Reviewer
+checkpoints on start/resume. Each pytest process has its own process group;
+timeout or cooperative/keyboard cancellation terminates descendants using
+Windows tree termination or POSIX process-group signals with forced cleanup.
+Cleanup attempts/results are recorded separately from test validity. Forced
+termination of Battalion itself is not a cooperative cancellation and cannot
+promise a final execution record.
+
+Git snapshots admit current tracked files and nonignored untracked files, then
+apply explicit generated-content exclusions. Non-Git snapshots walk regular
+files with the same exclusions and prune virtual environments. Build/distribution
+outputs (`build`, `dist`, `target`), coverage outputs, dependency/environment
+directories, caches, `.battalion`, and VCS metadata are not test inputs.
+Deleted tracked files, directory links, and links escaping the project are not
+materialized. Internal file links are copied as independent regular files.
+Snapshot writes remain Battalion-owned temporary IO, not Reviewer project write
+authority or an OS sandbox. BTN-123 may replace the workspace mechanism but
+must preserve this evidence and checkpoint-validity contract.
+
+## History projections (BTN-44 branch implementation)
+
+The shared application boundary exposes read-only history search and descriptive
+analytics through a disposable project-local SQLite index (ADR-0040). Canonical
+Run and Intel evidence remains authoritative. Search results preserve Run IDs,
+execution IDs, source paths, and explicit unavailable-source limitations.
+Projection schema changes reconstruct recognized indexes; externally modified,
+unrecognized, or corrupt projections require explicit operator replacement.
+Deleting an index cannot delete canonical evidence.
+
+Identity dimensions remain independent: historical compatibility model names
+never populate missing requested, response, routed, backend, endpoint, provider,
+or location evidence. Analytics counts each matching attempt once, retains mixed
+identities, exposes sample sizes and unknown evidence, and separates monetary
+totals by currency and cost source. Ticket snapshots provide available context;
+no difficulty score, effectiveness ranking, or automatic routing is introduced.
+Exact filters cover checkpoint, review cause, artifact digest, and Intel tags.
+Inclusive date bounds select timezone-aware attempt starts in UTC. Cost bounds
+select observed attempt subtotals for an explicitly selected currency and source,
+without float conversion or treating missing calls as zero-cost evidence.
+Comparisons separate phase, checkpoint, prompt template hash and contract version,
+Battalion revision, project ID, and available ticket label sets, and expose time
+ranges and missing timestamps. Separate context-policy and project-domain fields
+are not currently recorded; projections disclose them as unknown rather than
+inferring them from the current installation or labeling a ticket's difficulty.
+The first presentation is `battalion history`; desktop integration is future work.
 
 ## Retry / Loop Bounds
 Configurable per ticket rather than a fixed global constant — set as part of

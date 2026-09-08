@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 from battalion.context import refactorer_authorized_paths
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
-from battalion.execution import record_no_change
+from battalion.execution import record_no_change, record_role_result
 from battalion.nodes.errors import RoleOutputError, WriteScopeMisconfigured
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import (
@@ -27,6 +27,11 @@ from battalion.scope.tool_binding import (
     scope_key_for_phase,
 )
 from battalion.state.models import RunState, RunStatus
+from battalion.role_results import (
+    RoleResultKind,
+    RoleResultSubmission,
+    construct_role_result,
+)
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
 
@@ -239,6 +244,11 @@ def run_refactorer(
     _validate_authorized_targets(state, targets, base_dir)
     for (tool, relative_path), content in zip(targets, files.values(), strict=True):
         tool.write(relative_path, content)
+    record_role_result(construct_role_result(
+        RoleResultSubmission(kind=RoleResultKind.COMPLETED_WITH_CHANGE),
+        role="refactorer",
+        observed_artifact_count=len(targets),
+    ))
 
     return state.model_copy(update={
         "phase": "reviewer",

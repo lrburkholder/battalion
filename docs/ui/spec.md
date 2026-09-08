@@ -1,8 +1,8 @@
 # Battalion Desktop UI Specification
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Implemented
-**Applies to:** BTN-42, BTN-43, and BTN-56
+**Applies to:** BTN-42, BTN-43, BTN-56, and BTN-144
 
 This document describes the production PySide6 desktop client. RFC-0004 records
 the accepted product direction, ADR-0022 selects PySide6 and Qt Widgets, and
@@ -57,11 +57,37 @@ while no worker is active, and is delivered once to the exact target's next
 attempt. Mid-generation steering, Reviewer intervention, verdict override, and
 manual checkpoint override are not provided.
 
+### Admission
+
+Accepts a ticket, specification path or text, validated
+`WorkflowAdmissionEvidence` JSON, and optional validated
+`TacticianAssessment` JSON. Both CLI and desktop invoke the same application
+assessment, inspection, decision, and admitted-Run operations.
+
+The inspector shows deterministic outcome and reasons, governing evidence,
+missing evidence and hard-risk flags, advisory Tactician recommendation and
+rationale when supplied, and each exact registered recipe's stages,
+verification, completion requirements, and stages omitted relative to full.
+Model advice is visibly subordinate to governing evidence and raw provider
+chain-of-thought is never shown.
+
+Use compact is enabled only when the application inspection admits it. Use
+full, clarify, and cancel remain available as allowed by that same inspection;
+the human may choose full despite compact eligibility or a compact Tactician
+recommendation. An optional annotation records rationale or disagreement.
+Authorization and validation failures remain visible without speculative UI
+state or direct persistence mutation.
+
 ### History
 
 Shows terminal, earlier, legacy, missing, malformed, and inaccessible catalog
 entries. Historical evidence remains inspectable without pretending missing
-fields are known. Search and cross-run analytics remain BTN-44 work.
+fields are known. Admitted Runs additionally show the original deterministic
+and optional Tactician assessment, human decision, exact recipe/version, and
+later upgrade trigger/evidence as distinct sections. BTN-44 now provides shared
+history search and descriptive cross-run analytics through the application/CLI
+boundary. Desktop search and analytics controls remain follow-up presentation
+work.
 
 ### Intel
 
@@ -138,8 +164,9 @@ window and Windows executable icon.
 All destinations, evidence surfaces, identity fields, action inputs, and action
 buttons have explicit accessible names. Standard Qt focus traversal reaches
 every interactive destination and control. Selection works with the keyboard,
-and `Ctrl+R` refreshes authoritative state. Disabled controls remain visible
-until their preconditions are satisfied.
+`Ctrl+R` refreshes authoritative state, and `Ctrl+Shift+A` inspects supplied
+admission evidence. Disabled controls remain visible until their application
+preconditions are satisfied.
 
 Color is not the sole carrier of state: text labels, tree columns, status text,
 and enabled state also communicate meaning.
@@ -158,7 +185,7 @@ battalion.workers`. Both builds emit XML compilation reports.
 
 ## Explicitly not shipped
 
-- global history search and model-role analytics (BTN-44);
+- desktop history-search and model-role analytics controls;
 - multiple projects in one window;
 - settings and provider configuration screens;
 - graph zoom, pan, animation, or arbitrary transition control;

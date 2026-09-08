@@ -5,6 +5,9 @@ provider responses pause through the documented failure interrupt rather than
 being indistinguishable from an application defect.
 """
 
+# Keep the original import path compatible; scope owns configuration failures.
+from battalion.scope.tool_binding import WriteScopeMisconfigured
+
 
 class RoleOutputError(Exception):
     """A role returned unusable content for its declared response contract.
@@ -15,7 +18,33 @@ class RoleOutputError(Exception):
     """
 
 
-class WriteScopeMisconfigured(Exception):
-    """Raised when a node's declared write_scope doesn't grant it the
-    write-tool entry it needs to do its job — a config error, not a
-    runtime scope violation (see battalion.scope.tool_binding for that)."""
+class RoleContractViolation(RoleOutputError):
+    """A mechanically detected, pre-write violation of a role's contract.
+
+    The candidate has not crossed a write boundary, so the execution scaffold
+    may supply deterministic correction context and retry the same role within
+    its bounded automatic-correction policy.  This is deliberately narrower
+    than a :class:`ScopeViolationError`, which remains an authority failure.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str,
+        offending_paths: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.offending_paths = offending_paths
+
+    def correction_context(self) -> str:
+        """Return bounded, deterministic context for the next same-role call."""
+        paths = "\n".join(f"- {path}" for path in self.offending_paths)
+        path_detail = f"\nOffending artifact paths:\n{paths}" if paths else ""
+        return (
+            "Battalion caught your previous candidate; prohibited output was not written.\n"
+            f"Rule violated ({self.reason_code}): {self}\n"
+            f"Correct the same role output and return only output that satisfies its role contract."
+            f"{path_detail}"
+        )

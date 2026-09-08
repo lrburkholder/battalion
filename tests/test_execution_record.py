@@ -1,4 +1,7 @@
 """BTN-19 durable execution record and provenance acceptance tests."""
+from support.state import make_run_state
+from support.graph import patched_nodes, reviewer_accepting
+
 import subprocess
 from pathlib import Path
 
@@ -6,32 +9,37 @@ import pytest
 from pydantic import ValidationError
 
 from battalion.graph import build_graph, resume_ticket
-from battalion.execution import ExecutionCapture, record_unchanged_test_echo
+from battalion.execution import ExecutionCapture, record_role_result
 from battalion.llm.litellm_client import NodeLLMConfig
+from battalion.role_results import (
+    DriverReasonCode,
+    RoleResultEvidenceReference,
+    RoleResultKind,
+    RoleResultRejected,
+    RoleResultSubmission,
+    submit_role_result,
+)
 from battalion.state.models import (
-    Budget, CheckpointType, CodeProvenance, EvidenceReference, ExecutionRecord,
-    NodeExecution, RunState, RunStatus,
+    CheckpointType,
+    CodeProvenance,
+    EvidenceReference,
+    ExecutionRecord,
+    NodeExecution,
+    RunState,
+    RunStatus,
 )
 from battalion.state.persistence import load_state, save_state
 
 
 def _state() -> RunState:
-    return RunState(
-        schema_version="1.0",
-        run_id="run-BTN-19",
-        ticket_id="BTN-19",
-        spec="Persist bounded execution evidence.",
-        status=RunStatus.NOT_STARTED,
-        phase="architect",
+    return make_run_state(
+        run_id='run-BTN-19',
+        ticket_id='BTN-19',
+        spec='Persist bounded execution evidence.',
         write_scope={
-            "architect": ["plan.md"],
-            "driver_red": ["tests/"],
-            "driver_green": ["battalion/"],
-            "refactorer": ["battalion/"],
-            "reviewer": [],
+            "architect": ["plan.md"], "driver_red": ["tests/"],
+            "driver_green": ["battalion/"], "refactorer": ["battalion/"], "reviewer": [],
         },
-        retry_bound=2,
-        budget=Budget(limit=100),
     )
 
 
@@ -61,16 +69,6 @@ def _driver_stub(state, ticket_text, llm_config, base_dir, mode, prompts_dir=Non
     return state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS})
 
 
-def _reviewer_stub(state, base_dir, llm_config, checkpoint, prompts_dir=None):
-    phase = {
-        CheckpointType.RED_CHECK: "driver_green",
-        CheckpointType.GREEN_CHECK: "refactorer",
-        CheckpointType.REFACTOR_CHECK: "done",
-    }[checkpoint]
-    status = RunStatus.DONE if phase == "done" else RunStatus.IN_PROGRESS
-    return state.model_copy(update={"phase": phase, "status": status})
-
-
 def _refactorer_stub(state, refactor_text, llm_config, base_dir, prompts_dir=None):
     Path(base_dir, "battalion", "widget.py").write_text(
         "def widget() -> bool: return True\n", encoding="utf-8"
@@ -79,11 +77,12 @@ def _refactorer_stub(state, refactor_text, llm_config, base_dir, prompts_dir=Non
 
 
 @pytest.fixture
-def stub_graph_nodes(monkeypatch):
-    monkeypatch.setattr("battalion.nodes.architect.run_architect", _architect_stub)
-    monkeypatch.setattr("battalion.nodes.driver.run_driver", _driver_stub)
-    monkeypatch.setattr("battalion.nodes.reviewer.run_reviewer", _reviewer_stub)
-    monkeypatch.setattr("battalion.nodes.refactorer.run_refactorer", _refactorer_stub)
+def stub_graph_nodes():
+    with patched_nodes(
+        architect=_architect_stub, driver=_driver_stub,
+        reviewer=reviewer_accepting(), refactorer=_refactorer_stub,
+    ):
+        yield
 
 
 def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph_nodes):
@@ -125,15 +124,74 @@ def test_complete_graph_run_records_every_node_and_artifact(tmp_path, stub_graph
 
 
 def test_execution_record_format_is_versioned_and_validated():
-    assert ExecutionRecord().schema_version == "1.3"
+    assert ExecutionRecord().schema_version == "1.8"
     assert ExecutionRecord(schema_version="1.0").schema_version == "1.0"
     assert ExecutionRecord(schema_version="1.1").schema_version == "1.1"
     assert ExecutionRecord(schema_version="1.2").schema_version == "1.2"
+    assert ExecutionRecord(schema_version="1.3").schema_version == "1.3"
+    assert ExecutionRecord(schema_version="1.4").schema_version == "1.4"
+    assert ExecutionRecord(schema_version="1.5").schema_version == "1.5"
+    assert ExecutionRecord(schema_version="1.6").schema_version == "1.6"
+    assert ExecutionRecord(schema_version="1.7").schema_version == "1.7"
     with pytest.raises(ValidationError):
         ExecutionRecord(schema_version="2.0")
 
 
-def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(tmp_path):
+def test_pre_btn54_execution_record_remains_readable_without_identity_fields():
+    record = ExecutionRecord.model_validate({
+        "schema_version": "1.7",
+        "node_executions": [{
+            "execution_id": "node-legacy", "role": "architect", "phase": "architect",
+            "model_identity": "legacy-model", "started_at": "2026-08-01T00:00:00Z",
+            "ended_at": "2026-08-01T00:00:01Z", "outcome": "succeeded",
+            "llm_calls": [{
+                "call_id": "call-legacy", "model": "legacy-model",
+                "input_tokens": 1, "output_tokens": 1,
+            }],
+        }],
+    })
+
+    call = record.node_executions[0].llm_calls[0]
+    assert call.requested_model is None
+    assert call.response_model is None
+    assert call.routed_provider is None
+
+
+def test_role_result_evidence_must_match_the_capture_inputs(tmp_path):
+    state = _state()
+    result = submit_role_result(
+        RoleResultSubmission(
+            kind=RoleResultKind.ESCALATED,
+            reason_code=DriverReasonCode.SPECIFICATION_AMBIGUITY,
+            summary="The accepted plan conflicts with the ticket objective.",
+            evidence_refs=[
+                RoleResultEvidenceReference(kind="artifact", reference="plan.md")
+            ],
+        ),
+        role="driver",
+        mode="red",
+    )
+    capture = ExecutionCapture.start(state, "driver_red", "driver-model", tmp_path)
+    record_role_result(result)
+    completed = capture.finish(
+        state,
+        state.model_copy(update={"phase": "awaiting_human", "status": RunStatus.AWAITING_HUMAN}),
+    )
+    assert completed.execution_record.node_executions[-1].role_result == result
+
+    capture = ExecutionCapture.start(state, "driver_red", "driver-model", tmp_path)
+    result_with_unknown_evidence = result.model_copy(update={
+        "evidence_refs": [
+            RoleResultEvidenceReference(kind="artifact", reference="unseen.md")
+        ]
+    })
+    with pytest.raises(RoleResultRejected, match="not supplied"):
+        record_role_result(result_with_unknown_evidence)
+    capture.finish(state, state)
+
+
+@pytest.mark.parametrize("configuration_kind", ["legacy-raw", "environment-reference"])
+def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(tmp_path, monkeypatch, configuration_kind):
     legacy = NodeExecution.model_validate({
         "execution_id": "node-legacy",
         "role": "architect",
@@ -149,11 +207,16 @@ def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(
     assert legacy.code_provenance is None
 
     state = _state().model_copy(update={"spec": "x" * 1_100_000})
-    config = NodeLLMConfig(
-        model="architect-model", extra_params={"api_key": "must-not-be-retained"}
-    )
+    if configuration_kind == "legacy-raw":
+        # Retain the historical negative case at the evidence boundary even
+        # though new NodeLLMConfig instances now reject inline secrets.
+        config = {"model": "architect-model", "extra_params": {"api_key": "must-not-be-retained"}}
+    else:
+        monkeypatch.setenv("ARCHITECT_TOKEN", "must-not-be-retained")
+        config = NodeLLMConfig(model="architect-model", api_key_env="ARCHITECT_TOKEN")
+        assert config.request_params()["api_key"] == "must-not-be-retained"
     capture = ExecutionCapture.start(
-        state, "architect", config.model, tmp_path, model_configuration=config
+        state, "architect", "architect-model", tmp_path, model_configuration=config
     )
     completed = capture.finish(
         state,
@@ -170,7 +233,7 @@ def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(
     assert execution.operator_summary.last_node == "architect"
     assert execution.operator_summary.what_should_happen_next == "Continue at phase driver."
     assert execution.prompt_provenance.contract_version == "architect/v1"
-    assert execution.prompt_provenance.template_path == "prompts/architect.md"
+    assert execution.prompt_provenance.template_path == "battalion/prompts/architect.md"
     assert len(execution.prompt_provenance.template_hash) == 64
     assert len(execution.prompt_provenance.model_configuration_identity) == 64
     assert "must-not-be-retained" not in execution.model_dump_json()
@@ -182,28 +245,6 @@ def test_new_execution_evidence_is_bounded_and_legacy_records_remain_compatible(
         )
     with pytest.raises(ValidationError, match="complete repository evidence"):
         CodeProvenance(repository_available=True)
-
-
-def test_execution_record_captures_ignored_unchanged_red_test_echo(tmp_path):
-    state = _state()
-    capture = ExecutionCapture.start(
-        state, "driver_green", "driver-model", tmp_path,
-        model_configuration=NodeLLMConfig(model="driver-model"),
-    )
-    record_unchanged_test_echo("tests/test_widget.py")
-    completed = capture.finish(
-        state,
-        state.model_copy(update={"phase": "reviewer", "status": RunStatus.IN_PROGRESS}),
-    )
-
-    assert [item.model_dump() for item in completed.execution_record.node_executions[-1].tool_activity] == [
-        {
-            "tool": "role-output-filter",
-            "action": "ignore-unchanged-test-echo",
-            "target": "tests/test_widget.py",
-            "outcome": "succeeded",
-        }
-    ]
 
 
 def test_dirty_git_workspace_is_explicitly_not_exactly_reconstructable(tmp_path):

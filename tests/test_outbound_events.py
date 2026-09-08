@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from support.state import make_run_state
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import UUID
@@ -28,25 +30,23 @@ from battalion.integrations.runtime import (
     IntegrationRuntime,
     IntegrationTimeout,
 )
-from battalion.state.models import Budget, InterruptLogEntry, RunState, RunStatus
+from battalion.state.models import InterruptLogEntry, RunState, RunStatus
 
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
 
 
 def _state(*, status: RunStatus, phase: str = "done") -> RunState:
-    return RunState(
-        schema_version="1.0",
-        run_id="run-btn-73",
-        run_alias="BTN-73-slate",
-        project_id="30000000-0000-4000-8000-000000000073",
-        ticket_id="BTN-73",
-        spec="Outbound event test.",
+    return make_run_state(
+        run_id='run-btn-73',
+        run_alias='BTN-73-slate',
+        project_id='30000000-0000-4000-8000-000000000073',
+        ticket_id='BTN-73',
+        spec='Outbound event test.',
         status=status,
         phase=phase,
         write_scope={},
-        retry_bound=2,
-        budget=Budget(limit=10),
+        budget_limit=10,
     )
 
 

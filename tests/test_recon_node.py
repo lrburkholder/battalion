@@ -1,5 +1,8 @@
 """BTN-22 acceptance tests for post-completion Recon generation."""
 
+from support.state import make_run_state
+from support.responses import json_response
+
 from datetime import datetime, timezone
 
 import pytest
@@ -7,7 +10,7 @@ import pytest
 from battalion.intel.models import AcceptedInstinct
 from battalion.llm.litellm_client import NodeLLMConfig
 from battalion.nodes.recon import InvalidReconEvidence, ReconRequiresCompletedRun, run_recon
-from battalion.state.models import Budget, ExecutionRecord, NodeExecution, RunState, RunStatus
+from battalion.state.models import ExecutionRecord, NodeExecution, RunState, RunStatus
 
 
 NOW = datetime(2026, 8, 13, tzinfo=timezone.utc)
@@ -32,9 +35,14 @@ def _state(*, status=RunStatus.DONE, phase="done", executions=True):
         outcome="succeeded",
         verdict="accepted",
     )] if executions else [])
-    return RunState(
-        schema_version="1.0", run_id="run-22", ticket_id="BTN-22", status=status,
-        phase=phase, retry_bound=2, budget=Budget(limit=10), execution_record=record,
+    return make_run_state(
+        run_id='run-22',
+        ticket_id='BTN-22',
+        status=status,
+        phase=phase,
+        execution_record=record,
+        write_scope={},
+        budget_limit=10,
     )
 
 
@@ -55,8 +63,7 @@ def _candidate(*, recommendation="Keep reviewer evidence durable.", run_id="run-
 
 
 def _response(candidates):
-    import json
-    return {"choices": [{"message": {"content": json.dumps({"candidates": candidates})}}]}
+    return json_response({"candidates": candidates})
 
 
 @pytest.mark.parametrize("state", [

@@ -37,6 +37,15 @@ status states whether it is part of the shipped system.
 | [ADR-0029](adr0029.md) | Persist side-effect evidence in RunState with replay-safe logical operation identity | Accepted | BTN-70 substrate; consumed by BTN-71–80 |
 | [ADR-0030](adr0030.md) | Complete explicitly linked tickets after human PR merge | Accepted | BTN-126 |
 | [ADR-0031](adr0031.md) | Separate canonical status validation from public status rendering | Accepted | BTN-128 |
+| [ADR-0032](adr0032.md) | Register finite, versioned WorkflowRecipe policy artifacts | Accepted | BTN-138 |
+| [ADR-0033](adr0033.md) | Classify workflow admission from bounded deterministic evidence | Accepted | BTN-139 |
+| [ADR-0034](adr0034.md) | Keep Tactician advisory and outside Implementation Runs | Accepted | BTN-140 |
+| [ADR-0035](adr0035.md) | Correct pre-write role-contract violations in-run | Accepted | BTN-154 |
+| [ADR-0036](adr0036.md) | Keep human workflow admission separate from evidence and execution | Accepted | BTN-141 |
+| [ADR-0037](adr0037.md) | Require semantic-review and human-acceptance evidence for compact completion | Accepted | BTN-142 |
+| [ADR-0038](adr0038.md) | Gate Driver on a revision-pinned artifact-target contract | Accepted | BTN-193 architecture; runtime deferred |
+| [ADR-0039](adr0039.md) | Persist exact workflow admission separately from execution history | Accepted | BTN-143 |
+| [ADR-0040](adr0040.md) | Keep history search and analytics as rebuildable local projections | Accepted | BTN-44 |
 
 ADR-0010 through ADR-0012 were initially added with identifiers already used by
 the v1 architecture plan. They were renumbered on BTN-18 to restore one unique

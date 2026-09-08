@@ -74,6 +74,7 @@ def _worker_command() -> list[str]:
         "--follow-imports",
         "--assume-yes-for-downloads",
         "--noinclude-pytest-mode=nofollow",
+        "--include-data-files=battalion/prompts/*.md=battalion/prompts/",
         f"--report={WORKER_REPORT}",
         f"--output-dir={WORKER_OUTPUT_DIR}",
         "--output-filename=BattalionWorker.exe",

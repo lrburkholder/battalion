@@ -17,6 +17,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Direct script execution puts ``scripts/`` rather than the repository root on
+# sys.path. The lifecycle Action intentionally does not install Battalion and
+# its runtime dependency tree, so make both repository-owned import roots
+# explicit before importing either module.
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -46,6 +50,7 @@ def _current_pr_body(repository: str, pr_number: str) -> str | None:
     if body is not None and not isinstance(body, str):
         raise TicketLifecycleError("GitHub returned an invalid pull request body")
     return body
+
 
 def _normalization_record(issue: dict[str, object]) -> dict[str, object]:
     """Adapt lowercase REST Issue fields to the canonical normalizer enums."""

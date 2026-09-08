@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from battalion.prompts.loader import DEFAULT_PROMPTS_DIR, prompt_contract_version
+from battalion.prompts.loader import load_prompt_template, prompt_contract_version
+from battalion.role_results import (
+    RoleExecutionResult,
+    RoleResultKind,
+    RoleResultSubmission,
+    construct_role_result,
+    validate_evidence_references,
+)
 from battalion.state.models import (
     ArtifactProvenance,
     CheckpointType,
@@ -24,7 +31,10 @@ from battalion.state.models import (
     OperatorSummary,
     PromptProvenance,
     ReviewResult,
+    RoleContractViolationEvidence,
     RunState,
+    TestExecutionClassification,
+    TestExecutionEvidence,
     TestOutcome,
     ToolActivity,
 )
@@ -82,7 +92,7 @@ def _scope_entries(state: RunState, node_name: str) -> list[str]:
 def _snapshot(base_dir: Path, entries: list[str]) -> dict[str, str]:
     snapshot: dict[str, str] = {}
     for entry in entries:
-        target = base_dir / entry.rstrip("/")
+        target = base_dir / entry.replace("\\", "/").rstrip("/")
         paths = target.rglob("*") if target.is_dir() else [target]
         for path in paths:
             if path.is_file():
@@ -101,7 +111,7 @@ def _workspace_context_digest(
     base_dir: Path, entries: list[str]
 ) -> tuple[str, bool, int, int]:
     candidates: list[Path] = []
-    roots = [base_dir / item.rstrip("/") for item in entries] if entries else [base_dir]
+    roots = [base_dir / item.replace("\\", "/").rstrip("/") for item in entries] if entries else [base_dir]
     for root in roots:
         paths = root.rglob("*") if root.is_dir() else [root]
         candidates.extend(path for path in paths if path.is_file())
@@ -149,6 +159,12 @@ def _input_references(
 ) -> list[EvidenceReference]:
     references: list[EvidenceReference] = []
     for kind, reference, reason in _declared_input_references(node_name):
+        if node_name.startswith("reviewer_"):
+            # The clean snapshot does not exist yet. Hash only the admitted
+            # materialized inputs once Reviewer creates it, not the source
+            # tree's environments, generated outputs, or VCS internals.
+            references.append(EvidenceReference(kind=kind, reference=reference))
+            continue
         if kind == "state":
             digest, truncated, observed, hashed = _bounded_digest(state.spec.encode())
         elif kind == "artifact":
@@ -224,20 +240,13 @@ def _prompt_provenance(
     model_identity: str,
 ) -> PromptProvenance | None:
     name = _prompt_name(node_name)
-    path = (Path(prompts_dir) if prompts_dir is not None else DEFAULT_PROMPTS_DIR) / f"{name}.md"
-    if not path.is_file():
-        return None
+    template = load_prompt_template(name, prompts_dir=prompts_dir)
     revision = _git(_BATTALION_ROOT, "rev-parse", "HEAD")
-    resolved_path = path.resolve()
-    try:
-        template_path = resolved_path.relative_to(_BATTALION_ROOT).as_posix()
-    except ValueError:
-        template_path = resolved_path.as_posix()
     return PromptProvenance(
         template_identity=name,
-        template_path=template_path,
+        template_path=template.source,
         contract_version=prompt_contract_version(name),
-        template_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
+        template_hash=hashlib.sha256(template.content_bytes).hexdigest(),
         battalion_revision=revision,
         model_configuration_identity=_configuration_identity(
             model_configuration, model_identity
@@ -254,11 +263,13 @@ class ExecutionCapture:
     before_files: dict[str, str]
     base_dir: Path
     written_paths: set[str]
-    ignored_read_only_echoes: set[str]
     llm_calls: list[LLMCallCost]
     streamed_reasoning_characters: int
     streamed_content_characters: int
     no_change_reason: str | None
+    role_result: RoleExecutionResult | None
+    test_execution: TestExecutionEvidence | None
+    review_decision: ReviewResult | None
     input_references: list[EvidenceReference]
     prompt_provenance: PromptProvenance | None
     code_start: dict[str, object]
@@ -283,11 +294,13 @@ class ExecutionCapture:
             before_files=_snapshot(root, _scope_entries(state, node_name)),
             base_dir=root,
             written_paths=set(),
-            ignored_read_only_echoes=set(),
             llm_calls=[],
             streamed_reasoning_characters=0,
             streamed_content_characters=0,
             no_change_reason=None,
+            role_result=None,
+            test_execution=None,
+            review_decision=None,
             input_references=_input_references(state, node_name, root),
             prompt_provenance=_prompt_provenance(
                 node_name, prompts_dir, model_configuration, model_identity
@@ -303,6 +316,7 @@ class ExecutionCapture:
         new_state: RunState,
         *,
         checkpoint: CheckpointType | None = None,
+        role_contract_violation: RoleContractViolationEvidence | None = None,
     ) -> RunState:
         after_files = _snapshot(
             self.base_dir, _scope_entries(old_state, self.node_name)
@@ -329,15 +343,6 @@ class ExecutionCapture:
             ToolActivity(tool="scoped-write", action="write", target=path, outcome="succeeded")
             for path in sorted(changed)
         ]
-        tools.extend(
-            ToolActivity(
-                tool="role-output-filter",
-                action="ignore-unchanged-test-echo",
-                target=path,
-                outcome="succeeded",
-            )
-            for path in sorted(self.ignored_read_only_echoes)
-        )
 
         new_interrupt_indexes = list(
             range(len(old_state.interrupt_log), len(new_state.interrupt_log))
@@ -353,6 +358,7 @@ class ExecutionCapture:
         test = None
         verdict = None
         outcome = "interrupted" if interrupted else "succeeded"
+        attempt_disposition = "accepted"
         output_reference = artifacts[0].path if len(artifacts) == 1 else None
 
         if checkpoint is not None:
@@ -362,16 +368,36 @@ class ExecutionCapture:
                 CheckpointType.GREEN_CHECK: "refactorer",
                 CheckpointType.REFACTOR_CHECK: "done",
             }[checkpoint]
-            accepted = new_state.phase == accepted_phase and not interrupted
-            passed = expected_to_pass if accepted else not expected_to_pass
+            accepted = (
+                self.review_decision.verdict == "accepted"
+                if self.review_decision is not None
+                else new_state.phase == accepted_phase and not interrupted
+            )
+            passed = (
+                self.test_execution.classification
+                is TestExecutionClassification.PASSED
+                if self.test_execution is not None
+                else expected_to_pass if accepted else not expected_to_pass
+            )
             cause = None
             if not accepted and len(new_state.reviewer_rejection_history) > len(
                 old_state.reviewer_rejection_history
             ):
                 cause = new_state.reviewer_rejection_history[-1].cause[:2000]
-            review = ReviewResult(
+            valid_test_execution = (
+                self.test_execution is None and not interrupted
+                or self.test_execution is not None
+                and self.test_execution.classification in {
+                    TestExecutionClassification.PASSED,
+                    TestExecutionClassification.TEST_FAILED,
+                }
+            )
+            review = self.review_decision or ReviewResult(
                 checkpoint=checkpoint,
-                verdict="accepted" if accepted else "rejected",
+                verdict=(
+                    "unavailable" if self.test_execution is not None or interrupted
+                    else "accepted" if accepted else "rejected"
+                ),
                 cause=cause,
             )
             test = TestOutcome(
@@ -380,21 +406,50 @@ class ExecutionCapture:
                 expected_to_pass=expected_to_pass,
                 accepted=accepted,
             )
-            tools.append(
-                ToolActivity(tool="pytest", action="execute", outcome="succeeded")
-            )
+            tools.append(ToolActivity(
+                tool="pytest",
+                action="execute",
+                outcome="succeeded" if valid_test_execution else "failed",
+            ))
             verdict = review.verdict if cause is None else cause
             if not accepted and not interrupted:
                 outcome = "rejected"
+                attempt_disposition = "rejected"
+            elif interrupted and review.verdict == "unavailable":
+                attempt_disposition = "infra-failure"
             output_reference = f"review:{checkpoint.value}"
-        elif interrupted:
+        elif interrupted and not (
+            self.role_result is not None
+            and self.role_result.kind is RoleResultKind.ESCALATED
+        ):
             verdict = new_state.interrupt_log[-1].trigger
+            attempt_disposition = "infra-failure"
         elif artifacts:
             output_reference = ",".join(item.path for item in artifacts)[:1000]
         elif self.no_change_reason is not None:
             output_reference = "refactorer:no-change"
         else:
             output_reference = f"state:phase={new_state.phase}"
+
+        if self.role_result is not None:
+            if not (
+                self.role_result.kind is RoleResultKind.COMPLETED_WITH_NO_CHANGE
+                and self.no_change_reason is not None
+            ):
+                output_reference = f"role-result:{self.role_result.kind.value}"
+            if self.role_result.kind is RoleResultKind.ESCALATED:
+                outcome = "succeeded"
+                attempt_disposition = "accepted"
+
+        if role_contract_violation is not None:
+            outcome = "rejected"
+            attempt_disposition = (
+                "corrected"
+                if role_contract_violation.resulting_disposition == "retry"
+                else "rejected"
+            )
+            verdict = role_contract_violation.detail
+            output_reference = "role-contract-violation"
 
         code_data = dict(self.code_start)
         if code_data["repository_available"]:
@@ -411,15 +466,28 @@ class ExecutionCapture:
         code_provenance = CodeProvenance.model_validate(code_data)
         verification = []
         if test is not None:
+            disposition = (
+                self.test_execution.classification.value
+                if self.test_execution is not None
+                else "passed" if test.passed else "failed"
+            )
             verification.append(
-                f"{test.checkpoint.value}: {'passed' if test.passed else 'failed'}; "
+                f"{test.checkpoint.value}: {disposition}; "
                 f"{'accepted' if test.accepted else 'not accepted'}"
             )
         open_questions = []
-        if interrupted:
+        if interrupted and not (
+            self.role_result is not None
+            and self.role_result.kind is RoleResultKind.ESCALATED
+        ):
             open_questions.append(
                 f"Resolve interrupt: {new_state.interrupt_log[-1].trigger}"
             )
+        elif self.role_result is not None and self.role_result.kind in {
+            RoleResultKind.BLOCKED,
+            RoleResultKind.ESCALATED,
+        }:
+            open_questions.append(self.role_result.summary or self.role_result.kind.value)
         no_change_detail = (
             f" No code change was warranted: {self.no_change_reason}"
             if self.no_change_reason is not None
@@ -450,8 +518,12 @@ class ExecutionCapture:
             started_at=self.started_at,
             ended_at=_utcnow(),
             outcome=outcome,
+            attempt_disposition=attempt_disposition,
+            role_contract_violation=role_contract_violation,
+            role_result=self.role_result,
             tool_activity=tools,
             test_outcome=test,
+            test_execution=self.test_execution,
             review_result=review,
             artifact_provenance=artifacts,
             interrupt_ids=new_interrupt_indexes,
@@ -464,14 +536,31 @@ class ExecutionCapture:
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.3",
-                "node_executions": new_state.execution_record.node_executions
-                + [execution]
+                "schema_version": "1.8",
+                "node_executions": [
+                    item for item in new_state.execution_record.node_executions
+                    if item.execution_id != self.execution_id
+                ] + [execution]
             }
         )
         return new_state.model_copy(
             update={"interrupt_log": interrupts, "execution_record": record}
         )
+
+    def create_attempt(self, state: RunState) -> RunState:
+        """Register identity before intervention delivery or any role execution."""
+        execution = NodeExecution(
+            execution_id=self.execution_id, role=_role(self.node_name),
+            phase=self.node_name, model_identity=self.model_identity,
+            started_at=self.started_at, outcome="in-progress",
+            input_references=self.input_references,
+            prompt_provenance=self.prompt_provenance,
+        )
+        record = state.execution_record.model_copy(update={
+            "schema_version": "1.8",
+            "node_executions": [*state.execution_record.node_executions, execution],
+        })
+        return state.model_copy(update={"execution_record": record})
 
     def include_human_interventions(self, state: RunState) -> None:
         """Record bounded provenance for interventions delivered to this attempt."""
@@ -507,17 +596,6 @@ def record_scoped_write(target: Path) -> None:
     capture.written_paths.add(relative)
 
 
-def record_unchanged_test_echo(path: str) -> None:
-    """Record a GREEN response that repeated, but did not alter, a RED test.
-
-    This is an output-filter observation rather than a scoped write: the
-    returned test is deliberately never written by GREEN.
-    """
-    capture = _ACTIVE_CAPTURE.get()
-    if capture is not None:
-        capture.ignored_read_only_echoes.add(path)
-
-
 def record_llm_call(call: LLMCallCost) -> None:
     """Attach one provider completion's usage to the active node execution."""
     capture = _ACTIVE_CAPTURE.get()
@@ -542,10 +620,71 @@ def record_stream_observation(kind: str, content: str) -> None:
 
 
 def record_no_change(reason: str) -> None:
-    """Record Refactorer's explicit behavior-preserving no-op decision."""
+    """Normalize Refactorer's legacy no-change result into BTN-133 evidence."""
     capture = _ACTIVE_CAPTURE.get()
     if capture is not None:
         capture.no_change_reason = reason
+        record_role_result(
+            construct_role_result(
+                RoleResultSubmission(
+                    kind=RoleResultKind.COMPLETED_WITH_NO_CHANGE,
+                    summary=reason,
+                ),
+                role="refactorer",
+            )
+        )
+
+
+def record_role_result(result: RoleExecutionResult) -> None:
+    """Attach a Battalion-constructed role result to the active attempt."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        validate_evidence_references(
+            result.evidence_refs,
+            supplied_evidence_refs=(
+                (reference.kind, reference.reference)
+                for reference in capture.input_references
+            ),
+        )
+        capture.role_result = result
+
+
+def record_test_execution(evidence: TestExecutionEvidence) -> None:
+    """Attach actual Reviewer subprocess evidence to the active node attempt."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        capture.test_execution = evidence
+
+
+def record_review_decision(
+    checkpoint: CheckpointType, *, accepted: bool, cause: str | None = None,
+) -> None:
+    """Record the decision before later graph interrupts can replace its phase."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is not None:
+        capture.review_decision = ReviewResult(
+            checkpoint=checkpoint,
+            verdict="accepted" if accepted else "rejected",
+            cause=cause[:2000] if cause is not None else None,
+        )
+
+
+def record_reviewer_workspace(clean_dir: Path) -> None:
+    """Hash only the clean inputs actually admitted for Reviewer execution."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is None:
+        return
+    digest, truncated, observed, hashed = _workspace_context_digest(clean_dir, [])
+    capture.input_references = [EvidenceReference(
+        kind="workspace",
+        reference="clean project snapshot",
+        sha256=digest,
+        hash_algorithm="sha256",
+        inclusion_reason="Reviewer verification snapshot",
+        truncated=truncated,
+        observed_bytes=observed,
+        hashed_bytes=hashed,
+    )]
 
 
 def summarize_costs(record: ExecutionRecord) -> dict[str, object]:

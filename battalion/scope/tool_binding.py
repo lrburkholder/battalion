@@ -1,6 +1,6 @@
 """Per-node write-scope tool binding (BTN-2, plan.md ADR-002).
 
-A node's tool set is built here, at graph-construction time, from its
+A node's tool set is built here, before role execution, from its
 declared entries in RunState.write_scope. A node is only ever given tool
 objects bound to its own declared paths — there is no shared/central tool
 capable of writing anywhere else, so a cross-node violation has no tool to
@@ -14,8 +14,85 @@ checking every write against a global scope table.
 """
 from __future__ import annotations
 
-from pathlib import Path
+import ntpath
+from pathlib import Path, PureWindowsPath
 from typing import Callable
+
+class WriteScopeMisconfigured(Exception):
+    """A declaration is unsafe or lacks a role's required write authority.
+
+    This is operator configuration, never model output eligible for automatic
+    correction or permission to fall back to a broader scope.
+    """
+
+
+def _unsafe_relative_path(path: str) -> bool:
+    parts = path.split("/")
+    # ntpath works on every host. Python 3.11/3.12 need pathlib's older
+    # device-name check; avoid that deprecated API on newer Python versions.
+    reserved = (
+        ntpath.isreserved(path) if hasattr(ntpath, "isreserved") else
+        any(PureWindowsPath(part).is_reserved() for part in parts)
+    )
+    return (
+        not path or bool(PureWindowsPath(path).anchor) or ".." in parts
+        or any(ord(char) < 32 or char in '<>:"|?*' for char in path)
+        or reserved
+        or any(part != "." and part.endswith((".", " ")) for part in parts)
+    )
+
+
+def _resolve_allow_missing(path: Path) -> Path:
+    # New files/directories are valid roots, but other resolution failures
+    # (notably symlink loops on newer Python versions) must not be suppressed
+    # by non-strict resolution.
+    try:
+        return path.resolve(strict=True)
+    except FileNotFoundError:
+        return path.resolve()
+
+
+def normalize_scope_root(entry: str, base_dir: str | Path) -> Path:
+    """Resolve a project-relative authority declaration, failing closed.
+
+    Both separator styles have the same meaning on all supported hosts.
+    Windows anchors/devices are rejected even on POSIX so moving a saved
+    configuration between hosts cannot turn a relative root into an escape.
+    No v1 role permits a grant of the project root itself.
+    """
+    normalized = entry.replace("\\", "/")
+    if _unsafe_relative_path(normalized):
+        raise WriteScopeMisconfigured(
+            f"Invalid write scope {entry!r}: roots must be project-relative paths "
+            "without anchors, parent traversal, or Windows path aliases."
+        )
+    try:
+        base = _resolve_allow_missing(Path(base_dir))
+        root = _resolve_allow_missing(base / normalized)
+        if root == base or not root.is_relative_to(base):
+            raise WriteScopeMisconfigured(
+                f"Invalid write scope {entry!r}: root must resolve strictly within "
+                f"the project ({base})."
+            )
+        return root
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise WriteScopeMisconfigured(
+            f"Cannot resolve write scope {entry!r} within the project: {exc}"
+        ) from exc
+
+
+def validate_write_scope(
+    write_scope: dict[str, list[str]], base_dir: str | Path,
+) -> dict[str, dict[str, Path]]:
+    """Validate all declarations and return roots keyed by their original entries.
+
+    Inactive phases and legacy entries are validated too. Binding consumes
+    these results directly instead of resolving the selected entries again.
+    """
+    return {
+        node: {entry: normalize_scope_root(entry, base_dir) for entry in entries}
+        for node, entries in write_scope.items()
+    }
 
 
 class ScopeViolationError(Exception):
@@ -33,28 +110,37 @@ class _BoundWriteTool:
         root: Path,
         single_file: bool,
         on_violation: Callable[[dict], None] | None,
+        file_name: str,
     ):
         self._node_name = node_name
         self._root = root
         self._single_file = single_file
         self._on_violation = on_violation
+        self._file_name = file_name
 
     def resolve(self, relative_path: str) -> Path:
         """Validate relative_path against this tool's declared root and
         return the resolved target path, without writing anything. Lets
         callers pre-validate a batch of paths before writing any of them."""
-        if self._single_file:
-            if relative_path != self._root.name:
+        try:
+            # Authority is pinned at binding. A replaced directory, junction,
+            # or single-file symlink cannot move that boundary after binding.
+            if _resolve_allow_missing(self._root) != self._root:
                 self._violate(relative_path)
-            return self._root
+            if self._single_file:
+                if relative_path != self._file_name:
+                    self._violate(relative_path)
+                return self._root
 
-        if Path(relative_path).is_absolute():
+            normalized = relative_path.replace("\\", "/")
+            if _unsafe_relative_path(normalized):
+                self._violate(relative_path)
+            target = _resolve_allow_missing(self._root / normalized)
+            if not target.is_relative_to(self._root):
+                self._violate(relative_path)
+            return target
+        except (OSError, RuntimeError, ValueError):
             self._violate(relative_path)
-        target = (self._root / relative_path).resolve()
-        root_resolved = self._root.resolve()
-        if root_resolved not in target.parents and target != root_resolved:
-            self._violate(relative_path)
-        return target
 
     def write(self, relative_path: str, content: str) -> None:
         target = self.resolve(relative_path)
@@ -93,18 +179,20 @@ def build_write_tools(
     "src/") -> a tool bound only to that entry. Entries belonging to other
     nodes never appear here at all.
     """
-    base_dir = Path(base_dir)
-    entries = write_scope.get(node_name, [])
+    # Never expose even an otherwise valid tool while another declaration is
+    # invalid. In particular, invalid explicit phases cannot fall back.
+    roots = validate_write_scope(write_scope, base_dir).get(node_name, {})
 
     tools: dict[str, _BoundWriteTool] = {}
-    for entry in entries:
-        is_dir = entry.endswith("/")
-        root = base_dir / entry
+    for entry, root in roots.items():
+        normalized = entry.replace("\\", "/")
+        is_dir = normalized.endswith("/")
         tools[entry] = _BoundWriteTool(
             node_name=node_name,
             root=root,
             single_file=not is_dir,
             on_violation=on_violation,
+            file_name=Path(normalized).name,
         )
     return tools
 
@@ -135,7 +223,10 @@ def resolve_scoped_batch(
     is required so the target is unambiguous. No tool outside ``write_tools``
     can be selected.
     """
-    directory_tools = {key: tool for key, tool in write_tools.items() if key.endswith("/")}
+    directory_tools = {
+        key.replace("\\", "/"): tool for key, tool in write_tools.items()
+        if not tool._single_file
+    }
     if not directory_tools:
         raise ValueError("a writing phase requires at least one declared directory root")
 

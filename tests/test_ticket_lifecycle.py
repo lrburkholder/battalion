@@ -8,6 +8,7 @@ import pytest
 from battalion.ticket_lifecycle import (
     TicketLifecycleError,
     ensure_in_review,
+    ensure_no_declared_auto_close,
     linked_issue_number,
     linked_issue_numbers,
 )
@@ -85,6 +86,36 @@ def test_ticket_declaration_rejects_missing_mixed_duplicate_or_malformed_forms(
 def test_legacy_single_issue_helper_rejects_multi_ticket_declaration() -> None:
     with pytest.raises(TicketLifecycleError, match="more than one"):
         linked_issue_number("Battalion-tickets: #1, #2")
+
+
+@pytest.mark.parametrize(
+    "closing_line",
+    [
+        "Closes #196",
+        "closes #196",
+        "FIXES: #196",
+        "Resolved #196",
+        "close   #196",
+    ],
+)
+def test_declared_ticket_rejects_github_auto_close_keyword(closing_line: str) -> None:
+    body = f"Summary\n\n{closing_line}\n\nBattalion-ticket: #196\n"
+
+    with pytest.raises(TicketLifecycleError, match="Battalion owns closure.*#196"):
+        ensure_no_declared_auto_close(body)
+
+
+def test_multi_ticket_declaration_rejects_auto_close_for_any_declared_ticket() -> None:
+    body = "Closes #201\n\nBattalion-tickets: #196, #201\n"
+
+    with pytest.raises(TicketLifecycleError, match="#201"):
+        ensure_no_declared_auto_close(body)
+
+
+def test_unrelated_github_auto_close_keyword_is_allowed() -> None:
+    body = "Closes #999\n\nBattalion-ticket: #196\n"
+
+    assert ensure_no_declared_auto_close(body) == (196,)
 
 
 def test_only_in_review_is_eligible_for_automatic_closure() -> None:

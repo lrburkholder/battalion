@@ -13,15 +13,17 @@ from battalion.nodes.errors import WriteScopeMisconfigured
 from battalion.nodes.reviewer import (
     EmptyReviewContent,
     SourceTreeMissing,
-    TestRunResult,
     make_clean_copy,
     run_reviewer,
     run_tests_via_subprocess,
 )
 from battalion.state.models import CheckpointType, RejectionRecord, RunStatus
+from battalion.state.models import TestExecutionClassification as ExecutionClassification
 
 
-from conftest import make_run_state
+from support.state import make_run_state
+from support.responses import litellm_response
+from support.execution import make_test_result as _test_result
 
 
 def make_state(write_scope=None, rejection_history=None, **overrides):
@@ -36,10 +38,6 @@ def make_state(write_scope=None, rejection_history=None, **overrides):
     return make_run_state(**fields)
 
 
-def litellm_response(text: str) -> dict:
-    return {"choices": [{"message": {"content": text}}]}
-
-
 def fake_passed(tmp_path, **kw):
     state = kw.pop("state", None) or make_state(**kw.pop("state_overrides", {}))
     return run_reviewer(
@@ -47,7 +45,9 @@ def fake_passed(tmp_path, **kw):
         base_dir=tmp_path,
         llm_config=NodeLLMConfig(model="test-model"),
         make_clean_copy_fn=lambda src: tmp_path / "clean-copy",
-        run_tests_fn=lambda clean_dir: TestRunResult(passed=True, output="passed", returncode=0),
+        run_tests_fn=lambda clean_dir: _test_result(
+            ExecutionClassification.PASSED, "passed", 0
+        ),
         call_llm_fn=lambda *a, **k: litellm_response("unused"),
         **kw,
     )
@@ -60,7 +60,9 @@ def fake_failed(tmp_path, cause="a cause", **kw):
         base_dir=tmp_path,
         llm_config=NodeLLMConfig(model="test-model"),
         make_clean_copy_fn=lambda src: tmp_path / "clean-copy",
-        run_tests_fn=lambda clean_dir: TestRunResult(passed=False, output="failed", returncode=1),
+        run_tests_fn=lambda clean_dir: _test_result(
+            ExecutionClassification.TEST_FAILED, "failed", 1
+        ),
         call_llm_fn=lambda *a, **k: litellm_response(cause),
         **kw,
     )
@@ -254,7 +256,9 @@ def test_run_reviewer_default_prompt_loaded_from_file(tmp_path):
         llm_config=NodeLLMConfig(model="test-model"),
         checkpoint=CheckpointType.GREEN_CHECK,
         make_clean_copy_fn=lambda src: tmp_path / "clean-copy",
-        run_tests_fn=lambda clean_dir: TestRunResult(passed=False, output="fail", returncode=1),
+        run_tests_fn=lambda clean_dir: _test_result(
+            ExecutionClassification.TEST_FAILED, "fail", 1
+        ),
         call_llm_fn=fake_call_llm,
     )
 
@@ -288,7 +292,9 @@ def test_reviewer_copies_configured_project_root_not_src(tmp_path):
         llm_config=NodeLLMConfig(model="test-model"),
         checkpoint=CheckpointType.GREEN_CHECK,
         make_clean_copy_fn=capture_root,
-        run_tests_fn=lambda clean: TestRunResult(passed=True, output="ok", returncode=0),
+        run_tests_fn=lambda clean: _test_result(
+            ExecutionClassification.PASSED, "ok", 0
+        ),
         call_llm_fn=lambda *a, **kw: litellm_response("unused"),
     )
     assert captured["root"] == tmp_path

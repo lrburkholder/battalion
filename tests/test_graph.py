@@ -1,66 +1,37 @@
-"""Tests for battalion.graph — LangGraph StateGraph wiring (BTN-7).
+"""Graph structure, required checkpoint routing, and interrupt regressions."""
 
-The graph wires Architect, Driver (RED/GREEN modes), Reviewer, and Refactorer
-into a StateGraph with correct edges and interrupt pause points.
-
-Flow: Architect -> Driver(RED) -> Reviewer(RED_CHECK) -> Driver(GREEN) ->
-      Reviewer(GREEN_CHECK) -> Refactorer -> Reviewer(REFACTOR_CHECK) -> DONE
-
-Acceptance criteria:
-1. A ticket flows Architect -> Driver -> Reviewer end-to-end with no interrupt
-2. Graph pauses at each defined interrupt point rather than proceeding silently
-
-Structural checks live in TestGraphStructure. Routing behavior is exercised
-by the regression classes below, which invoke the compiled graph with mocked
-node implementations and assert on the actual call sequence and final state.
-"""
-from datetime import datetime, timezone
 
 import pytest
-
-from battalion.context import MAX_CONTEXT_CHARS, driver_context, refactorer_context
-from battalion.nodes.driver import InvalidModeOutput
-from battalion.nodes.refactorer import MalformedRefactorerOutput
+from langgraph.errors import GraphRecursionError
 from battalion.graph import (
     NODE_ARCHITECT,
     NODE_DONE,
     NODE_DRIVER_GREEN,
     NODE_DRIVER_RED,
+    NODE_BLOCKED,
     NODE_PAUSE,
     NODE_REFACTORER,
     NODE_REVIEWER_RED,
     NODE_REVIEWER_GREEN,
     NODE_REVIEWER_REFACTOR,
     build_graph,
-    resume_ticket,
-    run_ticket,
 )
-from battalion.state.models import (
-    Budget,
-    CheckpointType,
-    InterruptLogEntry,
-    RejectionRecord,
-    RunState,
-    RunStatus,
-)
-from unittest.mock import patch
-
-from conftest import (
+from battalion.state.models import Budget, CheckpointType, RunStatus
+from support.state import make_llm_configs, make_run_state
+from support.execution import make_node_execution
+from support.graph import (
     architect_advancing,
     driver_advancing,
     invoke_graph,
-    make_llm_configs,
-    make_run_state,
     refactorer_advancing,
     reviewer_accepting,
+    reviewer_rejecting,
     reviewer_with_phases,
-    resume_graph,
 )
+from battalion.execution import ExecutionCapture
+from battalion.llm.litellm_client import InferenceIdentityContradiction, NodeLLMConfig
+from battalion.state.models import LLMCallCost
 
-
-# =============================================================================
-# Graph structure
-# =============================================================================
 
 EXPECTED_NODES = [
     NODE_ARCHITECT,
@@ -72,22 +43,13 @@ EXPECTED_NODES = [
     NODE_REVIEWER_REFACTOR,
     NODE_DONE,
     NODE_PAUSE,
+    NODE_BLOCKED,
 ]
 
 
 class TestGraphStructure:
-    def test_graph_registers_all_nine_nodes(self):
-        """AC: all role, terminal, and pause nodes are wired."""
-        node_names = list(build_graph(make_llm_configs()).nodes)
-        for name in EXPECTED_NODES:
-            assert name in node_names, f"Missing node: {name}"
-
     def test_graph_has_exactly_the_expected_nodes(self):
         assert set(build_graph(make_llm_configs()).nodes) == set(EXPECTED_NODES)
-
-    def test_graph_compiles(self):
-        app = build_graph(make_llm_configs()).compile()
-        assert app is not None
 
     def test_node_names_match_phase_names(self):
         """Node names should correspond to phase names in the state."""
@@ -97,23 +59,46 @@ class TestGraphStructure:
         assert NODE_REFACTORER == "refactorer"
         assert NODE_PAUSE == "awaiting_human"
         assert NODE_DONE == "done"
+        assert NODE_BLOCKED == "blocked"
 
 
-# =============================================================================
-# Regression tests: real routing with mocked runners
-#
-# Structural checks alone once shipped four real bugs past 192 passing
-# tests: interrupts fired during Architect/Driver/Refactorer were silently
-# ignored (edges were unconditional), a rejected RED check was routed to
-# Driver(GREEN) as if it had passed (accept/reject both set phase="driver"),
-# every Reviewer checkpoint crashed with an InvalidUpdateError the moment it
-# completed (a redundant add_edge fired alongside add_conditional_edges to a
-# different target), and resume_ticket silently restarted every resumed run
-# from Architect (resume_target was set on the state but app.invoke() always
-# starts at the fixed entry point regardless of state contents). These tests
-# invoke the compiled graph and watch what actually runs, so a routing
-# regression fails loudly instead of compiling silently.
-# =============================================================================
+def test_proven_runtime_driver_reviewer_identity_collision_is_infra_failure(tmp_path):
+    """A response identity collision is evidence, not an alias-name heuristic."""
+    from battalion.graph import _handle_node_error, _runtime_diversity_contradiction
+
+    reviewer_call = LLMCallCost(
+        call_id="reviewer-call", model="router/shared", requested_model="reviewer-request",
+        response_model="router/shared", input_tokens=1, output_tokens=1,
+    )
+    state = make_run_state().model_copy(update={
+        "execution_record": make_run_state().execution_record.model_copy(update={
+            "node_executions": [
+                make_node_execution(
+                    role="reviewer", phase="reviewer_green", llm_calls=[reviewer_call],
+                )
+            ]
+        })
+    })
+    capture = ExecutionCapture.start(state, "driver_green", "driver-request", tmp_path)
+    capture.llm_calls.append(LLMCallCost(
+        call_id="driver-call", model="router/shared", requested_model="driver-request",
+        response_model="router/shared", input_tokens=1, output_tokens=1,
+    ))
+
+    error = _runtime_diversity_contradiction(
+        state, "driver_green", capture, NodeLLMConfig(model="driver-request")
+    )
+
+    assert isinstance(error, InferenceIdentityContradiction)
+    assert "router/shared" in str(error)
+    assert capture.llm_calls[0].identity_contradiction in str(error)
+    paused = _handle_node_error(
+        state, error, next_phase="reviewer", resume_node="driver", node_name="driver_green"
+    )
+    finished = capture.finish(state, paused)
+    assert finished.status is RunStatus.AWAITING_HUMAN
+    assert finished.interrupt_log[-1].trigger == "infra-failure"
+    assert finished.execution_record.node_executions[-1].llm_calls[0].identity_contradiction
 
 
 class TestInterruptsActuallyHaltExecution:
@@ -211,23 +196,17 @@ class TestCheckpointRoutingIsUnambiguous:
     def test_red_check_reject_retries_driver_red_not_green(self, tmp_path):
         calls = []
 
-        reject_everything = reviewer_with_phases({
-            CheckpointType.RED_CHECK: "driver_red",
-            CheckpointType.GREEN_CHECK: "driver_red",
-            CheckpointType.REFACTOR_CHECK: "refactorer",
-        }, record=calls)
+        reject_red = reviewer_rejecting(CheckpointType.RED_CHECK, record=calls)
 
-        try:
+        with pytest.raises(GraphRecursionError):
             invoke_graph(
                 make_run_state(),
                 tmp_path,
                 recursion_limit=5,
                 architect=architect_advancing(),
                 driver=driver_advancing(calls),
-                reviewer=reject_everything,
+                reviewer=reject_red,
             )
-        except Exception:
-            pass  # Expected: mock always rejects, hits recursion limit eventually.
 
         # The bug: driver_green would appear here even though every reviewer
         # call rejected. It must not.
@@ -243,7 +222,7 @@ class TestCheckpointRoutingIsUnambiguous:
             CheckpointType.REFACTOR_CHECK: "refactorer",
         }, record=calls)
 
-        try:
+        with pytest.raises(GraphRecursionError):
             invoke_graph(
                 make_run_state(),
                 tmp_path,
@@ -252,21 +231,15 @@ class TestCheckpointRoutingIsUnambiguous:
                 driver=driver_advancing(calls),
                 reviewer=accept_red_only,
             )
-        except Exception:
-            pass
 
         assert "driver_green" in calls
 
     def test_green_check_reject_retries_driver_green_not_refactorer(self, tmp_path):
         calls = []
 
-        accept_red_reject_green = reviewer_with_phases({
-            CheckpointType.RED_CHECK: "driver_green",
-            CheckpointType.GREEN_CHECK: "driver_green",
-            CheckpointType.REFACTOR_CHECK: "refactorer",
-        }, record=calls)
+        accept_red_reject_green = reviewer_rejecting(CheckpointType.GREEN_CHECK, record=calls)
 
-        try:
+        with pytest.raises(GraphRecursionError):
             invoke_graph(
                 make_run_state(),
                 tmp_path,
@@ -275,8 +248,6 @@ class TestCheckpointRoutingIsUnambiguous:
                 driver=driver_advancing(calls),
                 reviewer=accept_red_reject_green,
             )
-        except Exception:
-            pass
 
         assert calls.count("reviewer_red-check") == 1, "RED accepted exactly once"
         assert calls.count("reviewer_green-check") >= 2, "GREEN rejected into retry"
@@ -288,13 +259,9 @@ class TestCheckpointRoutingIsUnambiguous:
     def test_refactor_check_reject_retries_refactorer_not_done(self, tmp_path):
         calls = []
 
-        accept_through_green = reviewer_with_phases({
-            CheckpointType.RED_CHECK: "driver_green",
-            CheckpointType.GREEN_CHECK: "refactorer",
-            CheckpointType.REFACTOR_CHECK: "refactorer",
-        }, record=calls)
+        accept_through_green = reviewer_rejecting(CheckpointType.REFACTOR_CHECK, record=calls)
 
-        try:
+        with pytest.raises(GraphRecursionError):
             invoke_graph(
                 make_run_state(),
                 tmp_path,
@@ -304,8 +271,6 @@ class TestCheckpointRoutingIsUnambiguous:
                 reviewer=accept_through_green,
                 refactorer=refactorer_advancing(calls),
             )
-        except Exception:
-            pass
 
         assert calls.count("reviewer_red-check") == 1
         assert calls.count("reviewer_green-check") == 1
@@ -327,312 +292,19 @@ class TestReviewerCheckpointsDoNotCrash:
         The hermetic defaults in patched_nodes are exactly this scenario --
         no custom fakes needed."""
         # Must not raise InvalidUpdateError.
-        final = invoke_graph(make_run_state(), tmp_path, recursion_limit=10)
+        sequence, events = [], []
+        final = invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=10,
+            record=sequence, on_node_event=events.append,
+        )
 
         assert final["status"] == RunStatus.DONE
         assert final["phase"] == "done"
-
-
-class TestRoleOutputFailuresPause:
-    """Provider responses that violate a role contract are recoverable.
-
-    These use the real graph scaffolding and the exact exception types the
-    parsers raise, so the regression covers the two UAT failures without
-    requiring a live provider.
-    """
-
-    def test_driver_mode_violation_pauses_and_retries_the_same_phase(self, tmp_path):
-        def invalid_red_response(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
-            assert mode == "red"
-            raise InvalidModeOutput("RED mode must only produce test files")
-
-        final = invoke_graph(
-            make_run_state(), tmp_path, recursion_limit=5, driver=invalid_red_response
-        )
-
-        assert final["status"] == RunStatus.AWAITING_HUMAN
-        assert final["phase"] == NODE_PAUSE
-        interrupt = final["interrupt_log"][-1]
-        assert interrupt.trigger == "infra-failure"
-        assert interrupt.context["failure_kind"] == "role-output"
-        assert interrupt.context["next_phase"] == NODE_DRIVER_RED
-        assert "RED mode" in interrupt.context["error"]
-
-    def test_refactorer_non_json_pauses_and_retries_refactoring(self, tmp_path):
-        def malformed_response(state, refactor_text, llm_config, base_dir, prompts_dir=None):
-            raise MalformedRefactorerOutput(
-                "Refactorer LLM output was not valid JSON: Expecting value"
-            )
-
-        final = invoke_graph(
-            make_run_state(), tmp_path, recursion_limit=10, refactorer=malformed_response
-        )
-
-        assert final["status"] == RunStatus.AWAITING_HUMAN
-        assert final["phase"] == NODE_PAUSE
-        interrupt = final["interrupt_log"][-1]
-        assert interrupt.trigger == "infra-failure"
-        assert interrupt.context["next_phase"] == NODE_REFACTORER
-        assert "Refactorer LLM output was not valid JSON" in interrupt.context["error"]
-
-        calls = []
-        resumed = resume_graph(
-            RunState.model_validate(final),
-            tmp_path,
-            max_turns=5,
-            refactorer=refactorer_advancing(calls),
-            reviewer=reviewer_accepting(calls),
-        )
-        assert calls == ["refactorer", "reviewer_refactor-check"]
-        assert RunState.model_validate(resumed).status == RunStatus.DONE
-
-
-class TestResumeActuallyResumes:
-    """Regression tests for bug #4: resume_ticket set resume_target on the
-    state but app.invoke() always starts at the fixed entry point
-    (Architect) regardless of state contents -- every resume silently
-    restarted the ticket from scratch."""
-
-    def test_resume_does_not_rerun_architect(self, tmp_path):
-        calls = []
-
-        paused_state = make_run_state(
-            status=RunStatus.AWAITING_HUMAN,
-            phase="awaiting_human",
-            interrupt_log=[
-                InterruptLogEntry(
-                    trigger="budget-exceeded",
-                    timestamp=datetime.now(timezone.utc),
-                    context={"next_phase": NODE_REVIEWER_REFACTOR},
-                )
-            ],
-        )
-
-        final = resume_graph(paused_state, tmp_path, max_turns=5,
-                             architect=architect_advancing(calls),
-                             reviewer=reviewer_accepting(calls))
-
-        assert "architect" not in calls, "Resuming must not re-run Architect from scratch"
-        # REFACTOR_CHECK accept -> phase="done" routes straight to NODE_DONE,
-        # so this resume needs neither Driver nor Refactorer to finish clean.
-        assert calls == ["reviewer_refactor-check"]
-        assert final["status"] == RunStatus.DONE
-
-    def test_resume_preserves_saved_run_configuration(self, tmp_path):
-        captured = {}
-
-        class FakeApp:
-            def compile(self):
-                return self
-
-            def invoke(self, state, config):
-                captured["state"] = state
-                return state
-
-        paused = make_run_state(
-            run_id="saved-run",
-            ticket_id="saved-ticket",
-            spec="saved specification",
-            status=RunStatus.AWAITING_HUMAN,
-            phase="awaiting_human",
-            write_scope={"architect": ["a.md"], "driver": ["pkg/"], "reviewer": []},
-            retry_bound=9,
-            budget_used=4,
-            budget_limit=17,
-            manual_checkpoints=["reviewer_green"],
-            interrupt_log=[
-                InterruptLogEntry(
-                    trigger="manual-checkpoint",
-                    timestamp=datetime.now(timezone.utc),
-                    context={"next_phase": NODE_DRIVER_GREEN},
-                )
-            ],
-        )
-
-        with patch("battalion.graph.build_graph", return_value=FakeApp()):
-            resume_ticket(paused, make_llm_configs(), base_dir=tmp_path)
-
-        resumed = captured["state"]
-        for field in (
-            "run_id", "ticket_id", "spec", "write_scope", "retry_bound",
-            "budget", "manual_checkpoints", "interrupt_log",
-        ):
-            assert getattr(resumed, field) == getattr(paused, field)
-
-
-class TestExecutionContext:
-    """BTN-26 role context is persisted, bounded, and assembled by the graph."""
-
-    def test_run_ticket_preserves_caller_supplied_initial_state(self, tmp_path):
-        captured = {}
-
-        class FakeApp:
-            def compile(self):
-                return self
-
-            def invoke(self, state, config):
-                captured["state"] = state
-                return state
-
-        initial = make_run_state(
-            run_id="custom-run-id",
-            ticket_id="custom-ticket-id",
-            spec="Persisted specification",
-            write_scope={"architect": ["custom-plan.md"], "driver": ["pkg/"], "reviewer": []},
-            retry_bound=7,
-            budget_used=2,
-            budget_limit=13,
-            manual_checkpoints=["driver_green"],
-        )
-
-        with patch("battalion.graph.build_graph", return_value=FakeApp()):
-            final = run_ticket(initial, make_llm_configs(), base_dir=tmp_path)
-
-        assert captured["state"] == initial
-        assert final == initial
-
-    def test_run_ticket_rejects_duplicate_run_configuration(self, tmp_path):
-        initial = make_run_state()
-
-        with pytest.raises(TypeError, match="unexpected keyword argument 'ticket_id'"):
-            run_ticket(
-                initial,
-                make_llm_configs(),
-                base_dir=tmp_path,
-                ticket_id="conflicting-ticket",
-            )
-
-    def test_graph_supplies_deterministic_role_specific_context(self, tmp_path):
-        source = tmp_path / "src"
-        source.mkdir()
-        (tmp_path / "plan.md").write_text("Approved plan content", encoding="utf-8")
-        (source / "widget.py").write_text("IMPLEMENTATION_SENTINEL", encoding="utf-8")
-        (source / "test_widget.py").write_text("TEST_SENTINEL", encoding="utf-8")
-        captured = {}
-
-        def fake_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
-            captured["architect"] = spec_text
-            return state.model_copy(update={"phase": "driver"})
-
-        def fake_driver(state, ticket_text, llm_config, base_dir, mode, prompts_dir=None):
-            captured[f"driver_{mode}"] = ticket_text
-            return state.model_copy(update={"phase": "reviewer"})
-
-        def fake_refactorer(state, refactor_text, llm_config, base_dir, prompts_dir=None):
-            captured["refactorer"] = refactor_text
-            return state.model_copy(update={"phase": "reviewer"})
-
-        initial = make_run_state(spec="SPECIFICATION_SENTINEL")
-        final = invoke_graph(
-            initial,
-            tmp_path,
-            recursion_limit=10,
-            architect=fake_architect,
-            driver=fake_driver,
-            refactorer=fake_refactorer,
-        )
-
-        assert final["status"] == RunStatus.DONE
-        assert final["spec"] == "SPECIFICATION_SENTINEL"
-        assert "SPECIFICATION_SENTINEL" in captured["architect"]
-        assert "Approved plan content" in captured["driver_red"]
-        assert "IMPLEMENTATION_SENTINEL" in captured["driver_red"]
-        assert "TEST_SENTINEL" not in captured["driver_red"]
-        assert "Approved plan content" in captured["driver_green"]
-        assert "TEST_SENTINEL" in captured["driver_green"]
-        assert "IMPLEMENTATION_SENTINEL" not in captured["driver_green"]
-        assert "IMPLEMENTATION_SENTINEL" in captured["refactorer"]
-        assert "TEST_SENTINEL" in captured["refactorer"]
-        assert all(len(context) <= MAX_CONTEXT_CHARS for context in captured.values())
-
-    def test_context_file_order_is_stable_and_bounded(self, tmp_path):
-        source = tmp_path / "src"
-        source.mkdir()
-        (tmp_path / "plan.md").write_text("plan", encoding="utf-8")
-        (source / "zeta.py").write_text("z" * (MAX_CONTEXT_CHARS * 2), encoding="utf-8")
-        (source / "alpha.py").write_text("alpha", encoding="utf-8")
-        state = make_run_state(spec="spec")
-
-        first = driver_context(state, tmp_path, "red")
-        second = driver_context(state, tmp_path, "red")
-
-        assert first == second
-        assert len(first) <= MAX_CONTEXT_CHARS
-        assert first.index("src/alpha.py") < first.index("src/zeta.py")
-        assert "[truncated]" in first
-
-    def test_context_uses_phase_specific_layout_roots(self, tmp_path):
-        (tmp_path / "tests").mkdir()
-        (tmp_path / "battalion").mkdir()
-        (tmp_path / "tests" / "test_widget.py").write_text("TEST_SENTINEL")
-        (tmp_path / "battalion" / "widget.py").write_text("IMPLEMENTATION_SENTINEL")
-        state = make_run_state(write_scope={
-            "architect": ["plan.md"],
-            "driver_red": ["tests/"],
-            "driver_green": ["battalion/"],
-            "refactorer": ["battalion/"],
-            "reviewer": [],
-        })
-
-        red = driver_context(state, tmp_path, "red")
-        green = driver_context(state, tmp_path, "green")
-        refactor = refactorer_context(state, tmp_path)
-
-        assert "IMPLEMENTATION_SENTINEL" in red
-        assert "TEST_SENTINEL" not in red
-        assert "TEST_SENTINEL" in green
-        assert "IMPLEMENTATION_SENTINEL" not in green
-        assert "TEST_SENTINEL" in refactor
-        assert "IMPLEMENTATION_SENTINEL" in refactor
-
-    def test_driver_context_includes_prior_role_output_feedback_for_same_phase(self, tmp_path):
-        state = make_run_state().model_copy(update={
-            "interrupt_log": [
-                InterruptLogEntry(
-                    trigger="infra-failure",
-                    timestamp=datetime.now(timezone.utc),
-                    context={
-                        "failure_kind": "role-output",
-                        "next_phase": NODE_DRIVER_GREEN,
-                        "error": "GREEN mode must not produce test files",
-                    },
-                )
-            ]
-        })
-
-        green = driver_context(state, tmp_path, "green")
-        red = driver_context(state, tmp_path, "red")
-
-        assert "## Previous output validation failure" in green
-        assert "GREEN mode must not produce test files" in green
-        assert "Previous output validation failure" not in red
-
-    def test_retry_context_includes_only_the_matching_reviewer_feedback(self, tmp_path):
-        state = make_run_state().model_copy(update={
-            "reviewer_rejection_history": [
-                RejectionRecord(
-                    cause="RED_CAUSE", cycle_number=1,
-                    checkpoint=CheckpointType.RED_CHECK,
-                ),
-                RejectionRecord(
-                    cause="GREEN_CAUSE", cycle_number=2,
-                    checkpoint=CheckpointType.GREEN_CHECK,
-                ),
-                RejectionRecord(
-                    cause="REFACTOR_CAUSE", cycle_number=1,
-                    checkpoint=CheckpointType.REFACTOR_CHECK,
-                ),
-            ]
-        })
-
-        red = driver_context(state, tmp_path, "red")
-        green = driver_context(state, tmp_path, "green")
-        refactor = refactorer_context(state, tmp_path)
-
-        assert "Reviewer feedback" in red
-        assert "RED_CAUSE" in red
-        assert "GREEN_CAUSE" not in red
-        assert "GREEN_CAUSE" in green
-        assert "RED_CAUSE" not in green
-        assert "REFACTOR_CAUSE" in refactor
-        assert "GREEN_CAUSE" not in refactor
+        assert sequence == [
+            "architect", "driver_red", "reviewer_red-check", "driver_green",
+            "reviewer_green-check", "refactorer", "reviewer_refactor-check",
+        ]
+        assert [event["node"] for event in events if event["type"] == "node_start"] == [
+            "architect", "driver_red", "reviewer_red", "driver_green",
+            "reviewer_green", "refactorer", "reviewer_refactor",
+        ]
