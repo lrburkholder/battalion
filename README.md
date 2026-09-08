@@ -46,6 +46,14 @@ Battalion is currently **pre-1.0**.
 
 The core graph, human interrupts, CLI, desktop application, persistence, execution evidence, and deterministic acceptance tests are implemented. Formal CLI UAT (BTN-129), desktop UAT (BTN-132), and external integration dogfooding (BTN-80) remain release gates after BTN-173's main-based candidate handoff.
 
+On the BTN-195 feature branch, Driver now requires current artifact-target
+evidence. Shared application execution supports that evidence; CLI/desktop intake
+is still in progress, so ordinary client execution currently fails closed at
+Driver. Driver context includes the active contract's exact phase targets, including
+human corrections, ahead of the explanatory plan. Large target tables are retained
+in full in addition to the bounded explanatory context. This branch is not yet a
+replacement for the acceptance build described below.
+
 Merging code to `main` does **not** mean that functionality has been accepted for release.
 
 Current status is generated from canonical [GitHub Issues](https://github.com/lrburkholder/battalion/issues) and Milestones. See the [public status dashboard](https://lrburkholder.github.io/battalion/docs/status.html) for the current milestone-level view.
@@ -376,6 +384,11 @@ The main implementation areas are:
 | `battalion.history` / `battalion.history_store` | History evidence, descriptive analytics, and disposable SQLite indexes |
 | `battalion.role_results` | Typed role-result validation |
 | `battalion.artifact_targets` | Artifact-target and Architect-candidate domain models with pre-write Architect validation on the BTN-194 branch |
+| `battalion.artifact_target_state` | BTN-195 branch immutable handoff history on RunState 1.2 with admission, provenance, and Driver attempt linkage |
+| `battalion.artifact_target_reconciliation` | Deterministic target assessment against explicit current evidence, exact recipe phases, and read-only scope/path inspection |
+| `battalion.artifact_target_sealing` | Constructs full contracts from captured Architect evidence and compact contracts from exact authoritative work-item/specification targets; sealing persists reconciliation without dispatch |
+| `battalion.project_source` / `project_source_files` | BTN-195 branch source snapshots for admitted Git Runs; sealing checks fresh source against the pre-execution baseline and verified scoped-write receipts |
+| `battalion.artifact_target_runtime` | Mandatory pre-Driver sealing/revalidation with exact checkpoint authorization and Actor-authorized correction/return/cancel operations; client intake remains in progress and compact dispatch requires its own executor |
 | `battalion.context` | Bounded model context assembly |
 | `battalion.scope` | Mechanical write-scope enforcement |
 | `battalion.llm` | Per-role model access through LiteLLM |

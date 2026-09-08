@@ -5,13 +5,14 @@ import hashlib
 import json
 import subprocess
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from battalion.artifact_targets import ArchitectHandoffCandidate
 from battalion.prompts.loader import load_prompt_template, prompt_contract_version
 from battalion.role_results import (
     RoleExecutionResult,
@@ -273,6 +274,9 @@ class ExecutionCapture:
     input_references: list[EvidenceReference]
     prompt_provenance: PromptProvenance | None
     code_start: dict[str, object]
+    architect_handoff_candidate: ArchitectHandoffCandidate | None = None
+    scoped_write_digests: dict[str, str] = field(default_factory=dict)
+    artifact_target_contract_id: str | None = None
 
     @classmethod
     def start(
@@ -339,6 +343,14 @@ class ExecutionCapture:
             )
             for path, digest in sorted(changed.items())
         ]
+        verified_writes = []
+        for path, digest in sorted(self.scoped_write_digests.items()):
+            target = self.base_dir / path
+            if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest() == digest:
+                verified_writes.append(ArtifactProvenance(
+                    path=path, sha256=digest, originating_run_id=old_state.run_id,
+                    originating_node_execution_id=self.execution_id,
+                ))
         tools = [
             ToolActivity(tool="scoped-write", action="write", target=path, outcome="succeeded")
             for path in sorted(changed)
@@ -533,10 +545,13 @@ class ExecutionCapture:
             operator_summary=summary,
             prompt_provenance=self.prompt_provenance,
             code_provenance=code_provenance,
+            architect_handoff_candidate=self.architect_handoff_candidate,
+            verified_scoped_writes=tuple(verified_writes),
+            artifact_target_contract_id=self.artifact_target_contract_id,
         )
         record = new_state.execution_record.model_copy(
             update={
-                "schema_version": "1.8",
+                "schema_version": "1.9",
                 "node_executions": [
                     item for item in new_state.execution_record.node_executions
                     if item.execution_id != self.execution_id
@@ -549,15 +564,18 @@ class ExecutionCapture:
 
     def create_attempt(self, state: RunState) -> RunState:
         """Register identity before intervention delivery or any role execution."""
+        if self.node_name in {"driver_red", "driver_green"} and state.artifact_target_handoff:
+            self.artifact_target_contract_id = state.artifact_target_handoff.active_contract_id
         execution = NodeExecution(
             execution_id=self.execution_id, role=_role(self.node_name),
             phase=self.node_name, model_identity=self.model_identity,
             started_at=self.started_at, outcome="in-progress",
             input_references=self.input_references,
             prompt_provenance=self.prompt_provenance,
+            artifact_target_contract_id=self.artifact_target_contract_id,
         )
         record = state.execution_record.model_copy(update={
-            "schema_version": "1.8",
+            "schema_version": "1.9",
             "node_executions": [*state.execution_record.node_executions, execution],
         })
         return state.model_copy(update={"execution_record": record})
@@ -583,6 +601,20 @@ class ExecutionCapture:
             ))
 
 
+def record_architect_handoff(candidate: ArchitectHandoffCandidate) -> None:
+    """Retain the validated candidate only after Architect's scoped plan write."""
+    capture = _ACTIVE_CAPTURE.get()
+    if capture is None:
+        return
+    plan_path = (capture.base_dir / "plan.md").resolve().relative_to(capture.base_dir).as_posix()
+    if capture.node_name != "architect" or plan_path not in capture.written_paths:
+        raise ValueError("Architect handoff capture requires its scoped plan.md write")
+    # Snapshot entries retain the declared path even when the scoped tool
+    # follows an in-project alias. Include idempotent plan writes as evidence.
+    capture.written_paths.add("plan.md")
+    capture.architect_handoff_candidate = ArchitectHandoffCandidate.model_validate(candidate)
+
+
 def record_scoped_write(target: Path) -> None:
     """Link a bound write tool action to the currently executing node."""
     capture = _ACTIVE_CAPTURE.get()
@@ -594,6 +626,7 @@ def record_scoped_write(target: Path) -> None:
     except ValueError:
         return
     capture.written_paths.add(relative)
+    capture.scoped_write_digests[relative] = hashlib.sha256(resolved.read_bytes()).hexdigest()
 
 
 def record_llm_call(call: LLMCallCost) -> None:

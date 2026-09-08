@@ -436,3 +436,7 @@ def test_rejection_model_failure_does_not_fabricate_a_review_verdict(tmp_path, m
     assert execution.review_result.verdict == "unavailable"
     assert execution.attempt_disposition == "infra-failure"
     assert execution.tool_activity[-1].outcome == "succeeded"
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

@@ -80,3 +80,9 @@ class TestResumeActuallyResumes:
             "budget", "manual_checkpoints", "interrupt_log",
         ):
             assert getattr(resumed, field) == getattr(paused, field)
+
+import pytest
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

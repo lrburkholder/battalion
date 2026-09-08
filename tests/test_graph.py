@@ -308,3 +308,7 @@ class TestReviewerCheckpointsDoNotCrash:
             "architect", "driver_red", "reviewer_red", "driver_green",
             "reviewer_green", "refactorer", "reviewer_refactor",
         ]
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

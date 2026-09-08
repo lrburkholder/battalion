@@ -18,6 +18,15 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
+from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence
+from battalion.artifact_target_runtime import ArtifactTargetGateRejected, reconcile_run_handoff
+from battalion.artifact_target_state import ArtifactTargetCorrection, ArtifactTargetHandoffRecord
+from battalion.artifact_targets import ArtifactTargetContract
+from battalion.artifact_target_sealing import ArtifactTargetSealingRejected
+from battalion.artifact_target_state import ArtifactTargetReasonCode
+from battalion.project_source import ProjectSourceUnavailable
+from battalion.project_source_files import capture_project_source
+
 from battalion.actors import (
     Actor,
     ActorError,
@@ -92,6 +101,7 @@ from battalion.state.models import (
 from battalion.state.persistence import load_state, save_state
 from battalion.workflow_recipes import (
     DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    UnknownWorkflowRecipe,
     WorkflowRecipe,
     WorkflowRecipeRegistry,
     WorkflowStage,
@@ -168,6 +178,54 @@ def resume_ticket(*args, **kwargs):
 
 class ApplicationError(Exception):
     """Base class for expected failures exposed to presentation clients."""
+
+
+class ArtifactTargetHandoffRejected(ApplicationError):
+    """Initial sealing or Driver admission lacks evidence or needs correction."""
+
+    def __init__(self, reason_code: ArtifactTargetReasonCode, message: str):
+        self.reason_code = reason_code
+        super().__init__(message)
+
+
+@dataclass(frozen=True)
+class SealArchitectTargetHandoff:
+    """Reconcile a retained candidate while the Run worker is inactive.
+
+    Current revisions and references must come from authoritative application
+    intake. This command does not accept a replacement candidate or authorize
+    Driver. Source observation is shared with the mandatory graph gate.
+    """
+
+    run_id: str
+    architect_execution_id: str
+    project_root: str | Path
+    current_evidence: ArtifactTargetCurrentEvidence
+    case_sensitive_paths: bool
+
+
+@dataclass(frozen=True)
+class ChangeArtifactTargetHandoff:
+    """Human authority over an exact handoff, without dispatching any role."""
+
+    run_id: str
+    project_root: str | Path
+    action_id: str
+    action: Literal["approve-correction", "return-to-architect", "cancel"]
+    expected_contract_id: str | None
+    reason: str
+    actor_id: UUID | None = None
+    corrected_contract: ArtifactTargetContract | None = None
+    current_evidence: ArtifactTargetCurrentEvidence | None = None
+
+
+@dataclass(frozen=True)
+class SealCompactTargetHandoff:
+    """Seal source-supplied targets without enabling compact recipe execution."""
+
+    run_id: str
+    project_root: str | Path
+    current_evidence: ArtifactTargetCurrentEvidence
 
 
 class InvalidWriteScope(ApplicationError):
@@ -321,6 +379,7 @@ class StartRun:
     initial_state: RunState
     config: BattalionConfig
     overwrite: bool = False
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None
 
 
 @dataclass(frozen=True)
@@ -348,6 +407,8 @@ class ResumeRun:
     resolution: str = "authorized resume"
     action_id: str | None = None
     current_admission_evidence: WorkflowAdmissionEvidence | None = None
+    current_artifact_evidence: ArtifactTargetCurrentEvidence | None = None
+    artifact_target_contract_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -888,6 +949,8 @@ def _execute_graph(
         return result
     except ApplicationError:
         raise
+    except ArtifactTargetGateRejected as exc:
+        raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
     except WriteScopeMisconfigured as exc:
         raise InvalidWriteScope(str(exc)) from exc
     except Exception as exc:
@@ -914,6 +977,12 @@ def _prepare_resume(
     state: RunState, command: ResumeRun, actor: Actor,
 ) -> tuple[RunState, bool, str | None]:
     """Validate replay or atomically pair a new decision with its resume intent."""
+    handoff = state.artifact_target_handoff
+    if handoff and handoff.corrections:
+        if handoff.corrections[-1].action == "cancel":
+            raise HumanActionRejected("Cancelled handoff cannot resume; create a new Run")
+        if any(item.action_id == command.action_id for item in handoff.corrections):
+            raise HumanActionRejected("Resume action ID already belongs to a handoff action")
     intent = state.resume_intent
     identifier = command.action_id
     if identifier is None and intent is not None and not intent.completed:
@@ -922,7 +991,8 @@ def _prepare_resume(
         previous = next((a for a in state.human_action_log if a.action_id == identifier), None)
         if previous is not None:
             if (previous.kind != "interrupt-resolution" or previous.actor_id != actor.actor_id
-                    or previous.detail != command.resolution.strip()):
+                    or previous.detail != command.resolution.strip()
+                    or previous.artifact_target_contract_id != command.artifact_target_contract_id):
                 raise HumanActionRejected("Resume action ID conflicts with its original authorization")
             pending = intent is not None and intent.action_id == identifier and not intent.completed
             if not pending:
@@ -935,6 +1005,7 @@ def _prepare_resume(
     if state.status is RunStatus.AWAITING_HUMAN:
         state = _resolve_latest_interrupt(
             state, actor=actor, resolution=command.resolution, action_id=identifier,
+            artifact_target_contract_id=command.artifact_target_contract_id,
         )
         progress = state.graph_progress
         interrupt = state.interrupt_log[-1] if state.interrupt_log else None
@@ -973,6 +1044,11 @@ def start_run(
 ) -> RunOperationResult:
     """Execute a new run through the graph and persist its resulting state."""
     initial_state = command.initial_state
+    if initial_state.workflow_admission is not None:
+        _validate_admitted_resume(
+            initial_state.workflow_admission, current_evidence=None,
+            policy=DEFAULT_WORKFLOW_ADMISSION_POLICY, registry=DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+        )
     if initial_state.cost_policy is not command.config.cost_policy:
         raise InvalidInferencePolicy("Initial state cost policy does not match the active configuration")
     try:
@@ -1020,6 +1096,8 @@ def start_run(
             on_node_event=node_callback,
             on_token=token_callback,
             on_state_checkpoint=checkpoint,
+            **({"current_artifact_evidence": command.current_artifact_evidence}
+               if command.current_artifact_evidence is not None else {}),
         )
     if final_state.run_id != initial_state.run_id:
         raise RunIdentityChanged(
@@ -1071,6 +1149,28 @@ def resume_run(
         return RunOperationResult(
             state.run_id, state.run_alias, state.schema_version, path, state,
         )
+    if command.artifact_target_contract_id is not None:
+        # The resolution exists only in memory until fresh admission succeeds.
+        # Failed evidence must not consume the human's action ID or interrupt.
+        from battalion.artifact_target_runtime import admit_driver_attempt
+        authorization = next((action for action in state.human_action_log
+                              if state.resume_intent is not None
+                              and action.action_id == state.resume_intent.action_id
+                              and action.artifact_target_contract_id == command.artifact_target_contract_id), None)
+        checkpoint = next((entry for index, entry in enumerate(state.interrupt_log)
+                           if authorization is not None and authorization.target == f"interrupt:{index}"
+                           and entry.trigger == "manual-checkpoint"
+                           and entry.context.get("next_phase") in {"driver_red", "driver_green"}), None)
+        if checkpoint is None:
+            raise HumanActionRejected("Contract authorization requires its exact Driver checkpoint action")
+        try:
+            state = admit_driver_attempt(
+                state, project_root=command.config.base_dir,
+                current=command.current_artifact_evidence,
+                node_name=checkpoint.context["next_phase"],
+            )
+        except ArtifactTargetGateRejected as exc:
+            raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
     recovery = assess_recovery(state)
     if recovery is not None and recovery.disposition == "terminal":
         raise RunRecoveryUnsafe(state.run_id, recovery)
@@ -1105,6 +1205,8 @@ def resume_run(
             on_node_event=node_callback,
             on_token=token_callback,
             on_state_checkpoint=checkpoint,
+            **({"current_artifact_evidence": command.current_artifact_evidence}
+               if command.current_artifact_evidence is not None else {}),
         )
     if final_state.run_id != state.run_id:
         raise RunIdentityChanged(
@@ -1190,7 +1292,7 @@ def _validate_admitted_resume(
         )
     elif execution.recipe_id != "full-implementation-run":
         raise WorkflowAdmissionResumeRejected(
-            "the persisted compact recipe cannot be resumed through the full-workflow graph"
+            "the persisted compact recipe cannot be executed through the full-workflow graph"
         )
     return execution
 
@@ -1822,6 +1924,16 @@ def create_admitted_run(
             }
         ).model_dump()
     )
+    # Capture before any role can write. Non-Git projects retain explicit
+    # missing source evidence; sealing must not invent a baseline after a role.
+    if (Path(command.config.base_dir) / ".git").exists():
+        try:
+            source = capture_project_source(command.config.base_dir, project_id=state.project_id)
+        except ProjectSourceUnavailable as exc:
+            raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.MISSING_EVIDENCE, str(exc)) from exc
+        state = RunState.model_validate({
+            **state.model_dump(), "schema_version": "1.2", "project_source_snapshot": source,
+        })
     path = state_path(state.run_id, state_dir)
     if path.exists():
         raise RunAlreadyExists(state.run_id, path)
@@ -1834,6 +1946,198 @@ def create_admitted_run(
         state_path=path,
         state=state,
     )
+
+
+def seal_architect_target_handoff(
+    command: SealArchitectTargetHandoff,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+    worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    _clock: Callable[[], datetime] | None = None,
+) -> RunOperationResult:
+    """Persist initial evidence without changing admission, interrupts or attempts.
+
+    Identical replays do not append records. A changed observation may invalidate
+    readiness, but this operation cannot clear a prior clarification, replace a
+    contract, or reactivate one cleared by a human action.
+    """
+    path = state_path(command.run_id, state_dir)
+    reason = ArtifactTargetReasonCode
+    try:
+        with _inactive_worker_guard(command.run_id, worker_dir=worker_dir):
+            state = _load_run(command.run_id, state_dir)
+            root = Path(command.project_root).resolve(strict=True)
+            identity = load_project_identity(root)
+            if str(identity.project_id) != state.project_id:
+                raise ArtifactTargetHandoffRejected(reason.STALE_EVIDENCE, "Project marker does not match this Run.")
+            current = ArtifactTargetCurrentEvidence.model_validate({
+                **command.current_evidence.model_dump(),
+                "architect_execution_id": command.architect_execution_id,
+            })
+            updated = reconcile_run_handoff(
+                state, project_root=root, current=current,
+                case_sensitive_paths=command.case_sensitive_paths,
+                initial_only=True, registry=registry, clock=_clock,
+            )
+            if updated is state:
+                return RunOperationResult(state.run_id, state.run_alias, state.schema_version, path, state)
+            save_state(updated, path)
+            return RunOperationResult(updated.run_id, updated.run_alias, updated.schema_version, path, updated)
+    except ArtifactTargetSealingRejected as exc:
+        raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
+    except _WorkerAlreadyActive as exc:
+        raise ArtifactTargetHandoffRejected(reason.STALE_EVIDENCE, "Cannot seal while a worker or another action is active.") from exc
+    except WriteScopeMisconfigured as exc:
+        raise ArtifactTargetHandoffRejected(reason.UNSAFE_PATH, str(exc)) from exc
+    except (OSError, ValueError, TypeError) as exc:
+        raise ArtifactTargetHandoffRejected(reason.MISSING_EVIDENCE, f"Cannot seal handoff: {exc}") from exc
+
+
+def seal_compact_target_handoff(
+    command: SealCompactTargetHandoff,
+    *, state_dir: str | Path = DEFAULT_STATE_DIR,
+    worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+) -> RunOperationResult:
+    """Persist exact compact evidence under the same worker/action exclusion."""
+    path = state_path(command.run_id, state_dir)
+    try:
+        with _inactive_worker_guard(command.run_id, worker_dir=worker_dir):
+            state = _load_run(command.run_id, state_dir)
+            if str(load_project_identity(command.project_root).project_id) != state.project_id:
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.STALE_EVIDENCE, "Project marker does not match this Run")
+            try:
+                recipe = registry.resolve(command.current_evidence.recipe_id, command.current_evidence.recipe_version)
+            except UnknownWorkflowRecipe as exc:
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.INCOMPATIBLE_RECIPE, str(exc)) from exc
+            if WorkflowStage.ARCHITECTURE in recipe.stages:
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.INCOMPATIBLE_RECIPE, "Use Architect sealing for the full recipe")
+            if state.artifact_target_handoff and state.artifact_target_handoff.corrections:
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.STALE_EVIDENCE, "Initial compact sealing cannot replace human handoff actions")
+            if state.status in {RunStatus.DONE, RunStatus.FAILED_INFRA} or any(
+                item.role == "driver" for item in state.execution_record.node_executions
+            ):
+                raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.STALE_EVIDENCE, "Initial sealing must precede Driver and terminal history")
+            updated = reconcile_run_handoff(state, project_root=command.project_root,
+                                            current=command.current_evidence, case_sensitive_paths=False, registry=registry)
+            if updated is not state:
+                save_state(updated, path)
+            return RunOperationResult(updated.run_id, updated.run_alias, updated.schema_version, path, updated)
+    except ArtifactTargetSealingRejected as exc:
+        raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
+    except _WorkerAlreadyActive as exc:
+        raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.STALE_EVIDENCE, "Cannot seal while a worker or another action is active") from exc
+    except (OSError, ValueError, TypeError) as exc:
+        raise ArtifactTargetHandoffRejected(ArtifactTargetReasonCode.MISSING_EVIDENCE, str(exc)) from exc
+
+
+def change_artifact_target_handoff(
+    command: ChangeArtifactTargetHandoff,
+    *, state_dir: str | Path = DEFAULT_STATE_DIR,
+    worker_dir: str | Path = DEFAULT_WORKER_DIR,
+    registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+    _clock: Callable[[], datetime] | None = None,
+) -> RunOperationResult:
+    """Validate Actor, compare the expected tip, and atomically append an action."""
+    path = state_path(command.run_id, state_dir)
+    try:
+        with _inactive_worker_guard(command.run_id, worker_dir=worker_dir):
+            state = _load_run(command.run_id, state_dir)
+            root = Path(command.project_root).resolve(strict=True)
+            if str(load_project_identity(root).project_id) != state.project_id:
+                raise HumanActionRejected("Project marker does not match this Run")
+            actor = _resolve_human_actor(root, command.actor_id)
+            history = state.artifact_target_handoff or ArtifactTargetHandoffRecord()
+            action = ArtifactTargetCorrection(
+                action_id=command.action_id, actor_id=actor.actor_id,
+                occurred_at=(_clock or (lambda: datetime.now(timezone.utc)))(),
+                action=command.action, previous_contract_id=command.expected_contract_id,
+                corrected_contract_id=command.corrected_contract.contract_id if command.corrected_contract else None,
+                reason=command.reason.strip(),
+            )
+            previous = next((item for item in history.corrections if item.action_id == command.action_id), None)
+            if previous is not None:
+                if previous.model_dump(exclude={"occurred_at"}) != action.model_dump(exclude={"occurred_at"}):
+                    raise HumanActionRejected("Handoff action ID conflicts with its original request")
+                return RunOperationResult(state.run_id, state.run_alias, state.schema_version, path, state)
+            if any(item.action_id == command.action_id for item in state.human_action_log):
+                raise HumanActionRejected("Handoff action ID already belongs to another human action")
+            if state.workflow_admission is None:
+                raise HumanActionRejected("Legacy Run requires new workflow admission before target correction")
+            if state.status in {RunStatus.DONE, RunStatus.FAILED_INFRA} or (
+                history.corrections and history.corrections[-1].action == "cancel"
+            ):
+                raise HumanActionRejected("Terminal or cancelled handoff history cannot be changed")
+            if any(item.outcome == "in-progress" for item in state.execution_record.node_executions):
+                raise HumanActionRejected("Cannot correct a handoff with an unfinished attempt")
+            tip = history.contracts[-1].contract_id if history.contracts else None
+            if command.expected_contract_id != tip:
+                raise HumanActionRejected("Expected contract is stale; inspect the current handoff")
+            if command.action == "approve-correction":
+                contract = command.corrected_contract
+                if contract is None or command.current_evidence is None:
+                    raise HumanActionRejected("Approval requires an exact corrected contract and current evidence")
+                if contract.supersedes_contract_id != tip:
+                    raise HumanActionRejected("Corrected contract must supersede the expected contract")
+                architects = [item for item in state.execution_record.node_executions if item.role == "architect"]
+                if history.corrections and history.corrections[-1].action == "return-to-architect" and (
+                    not architects or architects[-1].started_at <= history.corrections[-1].occurred_at
+                ):
+                    raise HumanActionRejected("Return to Architect requires a new completed Architect handoff before approval")
+                if contract.architect_execution_id is not None and (
+                    not architects or contract.architect_execution_id != architects[-1].execution_id
+                ):
+                    raise HumanActionRejected("Corrected contract must reference the latest Architect execution")
+                updated = reconcile_run_handoff(
+                    state, project_root=root, current=command.current_evidence,
+                    case_sensitive_paths=False, registry=registry, clock=_clock,
+                    replacement_contract=contract, correction=action,
+                )
+                if updated.artifact_target_handoff.reconciliations[-1].outcome != "ready":
+                    raise HumanActionRejected("Corrected contract still requires clarification; no approval was saved")
+                checkpoints = [entry for entry in state.interrupt_log if entry.trigger == "manual-checkpoint"
+                               and entry.context.get("next_phase") in {"driver_red", "driver_green"}]
+                if checkpoints and checkpoints[-1].resolution is not None:
+                    target = (state.graph_progress.next_node if state.graph_progress else
+                              state.resume_target or checkpoints[-1].context["next_phase"])
+                    if target not in {"driver_red", "driver_green"}:
+                        raise HumanActionRejected("Correct targets at a Driver boundary, or return to Architect")
+                    from battalion.interrupts.triggers import log_interrupt
+                    updated = log_interrupt(updated, "manual-checkpoint", {
+                        "next_phase": target, "artifact_target_contract_id": contract.contract_id,
+                    }).model_copy(update={"phase": "awaiting_human", "resume_intent": None})
+            else:
+                if command.current_evidence is not None:
+                    raise HumanActionRejected("Only correction approval accepts current evidence")
+                updates = {}
+                if command.action == "return-to-architect":
+                    execution = state.workflow_admission.execution
+                    recipe = registry.resolve(execution.continuation_recipe_id or execution.recipe_id,
+                                              execution.continuation_recipe_version or execution.recipe_version)
+                    if WorkflowStage.ARCHITECTURE not in recipe.stages:
+                        raise HumanActionRejected("Selected recipe requires an explicit upgrade before returning to Architect")
+                    updates = {"status": RunStatus.NOT_STARTED, "phase": "architect", "resume_target": "architect",
+                               "graph_progress": GraphProgress(stage=ProgressStage.BEFORE_ATTEMPT, next_node="architect")}
+                else:
+                    updates = {"status": RunStatus.BLOCKED, "phase": "artifact_target_cancelled", "resume_target": "blocked",
+                               "graph_progress": None}
+                updates["resume_intent"] = None
+                updated = RunState.model_validate({
+                    **state.model_dump(), **updates, "schema_version": "1.2",
+                    "artifact_target_handoff": ArtifactTargetHandoffRecord(
+                        contracts=history.contracts, reconciliations=history.reconciliations,
+                        corrections=(*history.corrections, action), active_contract_id=None,
+                    ),
+                })
+            save_state(updated, path)
+            return RunOperationResult(updated.run_id, updated.run_alias, updated.schema_version, path, updated)
+    except _WorkerAlreadyActive as exc:
+        raise HumanActionRejected("Cannot change handoff while a worker or another action is active") from exc
+    except ArtifactTargetSealingRejected as exc:
+        raise ArtifactTargetHandoffRejected(exc.reason_code, str(exc)) from exc
+    except (OSError, ValueError, TypeError) as exc:
+        raise HumanActionRejected(f"Cannot change handoff: {exc}") from exc
 
 
 def _require_current_workflow_assessment(
@@ -2027,6 +2331,10 @@ def _persist_intervention(
     actor = _resolve_human_actor(command.project_root, command.actor_id)
     occurred_at = (clock or (lambda: datetime.now(timezone.utc)))()
     identifier = action_id or command.action_id
+    if state.artifact_target_handoff and any(
+        item.action_id == identifier for item in state.artifact_target_handoff.corrections
+    ):
+        raise HumanActionRejected("Intervention action ID already belongs to a handoff action")
     previous = next((a for a in state.human_action_log if a.action_id == identifier), None)
     if previous is not None:
         if (previous.actor_id != actor.actor_id or previous.kind != command.kind
@@ -2271,6 +2579,7 @@ def _resolve_latest_interrupt(
     resolution: str,
     occurred_at: datetime | None = None,
     action_id: str | None = None,
+    artifact_target_contract_id: str | None = None,
 ) -> RunState:
     """Resolve exactly the latest unresolved interrupt before canonical resume."""
     unresolved = [
@@ -2282,11 +2591,24 @@ def _resolve_latest_interrupt(
     interrupts = list(state.interrupt_log)
     if unresolved:
         index = unresolved[-1]
+        entry = interrupts[index]
+        driver_checkpoint = entry.trigger == "manual-checkpoint" and entry.context.get("next_phase") in {"driver_red", "driver_green"}
+        handoff = state.artifact_target_handoff
+        if driver_checkpoint and handoff is not None:
+            if (artifact_target_contract_id is None or artifact_target_contract_id != handoff.active_contract_id
+                    or not handoff.reconciliations
+                    or handoff.reconciliations[-1].contract_id != artifact_target_contract_id
+                    or handoff.reconciliations[-1].outcome != "ready"):
+                raise HumanActionRejected("Driver checkpoint requires the exact current ready contract ID")
+        elif artifact_target_contract_id is not None:
+            raise HumanActionRejected("Contract authorization requires a ready handoff and a Driver checkpoint")
         interrupts[index] = interrupts[index].model_copy(
             update={"resolution": resolution.strip()}
         )
         target = f"interrupt:{index}"
     elif not interrupts:
+        if artifact_target_contract_id is not None:
+            raise HumanActionRejected("Legacy pause cannot authorize an artifact target contract")
         # Legacy awaiting-human state predates durable interrupt evidence.
         target = "legacy-pause"
     else:
@@ -2308,6 +2630,7 @@ def _resolve_latest_interrupt(
             resulting_state_version=state.schema_version,
             resulting_status=state.status,
             resulting_phase=state.phase,
+            artifact_target_contract_id=artifact_target_contract_id,
         )
     except (TypeError, ValueError) as exc:
         raise HumanActionRejected(str(exc)) from exc

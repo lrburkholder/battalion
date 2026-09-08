@@ -201,3 +201,7 @@ def test_red_prompt_example_through_real_driver_and_reviewer(tmp_path, missing):
         assert review.test_execution.tests_collected == 1
         assert result.state.graph_progress.next_node == "driver_green"
         assert result.state.interrupt_log == []
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

@@ -397,3 +397,7 @@ def test_desktop_projects_typed_recovery_and_unfinished_attempt(paused, monkeypa
     text = render_run(ProjectRunInspection(entry, "available", inspection))
     assert f"Recovery: {disposition}" in text and stage.value in text
     assert "Not completed" in render_execution(inspection.state.execution_record.node_executions[-1])
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")

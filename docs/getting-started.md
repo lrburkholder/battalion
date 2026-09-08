@@ -1,5 +1,12 @@
 # Getting Started
 
+> **BTN-195 branch limitation:** this checkout now enforces the artifact-target
+> gate before Driver. CLI/desktop evidence intake is still being implemented;
+> exact checkpoint authorization is available through the shared application API.
+> The released-build walkthrough
+> below is not yet an end-to-end success path on this feature branch: Driver
+> admission fails closed until that integration is available.
+
 This guide walks through a first Battalion Run using a small disposable project.
 You will:
 

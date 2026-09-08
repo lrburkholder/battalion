@@ -134,3 +134,7 @@ class TestExecutionContext:
         assert "IMPLEMENTATION_SENTINEL" not in green
         assert "TEST_SENTINEL" in refactor
         assert "IMPLEMENTATION_SENTINEL" in refactor
+
+# These scenarios isolate existing role/routing behavior; real target admission
+# is covered without this stub in test_artifact_target_sealing.py.
+pytestmark = pytest.mark.usefixtures("isolated_artifact_gate")
