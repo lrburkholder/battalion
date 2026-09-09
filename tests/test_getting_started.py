@@ -232,7 +232,9 @@ def test_all_operator_cli_examples_accept_their_documented_options(monkeypatch, 
     for document in OPERATOR_DOCS:
         for block in re.findall(r"```powershell\n(.*?)\n\s*```", document.read_text(encoding="utf-8"), re.DOTALL):
             commands.extend(cli_arguments(block, {"$RunId": "00000000-0000-4000-8000-000000000001"}))
-    assert {cmd[0] for cmd in commands} == {"run", "resume", "status", "setup", "--help"}
+    assert {cmd[0] for cmd in commands} == {
+        "run", "resume", "status", "setup", "target-handoff", "--help",
+    }
     for command in commands:
         result = runner.invoke(app, [*command, "--help"])
         assert result.exit_code == 0, (command, result.output)

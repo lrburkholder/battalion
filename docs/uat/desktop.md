@@ -268,6 +268,16 @@ Pass criteria:
 - Text, layout, and evidence panes remain legible without clipped controls or
   unreadable contrast.
 
+## BTN-196 artifact-target handoff checks
+
+Select a Run with a persisted handoff and confirm the inspector distinguishes
+the active contract from superseded contracts, shows exact paths and
+role/phase assignments, and reports reconciliation reasons and Actor-attributed
+corrections. Confirm legacy Runs explicitly report unavailable target evidence.
+With an inactive worker, verify the accessible approve, return-to-Architect,
+and cancel controls use the displayed current contract identity. A stale or
+conflicting action must show an application error and leave the Run unchanged.
+
 ## Evidence to retain
 
 Retain the artifact/provenance record, script approval, documentation-only defect

@@ -323,6 +323,21 @@ Record interrupted Runs' reported recovery disposition; unknown-outcome attempts
 must not be forced into replay. Provider-failure and controlled-output exercises
 remain human UAT, not credential-free documentation checks.
 
+## BTN-196 artifact-target handoff checks
+
+For a Run with persisted target evidence, inspect both projections:
+
+```powershell
+& $Python -m battalion target-handoff $RunId --human
+& $Python -m battalion target-handoff $RunId --json
+```
+
+Confirm the active contract, superseded history, exact paths, assignments,
+revision evidence, reconciliation reasons, and Actor corrections are identical
+in meaning. Confirm a legacy Run says evidence is unavailable. For correction
+exercises, use an intentionally stale `--expected-contract` and retain the
+typed failure; no state mutation or Driver dispatch may occur.
+
 ## Evidence to retain
 
 Retain the artifact record, script approval, documentation-only defect log,

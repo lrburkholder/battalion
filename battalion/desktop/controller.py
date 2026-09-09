@@ -14,6 +14,7 @@ from battalion.application import (
     ApplicationError,
     AssessWorkflowAdmission,
     CreateAdmittedRun,
+    ChangeArtifactTargetHandoff,
     DecideWorkflowAdmission,
     InspectIntel,
     InspectProject,
@@ -31,6 +32,7 @@ from battalion.application import (
     WorkflowAdmissionDecisionResult,
     WorkflowAdmissionInspection,
     assess_workflow_admission,
+    change_artifact_target_handoff,
     create_admitted_run,
     decide_workflow_admission,
     inspect_intel,
@@ -42,6 +44,8 @@ from battalion.application import (
     review_candidate,
     start_worker,
 )
+from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence
+from battalion.artifact_targets import ArtifactTargetContract
 from battalion.config import load_config
 from battalion.intel.review import ReviewAction
 from battalion.observation import ObservationCursor, ObservationEvent, ObservationSource
@@ -308,6 +312,47 @@ class DesktopController(QObject):
                 self.action_failed.emit(str(exc))
                 return
             self.action_completed.emit(f"Resume started for {run_id}")
+            self.refresh()
+
+        self.thread_pool.start(command)
+
+    def change_target_handoff(
+        self,
+        run_id: str,
+        *,
+        action_id: str,
+        action: str,
+        expected_contract_id: str | None,
+        reason: str,
+        corrected_contract: ArtifactTargetContract | None = None,
+        current_evidence: ArtifactTargetCurrentEvidence | None = None,
+        actor_id: UUID | None = None,
+    ) -> None:
+        """Apply one exact handoff action without mutating desktop-owned state."""
+
+        def command() -> None:
+            try:
+                result = change_artifact_target_handoff(
+                    ChangeArtifactTargetHandoff(
+                        run_id=run_id,
+                        project_root=self.project_root,
+                        action_id=action_id,
+                        action=action,
+                        expected_contract_id=expected_contract_id,
+                        reason=reason,
+                        actor_id=actor_id,
+                        corrected_contract=corrected_contract,
+                        current_evidence=current_evidence,
+                    ),
+                    state_dir=self.project_root / ".battalion" / "state",
+                    worker_dir=self.project_root / ".battalion" / "workers",
+                )
+            except (ApplicationError, OSError, TypeError, ValueError) as exc:
+                self.action_failed.emit(str(exc))
+                return
+            self.action_completed.emit(
+                f"Artifact-target handoff {action} recorded for {result.run_id}"
+            )
             self.refresh()
 
         self.thread_pool.start(command)

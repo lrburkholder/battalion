@@ -20,7 +20,11 @@ from uuid import UUID, uuid4
 
 from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence
 from battalion.artifact_target_runtime import ArtifactTargetGateRejected, reconcile_run_handoff
-from battalion.artifact_target_state import ArtifactTargetCorrection, ArtifactTargetHandoffRecord
+from battalion.artifact_target_state import (
+    ArtifactTargetCorrection,
+    ArtifactTargetHandoffRecord,
+    ArtifactTargetReconciliation,
+)
 from battalion.artifact_targets import ArtifactTargetContract
 from battalion.artifact_target_sealing import ArtifactTargetSealingRejected
 from battalion.artifact_target_state import ArtifactTargetReasonCode
@@ -450,6 +454,13 @@ class InspectRunWorkflowAdmission:
 
 
 @dataclass(frozen=True)
+class InspectRunArtifactTargetHandoff:
+    """Read the durable artifact-target contract and reconciliation history."""
+
+    run_id: str
+
+
+@dataclass(frozen=True)
 class InspectProject:
     """Read-only request for a project's saved-run catalog."""
 
@@ -729,6 +740,33 @@ class RunOperationResult:
 
 
 @dataclass(frozen=True)
+class ArtifactTargetHandoffInspection:
+    """Read-only projection of the persisted BTN-195 handoff history."""
+
+    run_id: str
+    state_path: Path
+    availability: Literal["available", "legacy"]
+    active_contract_id: str | None
+    contracts: tuple[ArtifactTargetContract, ...]
+    reconciliations: tuple[ArtifactTargetReconciliation, ...]
+    corrections: tuple[ArtifactTargetCorrection, ...]
+    limitation: str | None = None
+
+    @property
+    def superseded_contract_ids(self) -> tuple[str, ...]:
+        """Return historical contract identities, excluding the active tip."""
+        return tuple(
+            contract.contract_id
+            for contract in self.contracts
+            if contract.contract_id != self.active_contract_id
+        )
+
+    @property
+    def latest_reconciliation(self) -> ArtifactTargetReconciliation | None:
+        return self.reconciliations[-1] if self.reconciliations else None
+
+
+@dataclass(frozen=True)
 class RunInspection:
     """Typed read model derived entirely from authoritative saved state."""
 
@@ -739,6 +777,7 @@ class RunInspection:
     state: RunState
     costs: dict[str, object]
     workflow_admission: WorkflowAdmissionRunInspection | None = None
+    artifact_target_handoff: ArtifactTargetHandoffInspection | None = None
 
     @property
     def recovery(self) -> RecoveryAssessment | None:
@@ -1313,6 +1352,7 @@ def inspect_run(
         workflow_admission=_workflow_admission_run_inspection(
             state, path, registry=DEFAULT_WORKFLOW_RECIPE_REGISTRY
         ),
+        artifact_target_handoff=_artifact_target_handoff_inspection(state, path),
     )
 
 
@@ -1327,6 +1367,19 @@ def inspect_run_workflow_admission(
     state = _load_run(query.run_id, state_dir)
     path = state_path(query.run_id, state_dir)
     return _workflow_admission_run_inspection(state, path, registry=registry)
+
+
+def inspect_run_artifact_target_handoff(
+    query: InspectRunArtifactTargetHandoff,
+    *,
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+) -> ArtifactTargetHandoffInspection:
+    """Expose persisted target evidence without recalculating its validity."""
+
+    state = _load_run(query.run_id, state_dir)
+    return _artifact_target_handoff_inspection(
+        state, state_path(query.run_id, state_dir)
+    )
 
 
 def _workflow_admission_run_inspection(
@@ -1361,6 +1414,35 @@ def _workflow_admission_run_inspection(
         state_path=path,
         availability="available",
         record=record,
+    )
+
+
+def _artifact_target_handoff_inspection(
+    state: RunState,
+    path: Path,
+) -> ArtifactTargetHandoffInspection:
+    """Build a bounded handoff projection without re-running policy."""
+
+    handoff = state.artifact_target_handoff
+    if handoff is None:
+        return ArtifactTargetHandoffInspection(
+            run_id=state.run_id,
+            state_path=path,
+            availability="legacy",
+            active_contract_id=None,
+            contracts=(),
+            reconciliations=(),
+            corrections=(),
+            limitation="Run has no persisted artifact-target handoff evidence.",
+        )
+    return ArtifactTargetHandoffInspection(
+        run_id=state.run_id,
+        state_path=path,
+        availability="available",
+        active_contract_id=handoff.active_contract_id,
+        contracts=handoff.contracts,
+        reconciliations=handoff.reconciliations,
+        corrections=handoff.corrections,
     )
 
 
@@ -2753,6 +2835,7 @@ def _inspect_catalog_entry(
             workflow_admission=_workflow_admission_run_inspection(
                 state, path, registry=registry
             ),
+            artifact_target_handoff=_artifact_target_handoff_inspection(state, path),
         ),
     )
 
