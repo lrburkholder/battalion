@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QFont, QPixmap
@@ -30,6 +31,8 @@ from PySide6.QtWidgets import (
 
 from battalion.admission_presentation import render_workflow_admission
 from battalion.application import IntelInspection, ProjectInspection, ProjectRunInspection
+from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence
+from battalion.artifact_targets import ArtifactTargetContract
 from battalion.desktop.controller import DesktopAdmissionSession, DesktopController
 from battalion.disclosure import DATA_HANDLING_URL
 from battalion.desktop.presentation import (
@@ -355,6 +358,41 @@ class BattalionWindow(QMainWindow):
         intervention.addWidget(self.intervention_text, 1)
         intervention.addWidget(self.queue_button)
         layout.addLayout(intervention)
+
+        handoff = QVBoxLayout()
+        handoff.addWidget(QLabel("Artifact-target handoff"))
+        self.handoff_expected_contract = QLineEdit()
+        self.handoff_expected_contract.setReadOnly(True)
+        self.handoff_expected_contract.setAccessibleName("Expected artifact-target contract")
+        self.handoff_expected_contract.setPlaceholderText("Current contract identity")
+        handoff.addWidget(self.handoff_expected_contract)
+        self.handoff_reason = QLineEdit()
+        self.handoff_reason.setAccessibleName("Artifact-target action reason")
+        self.handoff_reason.setPlaceholderText("Reason for correction, return, or cancellation")
+        handoff.addWidget(self.handoff_reason)
+        self.handoff_contract_path = QLineEdit()
+        self.handoff_contract_path.setAccessibleName("Corrected artifact-target contract JSON path")
+        self.handoff_contract_path.setPlaceholderText("Corrected contract JSON path (approval only)")
+        handoff.addWidget(self.handoff_contract_path)
+        self.handoff_evidence_path = QLineEdit()
+        self.handoff_evidence_path.setAccessibleName("Current artifact-target evidence JSON path")
+        self.handoff_evidence_path.setPlaceholderText("Current evidence JSON path (approval only)")
+        handoff.addWidget(self.handoff_evidence_path)
+        handoff_buttons = QHBoxLayout()
+        self.approve_handoff_button = QPushButton("Approve corrected targets")
+        self.approve_handoff_button.setAccessibleName("Approve corrected artifact-target contract")
+        self.return_handoff_button = QPushButton("Return to Architect")
+        self.return_handoff_button.setAccessibleName("Return artifact-target handoff to Architect")
+        self.cancel_handoff_button = QPushButton("Cancel handoff")
+        self.cancel_handoff_button.setAccessibleName("Cancel artifact-target handoff")
+        for button in (self.approve_handoff_button, self.return_handoff_button, self.cancel_handoff_button):
+            button.setEnabled(False)
+            handoff_buttons.addWidget(button)
+        self.approve_handoff_button.clicked.connect(lambda: self._change_selected_handoff("approve-correction"))
+        self.return_handoff_button.clicked.connect(lambda: self._change_selected_handoff("return-to-architect"))
+        self.cancel_handoff_button.clicked.connect(lambda: self._change_selected_handoff("cancel"))
+        handoff.addLayout(handoff_buttons)
+        layout.addLayout(handoff)
         self._refresh_intervention_targets()
         self.selected_run: ProjectRunInspection | None = None
         return panel
@@ -553,6 +591,12 @@ class BattalionWindow(QMainWindow):
         worker = self.controller.worker_for(run.inspection.run_id) if available else None
         inactive = worker is None or not worker.active
         self.queue_button.setEnabled(available and inactive)
+        handoff = run.inspection.artifact_target_handoff if available else None
+        active_contract = handoff.active_contract_id if handoff is not None else None
+        self.handoff_expected_contract.setText(active_contract or "")
+        handoff_actionable = available and inactive and handoff is not None and handoff.availability == "available"
+        for button in (self.approve_handoff_button, self.return_handoff_button, self.cancel_handoff_button):
+            button.setEnabled(handoff_actionable)
         self.resume_button.setEnabled(
             available and inactive and (
                 run.inspection.recovery.disposition == "recoverable"
@@ -669,6 +713,38 @@ class BattalionWindow(QMainWindow):
             self.intervention_kind.currentData(),
             self.intervention_target.currentData(),
             self.intervention_text.text(),
+        )
+
+    def _change_selected_handoff(self, action: str) -> None:
+        if self.selected_run is None or self.selected_run.inspection is None:
+            return
+        handoff = self.selected_run.inspection.artifact_target_handoff
+        if handoff is None:
+            return
+        try:
+            contract = (
+                ArtifactTargetContract.model_validate_json(
+                    Path(self.handoff_contract_path.text()).read_text(encoding="utf-8")
+                )
+                if action == "approve-correction" else None
+            )
+            evidence = (
+                ArtifactTargetCurrentEvidence.model_validate_json(
+                    Path(self.handoff_evidence_path.text()).read_text(encoding="utf-8")
+                )
+                if action == "approve-correction" else None
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            self._action_failed(f"Cannot load handoff correction: {exc}")
+            return
+        self.controller.change_target_handoff(
+            self.selected_run.inspection.run_id,
+            action_id=f"desktop-handoff-{uuid4()}",
+            action=action,
+            expected_contract_id=handoff.active_contract_id,
+            reason=self.handoff_reason.text().strip(),
+            corrected_contract=contract,
+            current_evidence=evidence,
         )
 
     def _review_selected_candidate(self, action: ReviewAction) -> None:

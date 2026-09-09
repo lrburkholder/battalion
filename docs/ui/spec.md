@@ -102,6 +102,13 @@ Run inspection includes canonical identity, alias, ticket, status, phase,
 legacy status, execution count, token totals, sourced monetary cost or explicit
 unknown cost, and worker recovery information.
 
+Run inspection also presents the artifact-target handoff when available:
+active and superseded contract IDs, exact project-relative paths and role-phase
+assignments, revision-pinned evidence, reconciliation outcome/reasons, and
+Actor-attributed corrections. Legacy Runs explicitly show that target evidence
+is unavailable. Correction, return, and cancellation controls are enabled only
+for an application-authorized current handoff and inactive worker.
+
 Node-attempt inspection includes available prompt, Git, bounded-context,
 artifact, verification, tool, model, token, cost, timing, outcome, operator
 summary, and revision evidence. Uncaptured or legacy categories render as

@@ -40,6 +40,18 @@ $RunId = Read-Host 'Canonical Run UUID (only if a Run was created)'
 Always run `status` and `resume` from the same project that owns the Run. New
 Runs use UUIDs; do not manufacture an ID such as `run-BTN-*`.
 
+When Driver is blocked by artifact-target clarification, inspect the persisted
+handoff directly:
+
+```powershell
+& $Python -m battalion target-handoff $RunId --human
+& $Python -m battalion target-handoff $RunId --json
+```
+
+The output distinguishes active and superseded contracts and reports legacy
+Runs as unavailable. Do not use generic interrupt resolution as target
+approval; correction actions require the exact current contract identity.
+
 For more detail:
 
 <!-- check:evidence -->

@@ -27,10 +27,13 @@ from support.desktop import (
 
 
 def test_execution_inspector_exposes_provenance_verification_and_cost_semantics():
-    rendered = render_execution(_execution())
+    rendered = render_execution(_execution().model_copy(update={
+        "artifact_target_contract_id": "a" * 64,
+    }))
 
     assert "Role: driver" in rendered
     assert "Phase: driver_green" in rendered
+    assert f"Artifact-target contract: {'a' * 64}" in rendered
     assert "Model: provider/driver-model" in rendered
     assert "Contract version: driver/v1" in rendered
     assert f"Template hash (sha256): {'3' * 64}" in rendered

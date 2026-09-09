@@ -191,12 +191,19 @@ battalion run BTN-HELLO-1 --spec ticket.md --checkpoint driver
 $RunId = Read-Host 'Paste the printed Run UUID'
 battalion status $RunId --human
 battalion status $RunId --costs --human
+battalion target-handoff $RunId --json
 battalion resume $RunId --resolution 'Reviewed the plan and approved continuation'
 ```
 
 New Runs print a canonical UUID. A ticket ID is not a Run ID.
 
 Before resuming, inspect the interrupt and the work Battalion produced. `status --costs` shows persisted token use and known monetary cost by graph phase and model. Unknown cost remains explicitly unknown rather than being reported as zero.
+
+For artifact-target handoffs, `target-handoff <RUN_ID> --json` exposes the
+active and superseded contract identities, exact paths, Driver assignments,
+reconciliation reasons, and Actor-attributed corrections. Correction actions
+require the exact current contract identity; generic resume text never approves
+a clarification-required handoff.
 
 Run `battalion <command> --help` for current CLI options. `python -m battalion <command>` is also supported in source-mode environments.
 

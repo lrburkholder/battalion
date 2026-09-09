@@ -102,7 +102,8 @@ def test_window_presents_work_history_and_human_action_surfaces(qt_app, tmp_path
     assert button_text == {
         "Resolve and resume", "Queue for next attempt", "Promote",
         "Edit and promote", "Reject", "Inspect admission", "Use compact",
-        "Use full", "Clarify", "Cancel",
+        "Use full", "Clarify", "Cancel", "Approve corrected targets",
+        "Return to Architect", "Cancel handoff",
     }
     window.close()
 

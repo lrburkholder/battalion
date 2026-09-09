@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from battalion.actors import format_actor_attribution
 from battalion.admission_presentation import render_workflow_admission_history
+from battalion.artifact_target_presentation import render_artifact_target_handoff
 from battalion.application import IntelInspection, ProjectRunInspection, RunInspection
 from battalion.intel.models import AcceptedInstinct, CandidateInstinct
 from battalion.state.models import LLMCallCost, NodeExecution, RunStatus
@@ -102,6 +103,8 @@ def render_run(run: ProjectRunInspection, worker: WorkerRecord | None = None) ->
         )
     if inspection.workflow_admission is not None:
         lines.extend(("", render_workflow_admission_history(inspection.workflow_admission)))
+    if inspection.artifact_target_handoff is not None:
+        lines.extend(("", render_artifact_target_handoff(inspection.artifact_target_handoff)))
     return "\n".join(lines)
 
 
@@ -115,6 +118,8 @@ def render_execution(execution: NodeExecution) -> str:
         f"Model: {execution.model_identity}",
         f"Outcome: {execution.outcome}",
         f"Attempt disposition: {execution.attempt_disposition or 'Unavailable (legacy)'}",
+        "Artifact-target contract: "
+        f"{execution.artifact_target_contract_id or 'Unavailable (legacy or uncaptured execution evidence)'}",
         f"Started: {execution.started_at.isoformat()}",
         f"Ended: {execution.ended_at.isoformat() if execution.ended_at else 'Not completed'}",
         "",

@@ -17,9 +17,16 @@ from battalion.admission_presentation import (
     render_workflow_admission_history,
     workflow_admission_payload,
 )
+from battalion.artifact_target_presentation import (
+    artifact_target_handoff_payload,
+    render_artifact_target_handoff,
+)
+from battalion.artifact_target_reconciliation import ArtifactTargetCurrentEvidence
+from battalion.artifact_targets import ArtifactTargetContract
 from battalion.disclosure import DATA_HANDLING_URL
 from battalion.application import (
     ApplicationError,
+    ChangeArtifactTargetHandoff,
     AssessWorkflowAdmission,
     CreateAdmittedRun,
     DecideWorkflowAdmission,
@@ -29,9 +36,11 @@ from battalion.application import (
     RunAlreadyExists,
     StartRun,
     WorkflowAdmissionRunInspection,
+    ArtifactTargetHandoffInspection,
     assess_workflow_admission,
     create_admitted_run,
     create_initial_state,
+    change_artifact_target_handoff,
     decide_workflow_admission,
     inspect_run,
     inspect_workflow_admission,
@@ -125,6 +134,7 @@ def _print_status(
     costs: bool = False,
     cost_summary: dict[str, object] | None = None,
     workflow_admission: WorkflowAdmissionRunInspection | None = None,
+    artifact_target_handoff: ArtifactTargetHandoffInspection | None = None,
 ) -> None:
     """Print run status as JSON or human-readable."""
     if human:
@@ -166,6 +176,8 @@ def _print_status(
                 )
         if workflow_admission is not None:
             typer.echo("\n" + render_workflow_admission_history(workflow_admission))
+        if artifact_target_handoff is not None:
+            typer.echo("\n" + render_artifact_target_handoff(artifact_target_handoff))
         if costs:
             summary = cost_summary or {}
             typer.echo("\nLLM costs:")
@@ -203,6 +215,8 @@ def _print_status(
         if costs:
             typer.echo(json.dumps(cost_summary or {}, indent=2))
         else:
+            # Preserve the established status JSON contract. The dedicated
+            # target-handoff command exposes the richer handoff projection.
             typer.echo(state.model_dump_json(indent=2))
 
 
@@ -551,7 +565,79 @@ def status(
         costs=costs,
         cost_summary=result.costs,
         workflow_admission=result.workflow_admission,
+        artifact_target_handoff=result.artifact_target_handoff,
     )
+
+
+@app.command("target-handoff")
+def target_handoff(
+    run_id: str = typer.Argument(..., help="Canonical UUID or legacy run ID"),
+    action: str | None = typer.Option(None, "--action", help="approve-correction, return-to-architect, or cancel"),
+    expected_contract: str | None = typer.Option(None, "--expected-contract"),
+    reason: str | None = typer.Option(None, "--reason", help="Bounded human explanation for the action"),
+    action_id: str | None = typer.Option(None, "--action-id", help="Stable replay/idempotency identity"),
+    project: Path = typer.Option(Path("."), "--project"),
+    corrected_contract: Path | None = typer.Option(None, "--corrected-contract", help="JSON file for approve-correction"),
+    current_evidence: Path | None = typer.Option(None, "--current-evidence", help="JSON file for approve-correction"),
+    actor_id: UUID | None = typer.Option(None, "--actor-id"),
+    human: bool = typer.Option(False, "--human", "-h", help="Render human-readable output"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect or apply one exact, Actor-authorized artifact-target handoff action."""
+    if action is None:
+        try:
+            inspection = inspect_run(InspectRun(run_id), state_dir=project / STATE_DIR)
+        except ApplicationError as exc:
+            typer.echo(json.dumps({"error": {"message": str(exc)}}) if json_output else f"Error: {exc}", err=not json_output)
+            raise typer.Exit(1) from exc
+        handoff = inspection.artifact_target_handoff
+        assert handoff is not None
+        if json_output and not human:
+            typer.echo(json.dumps(artifact_target_handoff_payload(handoff), indent=2))
+        else:
+            typer.echo(render_artifact_target_handoff(handoff))
+        return
+    if action not in {"approve-correction", "return-to-architect", "cancel"}:
+        typer.echo("Error: --action must be approve-correction, return-to-architect, or cancel", err=True)
+        raise typer.Exit(1)
+    if not reason or not action_id:
+        typer.echo("Error: --reason and --action-id are required when applying an action", err=True)
+        raise typer.Exit(1)
+    try:
+        contract = (
+            ArtifactTargetContract.model_validate_json(corrected_contract.read_text(encoding="utf-8"))
+            if corrected_contract is not None else None
+        )
+        evidence = (
+            ArtifactTargetCurrentEvidence.model_validate_json(current_evidence.read_text(encoding="utf-8"))
+            if current_evidence is not None else None
+        )
+        result = change_artifact_target_handoff(
+            ChangeArtifactTargetHandoff(
+                run_id=run_id, project_root=project, action_id=action_id,
+                action=action, expected_contract_id=expected_contract, reason=reason,
+                actor_id=actor_id, corrected_contract=contract, current_evidence=evidence,
+            ),
+            state_dir=project / STATE_DIR,
+            worker_dir=project / ".battalion" / "workers",
+        )
+    except (ApplicationError, OSError, TypeError, ValueError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"error": {"message": str(exc)}}))
+        else:
+            typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    inspection = inspect_run(InspectRun(run_id), state_dir=project / STATE_DIR)
+    output = {
+        "action": action,
+        "action_id": action_id,
+        "run_id": result.run_id,
+        "handoff": artifact_target_handoff_payload(inspection.artifact_target_handoff),
+    }
+    if json_output and not human:
+        typer.echo(json.dumps(output, indent=2))
+    else:
+        typer.echo(render_artifact_target_handoff(inspection.artifact_target_handoff))
 
 
 def _prompt_value(message: str, default: str) -> str:
