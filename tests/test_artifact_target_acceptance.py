@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from importlib.util import find_spec
 from dataclasses import replace
 from functools import partial
 
@@ -20,7 +21,6 @@ from battalion.application import (
 )
 from battalion.cli import app
 from battalion.config import BattalionConfig
-from battalion.desktop.presentation import render_execution
 from battalion.nodes.architect import run_architect
 from battalion.nodes.driver import run_driver
 from battalion.artifact_targets import ArtifactTargetContract
@@ -130,9 +130,12 @@ def test_conflicting_greeting_targets_pause_before_plan_or_driver_and_project_du
     assert machine_state["execution_record"]["node_executions"][0]["role_contract_violation"]["offending_paths"] == [
         "src/test_greeting.py", "test_greeting.py",
     ]
-    desktop = render_execution(attempts[-1])
-    assert "ROLE-CONTRACT CORRECTION" in desktop
-    assert "src/test_greeting.py, test_greeting.py" in desktop
+    if find_spec("PySide6") is not None:
+        from battalion.desktop.presentation import render_execution
+
+        desktop = render_execution(attempts[-1])
+        assert "ROLE-CONTRACT CORRECTION" in desktop
+        assert "src/test_greeting.py, test_greeting.py" in desktop
 
 
 def test_actor_correction_supersedes_clarified_contract_and_binds_reloaded_driver(
