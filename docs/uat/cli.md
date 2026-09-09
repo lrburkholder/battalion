@@ -340,6 +340,37 @@ typed failure; no state mutation or Driver dispatch may occur.
 
 ## Evidence to retain
 
+### BTN-197 credential-free artifact-target acceptance
+
+Run the deterministic enforcement fixture without provider credentials:
+
+```powershell
+& $Python -m pytest tests/test_artifact_target_acceptance.py -q
+```
+
+The fixture pins a disposable Git project plus `work-r1` and `spec-r1`. Its
+first scenario supplies an invalid Architect payload that maps logical
+`greeting-test` to both `src/test_greeting.py` and `test_greeting.py`. Confirm
+the durable Run is `awaiting-human`, its Architect attempts retain
+`architect-handoff-invalid`, `plan.md` is absent, and no Driver attempt or tool
+activity exists. Human CLI status must show both paths under **Role-contract
+corrections**; default JSON status retains them in each attempt's
+`role_contract_violation` evidence. The desktop execution inspector shows the
+same data under **ROLE-CONTRACT CORRECTION**.
+
+The second scenario seals an intentionally out-of-scope target, records an
+Actor-authorized correction, reloads state, and resumes. Confirm the original
+contract remains durable, the corrected contract supersedes it, reconciliation
+changes from `clarification-required` to `ready`, and both Driver attempts bind
+to the corrected contract ID. The final scenario confirms a ready exact
+contract proceeds through Driver, Reviewer, and Refactorer without a Tactician
+call or human pause.
+
+Retain the focused pytest output and the disposable Run's
+`.battalion/state/<RUN_UUID>.json` for UAT. This is credential-free regression
+evidence only: it does not alter, replace, or mark passed BTN-129's historical
+live CLI transcript.
+
 Retain the artifact record, script approval, documentation-only defect log,
 per-scenario pass/fail/blocked disposition, command transcript,
 `battalion.config.yaml` with any secrets

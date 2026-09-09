@@ -174,6 +174,21 @@ def _print_status(
                     f"  {execution.phase}: {result.kind.value}"
                     + (f" ({detail})" if detail else "")
                 )
+        contract_violations = [
+            execution for execution in state.execution_record.node_executions
+            if execution.role_contract_violation is not None
+        ]
+        if contract_violations:
+            typer.echo("\nRole-contract corrections:")
+            for execution in contract_violations:
+                violation = execution.role_contract_violation
+                assert violation is not None
+                paths = ", ".join(violation.offending_paths) or "None recorded"
+                typer.echo(
+                    f"  {execution.phase}: {violation.reason_code}; "
+                    f"clarification-required ({violation.resulting_disposition}); "
+                    f"paths: {paths}"
+                )
         if workflow_admission is not None:
             typer.echo("\n" + render_workflow_admission_history(workflow_admission))
         if artifact_target_handoff is not None:
