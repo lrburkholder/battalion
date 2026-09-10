@@ -98,6 +98,11 @@ class ProgressDisplay:
         etype = event.get("type")
         node = event.get("node")
         if etype == "node_start":
+            # A terminal event normally flushes the previous node first. Keep
+            # this defensive boundary as well so a provider failure or a
+            # caller-supplied event sequence can never hide an earlier trace
+            # when the next live panel replaces it.
+            self._flush_completed_trace()
             self._node = node if isinstance(node, str) else None
             self._node_label = _NODE_LABELS.get(node or "", node or "")
             self._trace = []
@@ -106,23 +111,24 @@ class ProgressDisplay:
             if not self._interactive:
                 self._console.print(f"[run] {self._node_label}...")
         elif etype == "node_end":
-            if self._interactive and self._trace:
-                # Console.print is routed above the active Live region, so the
-                # completed node remains in terminal scrollback while the next
-                # node gets its own live panel.
-                self._console.print(self._render())
-                self._trace = []
-                self._last_trace_kind = None
-            elif not self._interactive:
+            self._flush_completed_trace()
+            if not self._interactive:
                 self._console.print(
                     f"[run] {self._node_label} -> {event.get('phase')}"
                 )
             self._node = None
         elif etype == "interrupt":
+            # Interrupt events can be terminal for typed failures and may be
+            # followed by no node_end event. Flush before surfacing the pause
+            # so the completed/partial node is still available in scrollback.
+            self._flush_completed_trace()
             trigger = get_trigger_name(event.get("trigger", ""))
             if not self._interactive:
                 self._console.print(f"[pause] {trigger} - awaiting human")
         elif etype == "node_error":
+            # Error routing emits an interrupt instead of node_end. Preserve
+            # the streamed output before that routing can replace the panel.
+            self._flush_completed_trace()
             if not self._interactive:
                 self._console.print(
                     f"[error] {self._node_label}: {event.get('error')}"
@@ -141,6 +147,23 @@ class ProgressDisplay:
                 self._trace.append(message)
         if self._live is not None:
             self._live.refresh()
+
+    def _flush_completed_trace(self) -> None:
+        """Publish the current node trace into terminal scrollback once.
+
+        The live panel is intentionally bounded for redraw performance, but
+        the trace itself remains complete until this method runs. Clearing the
+        trace here makes each lifecycle boundary an idempotent handoff: a
+        subsequent interrupt, node_end, or node_start cannot duplicate it.
+        """
+        if not self._interactive or not self._trace:
+            return
+        # Console.print is routed above the active Live region, so the
+        # completed node remains in terminal scrollback while the next node
+        # gets its own live panel.
+        self._console.print(self._render())
+        self._trace = []
+        self._last_trace_kind = None
 
     def handle_token(self, event: dict) -> None:
         """Handle a streamed LLM token event (on_token callback)."""
