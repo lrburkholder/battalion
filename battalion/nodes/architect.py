@@ -21,13 +21,17 @@ from battalion.artifact_targets import ArchitectHandoffCandidate
 from battalion.execution import record_architect_handoff
 from battalion.llm.litellm_client import NodeLLMConfig, call_llm
 from battalion.llm.response import extract_content
-from battalion.nodes.errors import RoleContractViolation, WriteScopeMisconfigured
+from battalion.nodes.errors import (
+    RoleOutputError,
+    RoleContractViolation,
+    WriteScopeMisconfigured,
+)
 from battalion.prompts.loader import load_system_prompt
 from battalion.scope.tool_binding import build_write_tools
 from battalion.state.models import RunState, RunStatus
 
 
-class EmptyPlanContent(Exception):
+class EmptyPlanContent(RoleOutputError):
     """Raised when the LLM returns empty/whitespace-only content. Without
     this check, an empty plan.md would be written and the ticket would
     silently advance to 'driver' as if the plan succeeded."""

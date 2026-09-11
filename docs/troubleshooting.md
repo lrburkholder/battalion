@@ -90,7 +90,7 @@ Important current boundaries:
 | BTN-164 or later | Reviewer records classified, bounded test execution. This still does not make arbitrary tests safe to run. |
 | Before BTN-165 | A crash during resume may lose or consume authorization/progress. Do not blindly retry. |
 | BTN-165 or later | Battalion saves resume intent and graph checkpoints, but an attempt that started without saving an outcome can still be unsafe to replay. |
-| BTN-129 outstanding case | An empty Architect response can still leave recovery unsafe. Preserve the evidence and inspect the workspace. |
+| Before the BTN-206 corrected candidate | An empty Architect response may leave recovery unsafe. Preserve the evidence and inspect the workspace. |
 | BTN-132 current desktop package | The frozen worker cannot currently execute Reviewer's pytest command correctly. Use a corrected ZIP for desktop execution acceptance. |
 
 For formal UAT, use the exact candidate handoff and guide revision. Documentation
@@ -164,8 +164,11 @@ models and write files. It is not a diagnostic command.
 ### Infrastructure or provider failure
 
 For `infra-failure`, inspect the saved error and execution attempt. The actual
-cause may be a provider failure, malformed role output, or Reviewer test-harness
-failure.
+cause may be a provider failure, malformed role output (including an empty or
+whitespace-only Architect response), or Reviewer test-harness failure. A
+corrected BTN-206 candidate records that Architect failure as an interrupted
+attempt with a linked `infra-failure` interrupt and resumes at Architect; it is
+not an unsafe-recovery result.
 
 If Battalion saved a handled pause, fix the underlying credential, endpoint,
 quota, model, or harness problem and then resume from the saved target. Previous

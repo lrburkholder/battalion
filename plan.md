@@ -519,9 +519,11 @@ evidence; write-scope violations remain hard authority interrupts
 
 ## Risks and watch items
 
-- An empty Architect response still raises `RunRecoveryUnsafe` without an
-  interrupt and retains an `attempt-started` checkpoint. This remains explicit
-  BTN-129 remediation; do not claim it was repaired by integration recovery.
+- Before the BTN-206 candidate, an empty Architect response raises
+  `RunRecoveryUnsafe` without an interrupt and retains an `attempt-started`
+  checkpoint. BTN-206's branch remediation routes it through the existing
+  typed role-output/interrupt path; it is not shipped until a corrected
+  candidate is identified and BTN-129 reruns its affected UAT scenario.
 - The frozen worker cannot run Reviewer's pytest invocation. BTN-132 must
   supply corrected artifacts and validate packaged execution; prompt loading
   and read-only desktop inspection do not establish that acceptance.

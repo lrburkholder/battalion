@@ -195,6 +195,30 @@ def test_run_reports_why_run_paused(tmp_path, monkeypatch):
     assert "Resume when ready: battalion resume " in result.output
 
 
+def test_run_reports_empty_architect_output_as_a_resumable_pause(tmp_path, monkeypatch):
+    from battalion.nodes.architect import EmptyPlanContent
+
+    def empty_architect(*args, **kwargs):
+        raise EmptyPlanContent("Architect returned no usable plan")
+
+    monkeypatch.setattr("battalion.nodes.architect.run_architect", empty_architect)
+    spec_file = tmp_path / "spec.md"
+    spec_file.write_text("# Empty Architect response regression", encoding="utf-8")
+
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        result = runner.invoke(app, ["run", "BTN-206", "--spec", str(spec_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "Run paused - awaiting human review." in result.output
+    assert "Run recovery unsafe" not in result.output
+    state_file = next((tmp_path / ".battalion" / "state").glob("*.json"))
+    state = RunState.model_validate_json(state_file.read_text(encoding="utf-8"))
+    assert state.status is RunStatus.AWAITING_HUMAN
+    assert state.interrupt_log[-1].context["next_phase"] == "architect"
+    assert state.execution_record.node_executions[-1].outcome == "interrupted"
+
+
 def test_run_with_config_file(tmp_path, monkeypatch):
     """Test that run command loads config from YAML file."""
     import battalion.application as application_module
