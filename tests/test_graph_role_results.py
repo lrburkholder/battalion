@@ -14,7 +14,13 @@ from battalion.graph import NODE_DRIVER_GREEN, NODE_DRIVER_RED, NODE_PAUSE, NODE
 from battalion.state.models import RunState, RunStatus
 from battalion.scope.tool_binding import ScopeViolationError
 from support.state import make_run_state
-from support.graph import invoke_graph, refactorer_advancing, reviewer_accepting, resume_graph
+from support.graph import (
+    architect_advancing,
+    invoke_graph,
+    refactorer_advancing,
+    reviewer_accepting,
+    resume_graph,
+)
 from support.responses import json_response
 
 
@@ -25,6 +31,54 @@ class TestRoleOutputFailuresPause:
     parsers raise, so the regression covers the two UAT failures without
     requiring a live provider.
     """
+
+    @pytest.mark.parametrize("content", ["", " \n\t "], ids=["empty", "whitespace"])
+    def test_empty_architect_output_is_durable_and_resumes_at_architect(
+        self, tmp_path, content
+    ):
+        driver_calls = []
+
+        def empty_architect(state, spec_text, llm_config, base_dir, prompts_dir=None):
+            return run_architect(
+                state,
+                spec_text,
+                llm_config,
+                base_dir=base_dir,
+                prompts_dir=prompts_dir,
+                call_llm_fn=lambda *args, **kwargs: {
+                    "choices": [{"message": {"content": content}}]
+                },
+            )
+
+        def driver_must_not_run(*args, **kwargs):
+            driver_calls.append((args, kwargs))
+            raise AssertionError("Driver must not run without an Architect plan")
+
+        paused = RunState.model_validate(invoke_graph(
+            make_run_state(), tmp_path, recursion_limit=5,
+            architect=empty_architect,
+            driver=driver_must_not_run,
+        ))
+
+        assert paused.status is RunStatus.AWAITING_HUMAN
+        assert paused.phase == NODE_PAUSE
+        assert paused.interrupt_log[-1].trigger == "infra-failure"
+        assert paused.interrupt_log[-1].context["next_phase"] == "architect"
+        assert "Architect LLM call returned empty content" in paused.interrupt_log[-1].context["error"]
+        assert driver_calls == []
+        assert not (tmp_path / "plan.md").exists()
+        attempt = paused.execution_record.node_executions[-1]
+        assert attempt.phase == "architect"
+        assert attempt.outcome == "interrupted"
+        assert attempt.attempt_disposition == "infra-failure"
+        assert attempt.interrupt_ids == [0]
+
+        resumed = resume_graph(
+            paused, tmp_path, architect=architect_advancing(),
+        )
+        assert [item.phase for item in resumed.execution_record.node_executions[:2]] == [
+            "architect", "architect",
+        ]
 
     def test_architect_invalid_handoff_retries_before_any_plan_write(self, tmp_path):
         calls = []

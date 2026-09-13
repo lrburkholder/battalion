@@ -28,6 +28,7 @@ from battalion.application import (
 )
 from battalion.actors import load_actor_registry
 from battalion.config import BattalionConfig
+from battalion.nodes.architect import EmptyPlanContent
 from battalion.integrations.configuration import (
     CapabilitySurface,
     IntegrationConfiguration,
@@ -187,6 +188,46 @@ def test_start_run_returns_typed_identity_and_persists_graph_result(tmp_path):
     assert captured["initial_state"] is initial
     assert captured["llm_configs"] == BattalionConfig().models
     assert captured["reviewer_test_timeout_seconds"] == 17
+
+
+def test_empty_architect_output_persists_a_resumable_interrupt(tmp_path, monkeypatch):
+    initial = make_state()
+
+    def empty_architect(*args, **kwargs):
+        raise EmptyPlanContent("Architect returned no usable plan")
+
+    monkeypatch.setattr("battalion.nodes.architect.run_architect", empty_architect)
+    started = start_run(
+        StartRun(initial_state=initial, config=BattalionConfig(base_dir=str(tmp_path))),
+        state_dir=tmp_path,
+    )
+
+    assert started.state.status is RunStatus.AWAITING_HUMAN
+    assert started.state.interrupt_log[-1].context["next_phase"] == "architect"
+    assert started.state.execution_record.node_executions[-1].outcome == "interrupted"
+    assert not (tmp_path / "plan.md").exists()
+    persisted = inspect_run(InspectRun(initial.run_id), state_dir=tmp_path).state
+    assert persisted == started.state
+
+    captured = {}
+    resumed = resume_run(
+        ResumeRun(
+            run_id=initial.run_id,
+            config=BattalionConfig(base_dir=str(tmp_path)),
+            resolution="Retry Architect after reviewing the provider response.",
+        ),
+        state_dir=tmp_path,
+        _execute=lambda **kwargs: captured.setdefault("state", kwargs["state"]).model_copy(
+            update={"status": RunStatus.DONE, "phase": "done"}
+        ),
+    )
+
+    assert captured["state"].resume_target is None
+    assert captured["state"].interrupt_log[-1].resolution == (
+        "Retry Architect after reviewing the provider response."
+    )
+    assert captured["state"].human_action_log[-1].target == "interrupt:0"
+    assert resumed.state.status is RunStatus.DONE
 
 
 def test_graph_execution_cannot_replace_canonical_run_identity(tmp_path):
