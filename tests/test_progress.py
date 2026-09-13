@@ -130,6 +130,75 @@ def test_completed_interactive_node_is_preserved_in_terminal_history():
     assert display._trace == []
 
 
+def test_completed_node_is_flushed_before_the_next_node_trace():
+    class LiveStub:
+        def refresh(self):
+            pass
+
+    buf = io.StringIO()
+    display = ProgressDisplay(stream=buf, show_stream=True)
+    display._interactive = True
+    display._live = LiveStub()
+
+    display.handle_event({"type": "node_start", "node": "architect"})
+    display.handle_token({"type": "token", "content": "architect output"})
+    display.handle_event({"type": "node_end", "node": "architect", "phase": "driver_red"})
+    display.handle_event({"type": "node_start", "node": "driver_red"})
+    display.handle_token({"type": "token", "content": "driver output"})
+    display._flush_completed_trace()
+
+    output = buf.getvalue()
+    assert output.index("architect output") < output.index("driver output")
+    assert output.count("architect output") == 1
+
+
+def test_node_error_flushes_trace_before_interrupt_can_replace_live_panel():
+    class LiveStub:
+        def refresh(self):
+            pass
+
+    buf = io.StringIO()
+    display = ProgressDisplay(stream=buf, show_stream=True)
+    display._interactive = True
+    display._live = LiveStub()
+
+    display.handle_event({"type": "node_start", "node": "architect"})
+    display.handle_token({"type": "token", "content": "line one\nline two"})
+    display.handle_event({
+        "type": "node_error", "node": "architect", "error": "provider failed",
+    })
+    display.handle_event({"type": "interrupt", "node": "architect", "trigger": "infra-failure"})
+    display.handle_event({"type": "node_start", "node": "driver_red"})
+    display.handle_token({"type": "token", "content": "next output"})
+    display._flush_completed_trace()
+
+    output = buf.getvalue()
+    assert "line one" in output
+    assert "line two" in output
+    assert output.index("line one") < output.index("next output")
+    assert display._trace == []
+
+
+def test_interrupt_flush_is_idempotent_before_node_end():
+    class LiveStub:
+        def refresh(self):
+            pass
+
+    buf = io.StringIO()
+    display = ProgressDisplay(stream=buf, show_stream=True)
+    display._interactive = True
+    display._live = LiveStub()
+
+    display.handle_event({"type": "node_start", "node": "architect"})
+    display.handle_token({"type": "token", "content": "completed output"})
+    display.handle_event({"type": "interrupt", "node": "architect", "trigger": "manual-checkpoint"})
+    first_output = buf.getvalue()
+    display.handle_event({"type": "node_end", "node": "architect", "phase": "pause"})
+
+    assert buf.getvalue() == first_output
+    assert buf.getvalue().count("completed output") == 1
+
+
 def test_live_panel_bounds_its_view_without_discarding_the_node_trace():
     display = ProgressDisplay(stream=io.StringIO(), show_stream=True)
     display.handle_token({"type": "token", "content": "begin "})

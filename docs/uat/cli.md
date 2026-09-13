@@ -168,8 +168,25 @@ Pass criteria:
 - Where the provider/router reports a resolved model identity, execution
   evidence retains it separately from the requested target and records any
   contradiction instead of silently replacing either identity.
-- The terminal retains available node-associated progress. Raw reasoning/token
+- The terminal retains available node-associated progress. When a node finishes,
+  its available output is emitted as a static, identified transcript in terminal
+  scrollback before the next node's live panel replaces it. This also applies
+  when the run pauses or a node fails, and structured output retains real line
+  breaks where the provider supplied them. A bounded `[live tail: ...]` notice
+  must not be the only visible record of earlier output. Raw reasoning/token
   text is provider-dependent, not guaranteed evidence for every model.
+
+### BTN-199 scrollback rerun
+
+After rebuilding a candidate that includes the BTN-199 fix, rerun the affected
+BTN-129 full happy-path scenario above with the candidate's exact version and
+source commit recorded in the UAT evidence. Observe the terminal while
+Architect hands off to Driver: the completed Architect transcript must remain
+in scrollback before the Driver live panel appears. Repeat the observation for
+the manual-checkpoint and provider-failure scenarios below; each must preserve
+the last node's available transcript before the pause/error is reported. A
+candidate that shows only a `live tail` notice, reorders node output, or emits
+duplicate completed text remains a BTN-199 defect.
 
 Optional trace check: only after reviewing the sensitivity warning in Getting
 Started, repeat on another disposable project with
