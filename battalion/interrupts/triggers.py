@@ -203,12 +203,11 @@ def check_any_trigger(
     all triggers in priority order and returns the first matching one.
     
     Priority order (first match wins):
-    1. Manual checkpoint (user-declared, always takes precedence)
-    2. Infra failure (explicit error condition)
-    3. Scope violation (should never happen, but defense-in-depth)
-    4. Budget exceeded
-    5. Same root cause twice
-    6. Role-definition edit
+    1. Explicit node failures (infra and scope failures)
+    2. Manual checkpoint (user-declared, on a successful handoff)
+    3. Budget exceeded
+    4. Same root cause twice
+    5. Role-definition edit
     
     Args:
         state: Current RunState
@@ -222,13 +221,9 @@ def check_any_trigger(
         - trigger_id: The identifier of the firing trigger
         - context: Additional context dict for the interrupt log
     """
-    # Priority 1: Manual checkpoint (user always wins)
-    if next_phase is not None:
-        fired, trigger_id = check_manual_checkpoint(state, next_phase)
-        if fired:
-            return True, trigger_id, {"phase": next_phase}
-    
-    # Priority 2: Infra failure (explicit error)
+    # Explicit failures must retain their role-specific evidence and resume
+    # target. A checkpoint describes a valid handoff boundary, which a failed
+    # node did not reach.
     if error is not None:
         fired, trigger_id = check_infra_failure(error)
         if fired:
@@ -237,8 +232,14 @@ def check_any_trigger(
         fired, trigger_id = check_scope_violation(error)
         if fired:
             return True, trigger_id, {"error": str(error)}
+
+    # A manual checkpoint owns the normal, successful handoff path.
+    if next_phase is not None:
+        fired, trigger_id = check_manual_checkpoint(state, next_phase)
+        if fired:
+            return True, trigger_id, {"phase": next_phase}
     
-    # Priority 3: Budget exceeded
+    # Budget exceeded
     fired, trigger_id = check_budget_exceeded_trigger(state)
     if fired:
         return True, trigger_id, {

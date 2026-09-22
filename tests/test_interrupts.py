@@ -304,8 +304,21 @@ class TestTrigger6ManualCheckpoint:
 # =============================================================================
 
 class TestCheckAnyTrigger:
+    def test_failure_priority_over_manual_checkpoint(self):
+        """A checkpoint cannot relabel a failed role as a valid handoff."""
+        state = make_state(manual_checkpoints=["driver"])
+        error = InfraFailure("architect", "gpt-4", 3, RuntimeError("down"))
+
+        fired, trigger_id, context = check_any_trigger(
+            state, error=error, next_phase="driver"
+        )
+
+        assert fired is True
+        assert trigger_id == TRIGGER_INFRA_FAILURE
+        assert context == {"error": str(error)}
+
     def test_manual_checkpoint_highest_priority(self):
-        """Manual checkpoint (trigger #6) should take precedence over all others."""
+        """Manual checkpoints take precedence over non-failure triggers."""
         state = make_state(
             budget_used=100,
             budget_limit=100,

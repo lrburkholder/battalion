@@ -42,7 +42,7 @@ from support.state import make_llm_configs as make_configs, make_run_state, pers
 from support.execution import make_interrupt
 
 from battalion.cli import app as cli_app
-from battalion.graph import build_graph, resume_ticket
+from battalion.graph import _infer_resume_target, build_graph, resume_ticket
 from battalion.interrupts.triggers import (
     TRIGGER_BUDGET_EXCEEDED,
     TRIGGER_INFRA_FAILURE,
@@ -352,6 +352,40 @@ class TestAcceptanceCriteria2_InterruptTriggers:
 
         assert final["status"] == RunStatus.AWAITING_HUMAN
         assert [e.trigger for e in final["interrupt_log"]] == [TRIGGER_INFRA_FAILURE]
+
+    def test_failed_architect_is_not_masked_by_driver_checkpoint(self, tmp_path):
+        """Rejected Architect output is an Architect failure, never a Driver gate."""
+        def arch_llm(node, cfg, messages):
+            return litellm_response('{"plan_markdown":"bad' + "\n" + 'control"}')
+
+        def driver_llm(node, cfg, messages):
+            raise AssertionError("Driver must not run after rejected Architect output")
+
+        def unreachable_llm(node, cfg, messages):
+            raise AssertionError("No downstream role may run after rejected Architect output")
+
+        with run_with_mocked_llms(
+            arch_llm, driver_llm, unreachable_llm, unreachable_llm
+        ):
+            final = invoke_graph(
+                tmp_path,
+                make_initial_state(tmp_path, "BTN-276", manual_checkpoints=["driver"]),
+            )
+
+        assert final["status"] == RunStatus.AWAITING_HUMAN
+        assert final["phase"] == "awaiting_human"
+        assert [entry.trigger for entry in final["interrupt_log"]] == [TRIGGER_INFRA_FAILURE]
+        assert final["interrupt_log"][-1].context["next_phase"] == "architect"
+        assert final["execution_record"].node_executions[-1].role == "architect"
+        assert final["execution_record"].node_executions[-1].role_contract_violation is not None
+        assert (
+            final["execution_record"].node_executions[-1]
+            .role_contract_violation.reason_code
+            == "architect-handoff-malformed"
+        )
+        assert not (tmp_path / "plan.md").exists()
+        assert final.get("artifact_target_handoff") is None
+        assert _infer_resume_target(RunState.model_validate(final)) == "architect"
 
     def test_trigger6_manual_checkpoint(self, tmp_path):
         """A user-declared checkpoint pauses unconditionally at the declared
