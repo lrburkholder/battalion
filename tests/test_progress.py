@@ -175,7 +175,50 @@ def test_node_error_flushes_trace_before_interrupt_can_replace_live_panel():
     output = buf.getvalue()
     assert "line one" in output
     assert "line two" in output
+    assert "[error] Architect - producing plan.md: provider failed" in output
     assert output.index("line one") < output.index("next output")
+    assert display._trace == []
+
+
+def test_architect_correction_failure_flushes_full_transcripts_once_before_pause():
+    """A retry must not turn either completed Architect transcript into a live tail."""
+    class LiveStub:
+        def refresh(self):
+            pass
+
+    first_response = "first architect response " + "a" * 2_000
+    retry_response = "corrected architect response " + "b" * 2_000
+    failure = "Architect output still violates the role contract"
+    buf = io.StringIO()
+    display = ProgressDisplay(stream=buf, show_stream=True)
+    display._interactive = True
+    display._live = LiveStub()
+
+    display.handle_event({"type": "node_start", "node": "architect"})
+    display.handle_token({"type": "token", "content": first_response})
+    display.handle_event({
+        "type": "role_contract_correction",
+        "node": "architect",
+        "reason_code": "architect-plan-contract",
+        "offending_paths": ["plan.md"],
+        "mutation_applied": False,
+        "attempt_number": 1,
+    })
+    display.handle_event({"type": "node_start", "node": "architect"})
+    display.handle_token({"type": "token", "content": retry_response})
+    display.handle_event({"type": "node_error", "node": "architect", "error": failure})
+    display.handle_event({"type": "interrupt", "node": "architect", "trigger": "infra-failure"})
+
+    output = buf.getvalue()
+    # Rich folds long unbroken words at terminal width, so verify that none of
+    # either response's payload characters were elided from static scrollback.
+    assert output.count("a") >= first_response.count("a")
+    assert output.count("b") >= retry_response.count("b")
+    assert "[live tail:" not in output
+    # Static panels can fold this sentence across a border at narrow widths.
+    terminal_text = " ".join(output.replace("│", " ").split())
+    assert terminal_text.count("rejected role-contract output") == 1
+    assert output.count(failure) == 1
     assert display._trace == []
 
 
