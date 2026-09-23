@@ -128,11 +128,15 @@ class ProgressDisplay:
         elif etype == "node_error":
             # Error routing emits an interrupt instead of node_end. Preserve
             # the streamed output before that routing can replace the panel.
+            # Include the typed failure in that one static record as well:
+            # interactive mode otherwise clears its live panel before the CLI
+            # reports the durable pause beneath it.
+            error = f"[error] {self._node_label}: {event.get('error')}"
+            if self._interactive:
+                self._trace.append(error)
             self._flush_completed_trace()
             if not self._interactive:
-                self._console.print(
-                    f"[error] {self._node_label}: {event.get('error')}"
-                )
+                self._console.print(error)
         elif etype == "role_contract_correction":
             paths = event.get("offending_paths") or []
             path_text = ", ".join(paths) if paths else "no artifact paths retained"
@@ -161,7 +165,9 @@ class ProgressDisplay:
         # Console.print is routed above the active Live region, so the
         # completed node remains in terminal scrollback while the next node
         # gets its own live panel.
-        self._console.print(self._render())
+        self._console.print(
+            self._render_completed_trace(), overflow="fold", crop=False,
+        )
         self._trace = []
         self._last_trace_kind = None
 
@@ -222,6 +228,7 @@ class ProgressDisplay:
         self._trace_output.flush()
 
     def _render(self) -> Panel:
+        """Render the bounded panel that is continuously redrawn live."""
         header = Text(self._node_label, style="bold cyan")
         if self._budget:
             header.append(
@@ -239,3 +246,19 @@ class ProgressDisplay:
         else:
             body = Group(top, Text("working...", style="dim"))
         return Panel(body, title="Battalion")
+
+    def _render_completed_trace(self) -> Panel:
+        """Render all buffered output for one immutable scrollback entry."""
+        header = Text(self._node_label, style="bold cyan")
+        if self._budget:
+            header.append(
+                f"   budget {self._budget.get('used', 0)}/{self._budget.get('limit', 0)}",
+                style="dim",
+            )
+        top = Columns([Spinner("dots"), header], equal=False, expand=False)
+        # A static record must fold long unbroken model output instead of
+        # applying Rich's visual ellipsis overflow policy.
+        return Panel(
+            Group(top, Text("".join(self._trace), overflow="fold")),
+            title="Battalion",
+        )
