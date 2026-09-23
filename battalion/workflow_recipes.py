@@ -42,6 +42,7 @@ class WorkflowKind(str, Enum):
     """The finite kinds of workflow that may be admitted."""
 
     IMPLEMENTATION_RUN = "implementation-run"
+    SPECIFICATION = "specification"
 
 
 class WorkflowStage(str, Enum):
@@ -121,7 +122,7 @@ class WorkflowRecipe(BaseModel):
     recipe_id: str = Field(min_length=1, max_length=200)
     recipe_version: str = Field(min_length=1, max_length=100)
     workflow_kind: WorkflowKind
-    stages: tuple[WorkflowStage, ...] = Field(min_length=1)
+    stages: tuple[WorkflowStage, ...] = Field(default_factory=tuple)
     capabilities: frozenset[WorkflowCapability]
     mandatory_verification: frozenset[VerificationRequirement]
     independent_review_required: bool
@@ -140,6 +141,8 @@ class WorkflowRecipe(BaseModel):
         if len(completion_kinds) != len(set(completion_kinds)):
             raise ValueError("workflow completion requirements must not be duplicated")
         if self.workflow_kind is WorkflowKind.IMPLEMENTATION_RUN:
+            if not self.stages:
+                raise ValueError("implementation recipes require at least one stage")
             missing_capabilities = _REQUIRED_IMPLEMENTATION_CAPABILITIES - self.capabilities
             if missing_capabilities:
                 raise ValueError(
@@ -292,9 +295,32 @@ COMPACT_IMPLEMENTATION_RECIPE = WorkflowRecipe(
         ),
     ),
 )
+
+
+SPECIFICATION_RECIPE = WorkflowRecipe(
+    recipe_id="specification",
+    recipe_version="1.0",
+    workflow_kind=WorkflowKind.SPECIFICATION,
+    # Specification phases are workflow-specific state, not generic stages.
+    stages=(),
+    capabilities=frozenset(
+        {
+            WorkflowCapability.AUTHORIZATION,
+            WorkflowCapability.PROVENANCE,
+            WorkflowCapability.COST_POLICY,
+        }
+    ),
+    mandatory_verification=frozenset(),
+    independent_review_required=False,
+    interrupt_policy=PolicyReference(policy_id="v1-interrupts", policy_version="1.0"),
+    eligibility_policy=PolicyReference(policy_id="specification-admission", policy_version="1.0"),
+    upgrade_triggers=(
+        PolicyReference(policy_id="specification-boundaries", policy_version="1.0"),
+    ),
+)
 """The initial proportionate Implementation Run recipe from RFC-0012."""
 
 
 DEFAULT_WORKFLOW_RECIPE_REGISTRY = WorkflowRecipeRegistry(
-    (FULL_IMPLEMENTATION_RECIPE, COMPACT_IMPLEMENTATION_RECIPE)
+    (FULL_IMPLEMENTATION_RECIPE, COMPACT_IMPLEMENTATION_RECIPE, SPECIFICATION_RECIPE)
 )

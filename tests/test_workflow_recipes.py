@@ -21,6 +21,7 @@ from battalion.workflow_recipes import (
     IncompatibleWorkflowRecipe,
     MalformedWorkflowRecipe,
     UnknownWorkflowRecipe,
+    SPECIFICATION_RECIPE,
     WorkflowRecipe,
     WorkflowRecipeRegistry,
 )
@@ -105,7 +106,11 @@ def test_recipe_validation_cannot_omit_required_assurance() -> None:
 def test_application_exposes_read_only_recipe_enumeration_and_inspection() -> None:
     recipes = list_workflow_recipes(ListWorkflowRecipes())
 
-    assert recipes == (COMPACT_IMPLEMENTATION_RECIPE, FULL_IMPLEMENTATION_RECIPE)
+    assert recipes == (
+        COMPACT_IMPLEMENTATION_RECIPE,
+        FULL_IMPLEMENTATION_RECIPE,
+        SPECIFICATION_RECIPE,
+    )
     assert inspect_workflow_recipe(
         InspectWorkflowRecipe(recipe_id="full-implementation-run", recipe_version="1.0")
     ) is FULL_IMPLEMENTATION_RECIPE
