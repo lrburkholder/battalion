@@ -29,6 +29,12 @@ from battalion.workflow_admission import (
     WorkflowAdmissionEvidence,
     assess_workflow_admission,
 )
+from battalion.next_step_admission import (
+    NextStep,
+    NextStepAdmissionEvidence,
+    NextStepEvidenceFact,
+    assess_next_step,
+)
 from battalion.workflow_recipes import (
     DEFAULT_WORKFLOW_RECIPE_REGISTRY,
     FULL_IMPLEMENTATION_RECIPE,
@@ -419,3 +425,48 @@ def test_input_rejects_missing_assessed_work_item_and_unregistered_context_recip
             registry=WorkflowRecipeRegistry((FULL_IMPLEMENTATION_RECIPE,)),
             call_llm_fn=lambda *_: _response(),
         )
+
+
+def test_tactician_can_recommend_specification_only_for_uncertain_next_step() -> None:
+    reference = _reference("work-item", source=AdmissionEvidenceSource.WORK_ITEM)
+    next_step = assess_next_step(
+        NextStepAdmissionEvidence(
+            work_item_revision="revision-1",
+            evidence_references=(reference,),
+            established_facts=(NextStepEvidenceFact.WORK_REQUIRED,),
+            fact_evidence_ids=((NextStepEvidenceFact.WORK_REQUIRED, "work-item"),),
+        )
+    )
+    input_value = TacticianAssessmentInput(
+        next_step_assessment=next_step,
+        evidence=(
+            TacticianEvidence(
+                evidence_id="work-item",
+                source=AdmissionEvidenceSource.WORK_ITEM,
+                source_revision="revision-1",
+                content="Make a behavior change, but the required product intent is unclear.",
+            ),
+        ),
+        registered_recipe_summaries=(
+            TacticianRecipeSummary(
+                recipe_id="specification",
+                recipe_version="1.0",
+                summary="A human-reviewed Specification workflow.",
+            ),
+        ),
+    )
+
+    assessment = run_tactician(
+        input_value,
+        NodeLLMConfig(model="tactician-model"),
+        registry=DEFAULT_WORKFLOW_RECIPE_REGISTRY,
+        call_llm_fn=lambda *_: _response(
+            recommendation_kind="next-step",
+            recommended_recipe_id=None,
+            recommended_recipe_version=None,
+            recommended_next_step="specification",
+        ),
+    )
+
+    assert assessment.recommendation_kind.value == "next-step"
+    assert assessment.recommended_next_step is NextStep.SPECIFICATION
