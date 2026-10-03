@@ -131,6 +131,21 @@ from battalion.workflow_admission import (
     WorkflowAdmissionPolicy,
     assess_workflow_admission as _assess_workflow_admission,
 )
+from battalion.next_step_admission import (
+    DEFAULT_NEXT_STEP_ADMISSION_POLICY,
+    NextStep,
+    NextStepAdmissionAssessment,
+    NextStepAdmissionEvidence,
+    NextStepAdmissionPolicy,
+    assess_next_step as _assess_next_step,
+    upgrade_next_step_admission as _upgrade_next_step_admission,
+)
+from battalion.specification_execution import (
+    SpecificationExecution,
+    SpecificationExecutionRepository,
+    start_specification_execution,
+)
+from battalion.specifications import SpecificationRepository
 from battalion.workflow_admission_decisions import (
     WorkflowAdmissionDecision,
     WorkflowAdmissionDisposition,
@@ -146,6 +161,7 @@ from battalion.workflow_admission_state import (
 from battalion.tactician import (
     TacticianAssessment,
     TacticianAssessmentInput,
+    TacticianRecommendationKind,
     run_tactician as _run_tactician,
 )
 from battalion.workers import (
@@ -238,6 +254,10 @@ class InvalidWriteScope(ApplicationError):
 
 class InvalidInferencePolicy(ApplicationError):
     """The configured targets cannot be admitted under the selected policy."""
+
+
+class NextStepAdmissionRejected(ApplicationError):
+    """An operation attempted to bypass deterministic next-step admission."""
 
 
 def _validate_write_scope(write_scope: dict[str, list[str]], base_dir: str | Path) -> None:
@@ -580,6 +600,49 @@ class AssessWorkflowAdmission:
 
 
 @dataclass(frozen=True)
+class AssessNextStepAdmission:
+    """Assess the next appropriate step without selecting an execution recipe."""
+
+    evidence: NextStepAdmissionEvidence
+
+
+@dataclass(frozen=True)
+class AdmitNextStep:
+    """Let an authorized human admit the current deterministic next step.
+
+    This initial operation only materializes a Specification execution.  The
+    existing implementation admission operations continue to own recipe
+    selection, and Architecture has no standalone execution contract yet.
+    """
+
+    project_root: str | Path
+    canonical_work_identity: str
+    assessment: NextStepAdmissionAssessment
+    evidence: NextStepAdmissionEvidence
+    selected_next_step: NextStep
+    actor_id: UUID | None = None
+    tactician_assessment: TacticianAssessment | None = None
+
+
+@dataclass(frozen=True)
+class NextStepAdmissionResult:
+    """The admitted next step and any workflow execution created by Battalion."""
+
+    assessment: NextStepAdmissionAssessment
+    selected_next_step: NextStep
+    approving_actor_id: UUID
+    specification_execution: SpecificationExecution | None = None
+
+
+@dataclass(frozen=True)
+class UpgradeNextStepAdmission:
+    """Re-evaluate next-step evidence under the upgrade-only policy."""
+
+    previous_assessment: NextStepAdmissionAssessment
+    evidence: NextStepAdmissionEvidence
+
+
+@dataclass(frozen=True)
 class AssessTactician:
     """Request an advisory assessment for deterministic admission uncertainty."""
 
@@ -632,6 +695,8 @@ class CreateAdmittedRun:
     recipe_version: str | None = None
     annotation: str | None = None
     work_item: WorkItem | None = None
+    next_step_assessment: NextStepAdmissionAssessment | None = None
+    next_step_tactician_assessment: TacticianAssessment | None = None
 
 
 @dataclass(frozen=True)
@@ -1821,6 +1886,130 @@ def assess_workflow_admission(
     return _assess_workflow_admission(command.evidence, policy=policy)
 
 
+def assess_next_step_admission(
+    command: AssessNextStepAdmission,
+    *,
+    policy: NextStepAdmissionPolicy = DEFAULT_NEXT_STEP_ADMISSION_POLICY,
+) -> NextStepAdmissionAssessment:
+    """Assess the next step through the application boundary without model IO."""
+    return _assess_next_step(command.evidence, policy=policy)
+
+
+def admit_next_step(
+    command: AdmitNextStep,
+    *,
+    policy: NextStepAdmissionPolicy = DEFAULT_NEXT_STEP_ADMISSION_POLICY,
+) -> NextStepAdmissionResult:
+    """Authorize the assessed next step and let Battalion start Specification.
+
+    A caller cannot use this operation to substitute a model recommendation or
+    construct a workflow. The only executable step currently represented by
+    this boundary is the registered Specification lifecycle supplied by
+    BTN-228.
+    """
+    current = _assess_next_step(command.evidence, policy=policy)
+    if command.assessment != current:
+        raise NextStepAdmissionRejected(
+            "next-step assessment is stale or does not match current evidence and policy"
+        )
+    _validate_next_step_choice(current, command)
+    actor = _resolve_human_actor(command.project_root, command.actor_id)
+    if command.selected_next_step is not NextStep.SPECIFICATION:
+        return NextStepAdmissionResult(
+            assessment=current,
+            selected_next_step=command.selected_next_step,
+            approving_actor_id=actor.actor_id,
+        )
+
+    specifications = SpecificationRepository(command.project_root)
+    specification = specifications.create(command.canonical_work_identity)
+    execution = start_specification_execution(
+        specification.specification_id,
+        project_root=command.project_root,
+        requesting_actor_id=actor.actor_id,
+        admission_assessment=current,
+        tactician_assessment=command.tactician_assessment,
+    )
+    SpecificationExecutionRepository(command.project_root).save(execution)
+    return NextStepAdmissionResult(
+        assessment=current,
+        selected_next_step=command.selected_next_step,
+        approving_actor_id=actor.actor_id,
+        specification_execution=execution,
+    )
+
+
+def upgrade_next_step_admission(
+    command: UpgradeNextStepAdmission,
+    *,
+    policy: NextStepAdmissionPolicy = DEFAULT_NEXT_STEP_ADMISSION_POLICY,
+) -> NextStepAdmissionAssessment:
+    """Return a stronger next-step disposition without dispatching it."""
+    try:
+        return _upgrade_next_step_admission(
+            command.previous_assessment, command.evidence, policy=policy
+        )
+    except ValueError as exc:
+        raise NextStepAdmissionRejected(str(exc)) from exc
+
+
+def _validate_next_step_choice(
+    assessment: NextStepAdmissionAssessment, command: AdmitNextStep
+) -> None:
+    """Keep advisory Tactician output on the evidence side of human admission."""
+    tactician = command.tactician_assessment
+    if not assessment.requires_tactician_assessment:
+        if tactician is not None:
+            raise NextStepAdmissionRejected(
+                "Tactician evidence is valid only when next-step admission requires it"
+            )
+        if command.selected_next_step is not assessment.next_step:
+            raise NextStepAdmissionRejected(
+                "an admitted next step must match the deterministic assessment"
+            )
+        return
+    if tactician is None:
+        raise NextStepAdmissionRejected(
+            "uncertain next-step admission requires a Tactician assessment"
+        )
+    if tactician.recommendation_kind is not TacticianRecommendationKind.NEXT_STEP:
+        raise NextStepAdmissionRejected(
+            "uncertain next-step admission requires a Tactician next-step recommendation"
+        )
+    if command.selected_next_step is NextStep.NO_WORK:
+        raise NextStepAdmissionRejected(
+            "Tactician uncertainty cannot authorize a no-work disposition"
+        )
+    assessed_evidence = {
+        (reference.evidence_id, reference.source, reference.source_revision)
+        for reference in assessment.evidence_references
+    }
+    if any(
+        (reference.evidence_id, reference.source, reference.source_revision)
+        not in assessed_evidence
+        for reference in tactician.input_evidence_references
+    ):
+        raise NextStepAdmissionRejected(
+            "Tactician evidence does not belong to the current next-step assessment"
+        )
+    if not any(
+        reference.source is AdmissionEvidenceSource.WORK_ITEM
+        and reference.source_revision == assessment.work_item_revision
+        for reference in tactician.input_evidence_references
+    ):
+        raise NextStepAdmissionRejected(
+            "Tactician evidence must include the assessed work-item revision"
+        )
+    if assessment.specification_revision is not None and not any(
+        reference.source is AdmissionEvidenceSource.SPECIFICATION
+        and reference.source_revision == assessment.specification_revision
+        for reference in tactician.input_evidence_references
+    ):
+        raise NextStepAdmissionRejected(
+            "Tactician evidence must include the assessed specification revision"
+        )
+
+
 def assess_tactician(
     command: AssessTactician,
     *,
@@ -1992,8 +2181,11 @@ def create_admitted_run(
             f"{first_stage.value!r}"
         )
     record = WorkflowAdmissionRunRecord(
+        schema_version=("1.1" if command.next_step_assessment is not None else "1.0"),
         assessment=command.assessment,
         tactician_assessment=command.tactician_assessment,
+        next_step_assessment=command.next_step_assessment,
+        next_step_tactician_assessment=command.next_step_tactician_assessment,
         decision=decision_result.decision,
         execution=_start_workflow_execution(recipe),
     )

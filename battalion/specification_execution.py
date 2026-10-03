@@ -17,6 +17,8 @@ from battalion.specifications import (
     SpecificationRepository,
     SpecificationRevisionStatus,
 )
+from battalion.next_step_admission import NextStep, NextStepAdmissionAssessment
+from battalion.tactician import TacticianAssessment, TacticianRecommendationKind
 from battalion.workflow_execution import (
     BlockResolutionKind,
     WorkflowBlock,
@@ -72,6 +74,8 @@ class SpecificationExecution(_Contract):
     candidate_revision_id: UUID | None = None
     outcome: SpecificationOutcome | None = None
     unresolved_dependencies: tuple[UnresolvedSpecificationDependency, ...] = Field(default_factory=tuple, max_length=100)
+    admission_assessment: NextStepAdmissionAssessment | None = None
+    tactician_assessment: TacticianAssessment | None = None
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> "SpecificationExecution":
@@ -88,6 +92,25 @@ class SpecificationExecution(_Contract):
             raise ValueError("needs-resolution outcomes require unresolved dependencies")
         if self.unresolved_dependencies and self.outcome is not SpecificationOutcome.NEEDS_RESOLUTION:
             raise ValueError("unresolved dependencies belong only to needs-resolution outcomes")
+        admission = self.admission_assessment
+        tactician = self.tactician_assessment
+        if admission is None:
+            if tactician is not None:
+                raise ValueError("Tactician evidence requires retained next-step admission")
+        else:
+            if admission.next_step is not NextStep.SPECIFICATION and not (
+                admission.requires_tactician_assessment
+                and tactician is not None
+            ):
+                raise ValueError("Specification execution requires admitted Specification")
+            if admission.requires_tactician_assessment:
+                if (
+                    tactician is None
+                    or tactician.recommendation_kind is not TacticianRecommendationKind.NEXT_STEP
+                ):
+                    raise ValueError("uncertain Specification admission requires Tactician next-step evidence")
+            elif tactician is not None:
+                raise ValueError("deterministic Specification admission cannot retain Tactician evidence")
         return self
 
 
@@ -97,6 +120,8 @@ def start_specification_execution(
     project_root: str | Path,
     requesting_actor_id: UUID | None = None,
     execution_id: UUID | None = None,
+    admission_assessment: NextStepAdmissionAssessment | None = None,
+    tactician_assessment: TacticianAssessment | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     registry: WorkflowRecipeRegistry = DEFAULT_WORKFLOW_RECIPE_REGISTRY,
 ) -> SpecificationExecution:
@@ -111,7 +136,10 @@ def start_specification_execution(
             requesting_actor_id=requesting_actor_id, status=WorkflowExecutionStatus.RUNNING,
             created_at=now(), started_at=now(),
         ),
-        specification_id=specification_id, phase=SpecificationPhase.INSPECTING,
+        specification_id=specification_id,
+        phase=SpecificationPhase.INSPECTING,
+        admission_assessment=admission_assessment,
+        tactician_assessment=tactician_assessment,
     )
 
 
