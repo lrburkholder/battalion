@@ -12,7 +12,8 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from battalion.tactician import TacticianAssessment
+from battalion.tactician import TacticianAssessment, TacticianRecommendationKind
+from battalion.next_step_admission import NextStep, NextStepAdmissionAssessment
 from battalion.workflow_admission import (
     AdmissionEvidenceSource,
     WorkflowAdmissionEvidence,
@@ -55,9 +56,11 @@ class WorkflowAdmissionRunRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     assessment: WorkflowAdmissionAssessment
     tactician_assessment: TacticianAssessment | None = None
+    next_step_assessment: NextStepAdmissionAssessment | None = None
+    next_step_tactician_assessment: TacticianAssessment | None = None
     decision: WorkflowAdmissionDecision
     execution: WorkflowExecutionState
 
@@ -66,6 +69,32 @@ class WorkflowAdmissionRunRecord(BaseModel):
         assessment = self.assessment
         decision = self.decision
         tactician = self.tactician_assessment
+        next_step = self.next_step_assessment
+        next_step_tactician = self.next_step_tactician_assessment
+
+        if next_step is None:
+            if next_step_tactician is not None:
+                raise ValueError("next-step Tactician evidence requires next-step admission")
+            if self.schema_version != "1.0":
+                raise ValueError("workflow admission record version 1.1 requires next-step admission")
+        else:
+            if self.schema_version != "1.1":
+                raise ValueError("next-step admission requires workflow admission record version 1.1")
+            if next_step.next_step not in {NextStep.ARCHITECTURE, NextStep.IMPLEMENTATION}:
+                raise ValueError("Implementation Run requires an Architecture or Implementation next step")
+            if (
+                next_step.work_item_revision != assessment.work_item_revision
+                or next_step.specification_revision != assessment.specification_revision
+            ):
+                raise ValueError("next-step admission revisions do not match workflow admission")
+            if next_step.requires_tactician_assessment:
+                if (
+                    next_step_tactician is None
+                    or next_step_tactician.recommendation_kind is not TacticianRecommendationKind.NEXT_STEP
+                ):
+                    raise ValueError("uncertain next-step admission requires Tactician next-step evidence")
+            elif next_step_tactician is not None:
+                raise ValueError("deterministic next-step admission cannot retain Tactician evidence")
 
         if decision.disposition not in {
             WorkflowAdmissionDisposition.FULL,

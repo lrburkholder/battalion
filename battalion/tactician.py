@@ -34,6 +34,7 @@ from battalion.workflow_admission import (
     WorkflowAdmissionAssessment,
     WorkflowAdmissionOutcome,
 )
+from battalion.next_step_admission import NextStep, NextStepAdmissionAssessment
 from battalion.workflow_recipes import WorkflowRecipeRegistry
 
 
@@ -58,6 +59,7 @@ class InvalidTacticianRecommendation(TacticianError):
 
 class TacticianRecommendationKind(str, Enum):
     RECIPE = "recipe"
+    NEXT_STEP = "next-step"
     CLARIFICATION = "clarification"
 
 
@@ -88,7 +90,8 @@ class TacticianAssessmentInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
-    admission_assessment: WorkflowAdmissionAssessment
+    admission_assessment: WorkflowAdmissionAssessment | None = None
+    next_step_assessment: NextStepAdmissionAssessment | None = None
     evidence: tuple[TacticianEvidence, ...] = Field(min_length=1, max_length=50)
     known_scope: tuple[str, ...] = Field(default_factory=tuple, max_length=50)
     registered_recipe_summaries: tuple[TacticianRecipeSummary, ...] = Field(
@@ -99,6 +102,10 @@ class TacticianAssessmentInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_evidence_and_recipes(self) -> Self:
+        if (self.admission_assessment is None) == (self.next_step_assessment is None):
+            raise ValueError("Tactician input requires exactly one admission assessment")
+        assessment = self.admission_assessment or self.next_step_assessment
+        assert assessment is not None
         evidence_ids = [item.evidence_id for item in self.evidence]
         if len(evidence_ids) != len(set(evidence_ids)):
             raise ValueError("Tactician evidence requires unique evidence IDs")
@@ -110,14 +117,14 @@ class TacticianAssessmentInput(BaseModel):
             raise ValueError("Tactician recipe summaries require unique exact keys")
         work_item_present = any(
             item.source is AdmissionEvidenceSource.WORK_ITEM
-            and item.source_revision == self.admission_assessment.work_item_revision
+            and item.source_revision == assessment.work_item_revision
             for item in self.evidence
         )
         if not work_item_present:
             raise ValueError("Tactician input requires the assessed work-item revision")
-        if self.admission_assessment.specification_revision is not None and not any(
+        if assessment.specification_revision is not None and not any(
             item.source is AdmissionEvidenceSource.SPECIFICATION
-            and item.source_revision == self.admission_assessment.specification_revision
+            and item.source_revision == assessment.specification_revision
             for item in self.evidence
         ):
             raise ValueError("Tactician input requires the assessed specification revision")
@@ -170,6 +177,7 @@ class TacticianAssessment(BaseModel):
     recommendation_kind: TacticianRecommendationKind
     recommended_recipe_id: str | None = Field(default=None, min_length=1, max_length=200)
     recommended_recipe_version: str | None = Field(default=None, min_length=1, max_length=100)
+    recommended_next_step: NextStep | None = None
     rationale: tuple[str, ...] = Field(min_length=1, max_length=8)
     risk_flags: tuple[str, ...] = Field(default_factory=tuple, max_length=30)
     missing_evidence: tuple[str, ...] = Field(default_factory=tuple, max_length=30)
@@ -194,10 +202,13 @@ class TacticianAssessment(BaseModel):
         if has_recipe != has_version:
             raise ValueError("Tactician recipe recommendations require an exact version")
         if self.recommendation_kind is TacticianRecommendationKind.RECIPE:
-            if not has_recipe:
+            if not has_recipe or self.recommended_next_step is not None:
                 raise ValueError("recipe recommendations require a registered recipe key")
-        elif has_recipe:
-            raise ValueError("clarification recommendations cannot select a recipe")
+        elif self.recommendation_kind is TacticianRecommendationKind.NEXT_STEP:
+            if has_recipe or self.recommended_next_step in {None, NextStep.CLARIFICATION, NextStep.NO_WORK}:
+                raise ValueError("next-step recommendations require an actionable next step only")
+        elif has_recipe or self.recommended_next_step is not None:
+            raise ValueError("clarification recommendations cannot select a recipe or next step")
         return self
 
 
@@ -209,6 +220,7 @@ class _TacticianModelOutput(BaseModel):
     recommendation_kind: TacticianRecommendationKind
     recommended_recipe_id: str | None = Field(default=None, min_length=1, max_length=200)
     recommended_recipe_version: str | None = Field(default=None, min_length=1, max_length=100)
+    recommended_next_step: NextStep | None = None
     rationale: tuple[str, ...] = Field(min_length=1, max_length=8)
     risk_flags: tuple[str, ...] = Field(default_factory=tuple, max_length=30)
     missing_evidence: tuple[str, ...] = Field(default_factory=tuple, max_length=30)
@@ -220,6 +232,7 @@ class _TacticianModelOutput(BaseModel):
             "recommendation_kind": self.recommendation_kind,
             "recommended_recipe_id": self.recommended_recipe_id,
             "recommended_recipe_version": self.recommended_recipe_version,
+            "recommended_next_step": self.recommended_next_step,
             "rationale": self.rationale,
             "risk_flags": self.risk_flags,
             "missing_evidence": self.missing_evidence,
@@ -263,9 +276,19 @@ def run_tactician(
     Provider failures deliberately propagate as the normal ``InfraFailure``;
     without a valid assessment this function cannot authorize compact work.
     """
-    if assessment_input.admission_assessment.outcome is not WorkflowAdmissionOutcome.UNCERTAIN:
+    workflow_assessment = assessment_input.admission_assessment
+    next_step_assessment = assessment_input.next_step_assessment
+    if workflow_assessment is not None:
+        if workflow_assessment.outcome is not WorkflowAdmissionOutcome.UNCERTAIN:
+            raise TacticianNotRequired(
+                "Tactician may run only when deterministic admission is uncertain"
+            )
+    elif (
+        next_step_assessment is None
+        or not next_step_assessment.requires_tactician_assessment
+    ):
         raise TacticianNotRequired(
-            "Tactician may run only when deterministic admission is uncertain"
+            "Tactician may run only when deterministic next-step admission requires it"
         )
 
     summaries = {
@@ -304,6 +327,11 @@ def run_tactician(
         if recipe_key not in summaries:
             raise InvalidTacticianRecommendation(
                 "Tactician may recommend only an exact registered recipe supplied in context"
+            )
+    elif model_output.recommendation_kind is TacticianRecommendationKind.NEXT_STEP:
+        if next_step_assessment is None:
+            raise InvalidTacticianRecommendation(
+                "workflow-recipe admission does not permit next-step recommendations"
             )
 
     input_references = tuple(

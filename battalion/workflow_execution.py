@@ -7,19 +7,132 @@ retain these immutable records rather than recreate or reinterpret them.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from battalion.role_results import DriverReasonCode, RoleExecutionResult, RoleResultKind
 from battalion.workflow_recipes import (
     CompletionRequirementKind,
     FULL_IMPLEMENTATION_RECIPE,
     WorkflowCompletionRequirement,
+    WorkflowKind,
     WorkflowRecipe,
     WorkflowRecipeRegistry,
     WorkflowStage,
 )
+
+
+class WorkflowExecutionStatus(str, Enum):
+    """Whether a workflow may currently proceed, independent of its semantics."""
+
+    REQUESTED = "requested"
+    RUNNING = "running"
+    PAUSED = "paused"
+    BLOCKED = "blocked"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class BlockResolutionKind(str, Enum):
+    EVIDENCE_AVAILABLE = "evidence-available"
+    AUTHORIZATION_AVAILABLE = "authorization-available"
+    WORKER_AVAILABLE = "worker-available"
+    EXTERNAL_DEPENDENCY_AVAILABLE = "external-dependency-available"
+
+
+class WorkflowEvidence(BaseModel):
+    """Typed, durable evidence for generic execution mechanics."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    kind: str = Field(min_length=1, max_length=100)
+    reference: str = Field(min_length=1, max_length=1000)
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class WorkflowBlock(BaseModel):
+    """A typed prerequisite, never an arbitrary unblock switch."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    block_id: UUID
+    reason_code: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1, max_length=2000)
+    evidence: tuple[WorkflowEvidence, ...] = Field(min_length=1, max_length=100)
+    dependency_reference: str | None = Field(default=None, min_length=1, max_length=1000)
+    required_resolution_kind: BlockResolutionKind
+    created_at: datetime
+    resolved_at: datetime | None = None
+    resolution_evidence: tuple[WorkflowEvidence, ...] = Field(default_factory=tuple, max_length=100)
+
+    @field_validator("created_at", "resolved_at")
+    @classmethod
+    def require_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("block timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_resolution(self) -> "WorkflowBlock":
+        if self.resolved_at is None and self.resolution_evidence:
+            raise ValueError("unresolved blockers cannot carry resolution evidence")
+        if self.resolved_at is not None and not self.resolution_evidence:
+            raise ValueError("resolved blockers require resolution evidence")
+        return self
+
+
+class WorkflowExecution(BaseModel):
+    """Shared durable mechanics. Workflow-specific records own their semantics."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    execution_id: UUID
+    project_id: UUID
+    workflow_kind: WorkflowKind
+    recipe_id: str = Field(min_length=1, max_length=200)
+    recipe_version: str = Field(min_length=1, max_length=100)
+    requesting_actor_id: UUID | None = None
+    status: WorkflowExecutionStatus = WorkflowExecutionStatus.REQUESTED
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    pause_evidence: tuple[WorkflowEvidence, ...] = Field(default_factory=tuple, max_length=100)
+    blocker: WorkflowBlock | None = None
+    block_history: tuple[WorkflowBlock, ...] = Field(default_factory=tuple, max_length=100)
+    failure_evidence: tuple[WorkflowEvidence, ...] = Field(default_factory=tuple, max_length=100)
+    cancellation_evidence: tuple[WorkflowEvidence, ...] = Field(default_factory=tuple, max_length=100)
+    worker_evidence: tuple[WorkflowEvidence, ...] = Field(default_factory=tuple, max_length=100)
+    cost_evidence: tuple[WorkflowEvidence, ...] = Field(default_factory=tuple, max_length=100)
+
+    @field_validator("created_at", "started_at", "completed_at")
+    @classmethod
+    def require_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("execution timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_status_evidence(self) -> "WorkflowExecution":
+        if self.status is WorkflowExecutionStatus.BLOCKED and self.blocker is None:
+            raise ValueError("blocked executions require a typed blocker")
+        if self.status is not WorkflowExecutionStatus.BLOCKED and self.blocker is not None:
+            raise ValueError("only blocked executions may retain an active blocker")
+        if self.status is WorkflowExecutionStatus.PAUSED and not self.pause_evidence:
+            raise ValueError("paused executions require pause evidence")
+        if self.status is WorkflowExecutionStatus.FAILED and not self.failure_evidence:
+            raise ValueError("failed executions require failure evidence")
+        if self.status is WorkflowExecutionStatus.CANCELLED and not self.cancellation_evidence:
+            raise ValueError("cancelled executions require cancellation evidence")
+        terminal = {WorkflowExecutionStatus.COMPLETED, WorkflowExecutionStatus.FAILED, WorkflowExecutionStatus.CANCELLED}
+        if self.status in terminal and self.completed_at is None:
+            raise ValueError("terminal executions require a completion timestamp")
+        if self.status not in terminal and self.completed_at is not None:
+            raise ValueError("only terminal executions may have a completion timestamp")
+        return self
 
 
 class WorkflowUpgradeError(ValueError):

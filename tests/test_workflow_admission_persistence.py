@@ -43,6 +43,12 @@ from battalion.workflow_admission import (
 )
 from battalion.workflow_admission_decisions import WorkflowAdmissionDisposition
 from battalion.workflow_admission_state import WorkflowAdmissionRunRecord
+from battalion.next_step_admission import (
+    NextStep,
+    NextStepAdmissionEvidence,
+    NextStepEvidenceFact,
+    assess_next_step,
+)
 from battalion.workflow_execution import (
     WorkflowCompletionEvidence,
     WorkflowStageEvidence,
@@ -550,3 +556,40 @@ def test_completed_history_keeps_original_semantics_after_registry_changes(tmp_p
     assert inspection.record is not None
     assert inspection.record.assessment.policy_version == "1.0"
     assert inspection.record.execution.recipe_version == "1.0"
+
+
+def test_implementation_run_retains_the_preceding_next_step_admission(tmp_path) -> None:
+    evidence = _evidence()
+    workflow_assessment = assess_workflow_admission(evidence)
+    next_assessment = assess_next_step(
+        NextStepAdmissionEvidence(
+            work_item_revision=evidence.work_item_revision,
+            evidence_references=evidence.evidence_references,
+            established_facts=(
+                NextStepEvidenceFact.AUTHORITATIVE_INTENT,
+                NextStepEvidenceFact.WORK_REQUIRED,
+            ),
+            fact_evidence_ids=(
+                (NextStepEvidenceFact.AUTHORITATIVE_INTENT, "work-item:BTN-143"),
+                (NextStepEvidenceFact.WORK_REQUIRED, "work-item:BTN-143"),
+            ),
+        )
+    )
+
+    result = create_admitted_run(
+        CreateAdmittedRun(
+            ticket_id="BTN-143",
+            spec="Persist next-step admission.",
+            config=BattalionConfig(base_dir=str(tmp_path)),
+            assessment=workflow_assessment,
+            evidence=evidence,
+            disposition=WorkflowAdmissionDisposition.FULL,
+            next_step_assessment=next_assessment,
+        ),
+        state_dir=tmp_path / ".battalion" / "state",
+    )
+
+    assert next_assessment.next_step is NextStep.IMPLEMENTATION
+    assert result.state.workflow_admission is not None
+    assert result.state.workflow_admission.schema_version == "1.1"
+    assert result.state.workflow_admission.next_step_assessment == next_assessment

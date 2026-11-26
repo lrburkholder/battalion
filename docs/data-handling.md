@@ -171,6 +171,7 @@ remain in the workspace itself.
 | Reviewer test evidence | Test command, outcome, counts, duration, timeout/cancellation information, and bounded stdout/stderr. Diagnostics may contain private project information. |
 | Side-effect evidence | IDs and status used to track integration operations, retries, provider references, failures, and reconciliation. It is evidence, not a complete archive of every external request and response. |
 | `.battalion/project.json`, `runs.json`, `actors.json` | Project identity, Run catalog information, Actor identities, and related mappings. |
+| `.battalion/specifications/<SPECIFICATION_UUID>/` | Canonical structured Specification identity and immutable candidate/decision revisions, plus a generated Markdown projection and separate projection-health record. The Markdown file is not an authority source and editing it never changes canonical Specification state. |
 | `.battalion/workers/` | Worker/process supervision information and bounded errors. |
 | `.battalion/recon/` and `.battalion/intel/` | Recon candidates, human review decisions, and accepted Instinct records. Rejected candidates are retained rather than silently erased. |
 | A path supplied to `--trace-output` | Raw trace JSONL. This can be outside the project and is managed separately from normal Run state. |
